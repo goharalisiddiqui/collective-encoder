@@ -5,3 +5,5 @@ AE/train*
 AE/run*
 VAE/train*
 VAE/run*
+run*/
+train*/
