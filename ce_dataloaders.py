@@ -1,12 +1,6 @@
-import os
 import numpy as np
-import pandas as pd
-import torch
-
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-
-
 import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader
 
@@ -36,10 +30,9 @@ class LITColvarData(pl.LightningDataModule):
         super().__init__()
         print("\n\n[Initializing LITColvarData Module]")
         print("==========================================")
-        print(f"Loading data from file: {infile}")
+        print(f"Loading data from file: {colvar_file}")
         with open(colvar_file) as f:
             first_line = f.readline().split()
-            
         assert all([x in first_line for x in label_list]) # Asserts that all the print labels are present in the data file
 
         ignore_list = ["#!", "FIELDS", "time"]
@@ -52,6 +45,9 @@ class LITColvarData(pl.LightningDataModule):
         alldata = np.loadtxt(colvar_file, usecols=col_range)
         alllabel = np.loadtxt(colvar_file, usecols=[a for a in range(1,len(label_list) + 1)], ndmin = 2)
 
+
+        
+        
         p = np.random.permutation(len(alldata))
         alldata, alllabel = alldata[p], alllabel[p]
 
@@ -60,7 +56,7 @@ class LITColvarData(pl.LightningDataModule):
         self.n_train_data = int(FRAMES * train_prop)
         self.n_valid_data = int(FRAMES * (1.0 - train_prop))
         if batch_size == -1:
-            self.train_batchsize = int(FRAMES * self.n_train_data)
+            self.train_batchsize = int(self.n_train_data * batch_prop)
         else:
             self.train_batchsize = batch_size
             
@@ -70,12 +66,17 @@ class LITColvarData(pl.LightningDataModule):
         print("- label.shape:", alllabel.shape)
         assert alldata.shape[0] == alllabel.shape[0]
         self.target_scaler = StandardScaler()
-        self.target_scalar = fit(alldata)
+        self.target_scaler.fit(alldata)
             
         print(f"Total frames: {FRAMES}, Train size: {self.n_train_data}, Batch size: {self.train_batchsize}, Validation size: {self.n_valid_data}")
         print("==========================================")
         self.save_hyperparameters()
         self.all_dataset = ColvarDataset([alldata, alllabel])
+        
+        # print(f"\nshape={alllabel.shape}\n")
+        # print(f"\nmax={np.amax(alllabel)}\n")
+        # print(f"\nmin={np.amin(alllabel)}\n")
+        # exit()
         
         
         
@@ -85,7 +86,7 @@ class LITColvarData(pl.LightningDataModule):
         
     def setup(self, stage): # Called on every GPU/TPU in distributed
         # Assign train/val datasets for use in dataloaders
-        self.training_data, self.validation_data = train_test_split(self.all_dataset, test_size=self.hparams.train_prop, random_state=1868)
+        self.training_data, self.validation_data = train_test_split(self.all_dataset, train_size=self.hparams.train_prop, random_state=1868)
 
 
         # called on every process in DDP
@@ -93,10 +94,10 @@ class LITColvarData(pl.LightningDataModule):
         return DataLoader(self.training_data, batch_size=self.train_batchsize, shuffle=True, drop_last=True)
 
     def val_dataloader(self):
-        return DataLoader(self.validation_data, batch_size=len(self.validation_data), shuffle=True, drop_last=True)
+        return DataLoader(self.validation_data, batch_size=len(self.validation_data), shuffle=False, drop_last=True)
 
     def test_dataloader(self):
-        return DataLoader(self.validation_data, batch_size=len(self.validation_data), shuffle=True, drop_last=True)
+        return DataLoader(self.all_dataset, batch_size=len(self.all_dataset), shuffle=False, drop_last=True)
 
     def target_scaler(self, X):
         return self.target_scaler.transform(X)
@@ -105,7 +106,7 @@ class LITColvarData(pl.LightningDataModule):
         return self.target_scaler.inverse_transform(X)
     
     def get_scaler_mean(self):
-        return self.target_scaler._mean
+        return self.target_scaler.mean_
     
     def get_scaler_var(self):
-        return self.target_scaler._var
+        return self.target_scaler.var_

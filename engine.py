@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import torch
@@ -9,13 +8,7 @@ import os
 import argparse
 
 from timeit import default_timer as timer
-from torch import nn
-from torch.autograd import Variable
-from torch.utils.data import Dataset, DataLoader
-
-from matplotlib import rc
 import pytorch_lightning as pl
-
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -47,10 +40,6 @@ args = parse_args()
 start = timer()
 
 
-
-
-
-
 if (not args.online):
     ##################################
     # Run Settings
@@ -75,7 +64,7 @@ if (not args.online):
     # Train model
     hidden_nodes = "1000,500,100,10,2" # NN hidden layers
     train = True
-    num_epochs = 10
+    num_epochs = 3
     # Optimization
     lrate = 1e-2  # Learning rate
     l2_reg = 1e-7  # Regularization of network weights
@@ -189,7 +178,7 @@ outname = "./"+odir_name+"/"+nntype+"_"
 colvardata = main_dl(infile, train_prop=0.8, batch_prop=0.1, 
                      label_list=label_list, standardize_inputs=True)
 
-colvardata.setup()
+colvardata.setup(stage="")
 
 
 
@@ -199,13 +188,12 @@ colvardata.setup()
 ##################################
 
 nodes = [int(x) for x in hidden_nodes.split(",")]
-nodes.insert(0, num_inputs)
+nodes.insert(0, colvardata.num_inputs)
 
 model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, outname=outname)
-
-
-
-
+if standardize_inputs:  
+    model.set_norm(torch.Tensor(colvardata.get_scaler_mean(), device=model.device),
+                    torch.Tensor(colvardata.get_scaler_var(), device=model.device))
 
 
 ##################################
@@ -214,18 +202,16 @@ model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, outname=outname)
 if train:
     start = timer()
     
-    
     trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name)
-    trainer.fit(model, train_loader, valid_loader)
-    
-    
+    trainer.fit(model, datamodule=colvardata)
+
     end = timer()
     elapsed = end - start
-    print(f"\nTook {elapsed} s; {alldata.shape[1]} CVs, {alldata.shape[0]} frames")
+    print(f"\nTook {elapsed} s; {colvardata.num_inputs - len(label_list)} CVs, {len(colvardata.all_dataset)} frames")
 
 if not train and not load_state:
     print("WARNING! Model neither loaded nor trained!")
-model.eval()
+trainer.test(model, datamodule=colvardata)
 
 
 

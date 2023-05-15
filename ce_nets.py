@@ -2,14 +2,8 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-# from torch_geometric.nn.conv import NNConv
-# from torch_geometric.nn import global_mean_pool, global_max_pool
-# from torch_geometric.data import Batch
-
 import torch.nn.functional as F
 import pytorch_lightning as pl
-
-
 from torch.autograd import Variable
 torch.manual_seed(0)
 
@@ -141,6 +135,9 @@ class LITcollAE(pl.LightningModule):
         print("- Learning rate \t=", self.hparams.lr)
         print("- l2 regularization \t=", self.hparams.l2_reg)
         print("==================================\n\n")
+        
+        
+
         # print("[{:>3}/{:>3}] {:>10}".format("ep", "tot", "train_loss",  "val_loss"))
     
     
@@ -150,7 +147,8 @@ class LITcollAE(pl.LightningModule):
         target = self.normalize(data)
         
         loss = self.loss_fn(result, target)
-        self.train_loss_list.append(loss)
+        self.train_loss_list.append(loss.item())
+        # print(f"\nbatch_id={batch_idx}, loss_list_size={len(self.train_loss_list)}")
         # self.log('train_loss', loss.item(), prog_bar=True)
         return loss
     
@@ -172,12 +170,15 @@ class LITcollAE(pl.LightningModule):
         epoch = self.current_epoch
         n_hidden = self.hparams.l[-1]
 
-        train_x, train_y = next(iter(test_batch))
-        train_x, train_y = train_x.float(), train_y.float()
+        
+        train_x, train_y = test_batch[0].float(), test_batch[1].float()
         n_labels = train_y.shape[-1]
+        
+        
+        
         fig, axes = plt.subplots(n_hidden if n_hidden > 2 else 1, n_labels + 1, squeeze=False,figsize=(13, 5))
         
-        self.plot_training(axes[0][0], range(1, len(self.train_loss_list)), self.train_loss_list)
+        self.plot_training(axes[0][0])
         for i in range(0, axes.shape[0]):
             for j in range(n_labels):
                 self.plot_latent(fig, axes[i][j+1], train_x, train_y[:,j], i)
@@ -189,12 +190,11 @@ class LITcollAE(pl.LightningModule):
         return None
 
 
-    def plot_training(ax, epochs, loss_list):
+    def plot_training(self, ax):
         ax.set_title("Network Loss minimization")
         ax.set_yscale("log")
         ax.plot(
-            np.asarray(epochs),
-            np.asarray([x.cpu().detach().numpy() for x in loss_list]),
+            np.asarray(self.train_loss_list),
             ".-",
             c="tab:green",
             label="loss",
@@ -203,22 +203,24 @@ class LITcollAE(pl.LightningModule):
         ax.set_ylabel("loss")
         ax.legend()
 
-    def plot_latent(fig, ax, train_x, train_y, val_x, val_y, model, i):
+    def plot_latent(self, fig, ax, train_x, train_y, i):
         ax.set_title("LITcollAE Latent-space-"+str(i))
         
-        latent_train = model.encode(train_x).cpu().detach().numpy()
+        latent_train = self.encode(train_x).cpu().detach().numpy()
         
         cm = plt.get_cmap('jet')
-        cNorm = matplotlib.colors.Normalize(vmin=min(latent_train), vmax=max(latent_train))
+        cNorm = matplotlib.colors.Normalize(vmin=min(train_y), vmax=max(train_y))
+        
+        # print(f"min={min(train_y)}, max={max(train_y)}\n")
         
         scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
         yaxis = (i+1) if (i+1) < latent_train.shape[1] else 0
-        ax.scatter(latent_train[:, i], latent_train[:, yaxis], c=scalarMap.to_rgba(train_y), label="Test Set", alpha=0.3)
+        ax.scatter(latent_train[:, i], latent_train[:, yaxis], c=scalarMap.to_rgba(train_y), label="Whole dataset", alpha=0.3)
         
         ax.set_xlabel("h_{}".format(i))
         ax.set_ylabel("h_{}".format(yaxis))
 
         scalarMap.set_array(train_y)
         cb = fig.colorbar(scalarMap, ax=ax)
-        # cb.set_label(label)
+        cb.set_label(self.trainer.datamodule.hparams.label_list[i])
         ax.legend()
