@@ -132,14 +132,13 @@ from ce_dataloaders import LITColvarData as main_dl
 ##################################
 # Output directory
 ##################################
-
 odir_name = odir+str(nexp)
 
 if not overwrite:
     while True:
         odir_name = odir+str(nexp)
         if not os.path.isdir(odir_name):
-            os.mkdir("./"+odir_name)
+            os.makedirs("./"+odir_name)
             break
         nexp = nexp + 1
 else:
@@ -225,10 +224,17 @@ if save_model:
     fake_loader = torch.utils.data.DataLoader(colvardata.all_dataset, batch_size=1, shuffle=False)
     fake_input = next(iter(fake_loader))[0].float()
 
+    if args.modelpath == None:
+        modelpath = odir
+    else:
+        modelpath = args.modelpath
+    if not os.path.isdir(modelpath):
+            os.makedirs(modelpath)
+            
     model.metaD = True
-    model.to_torchscript(file_path=f"{odir_name}/encoder.pt", method='trace', example_inputs=fake_input)
+    model.to_torchscript(file_path=f"{modelpath}/encoder.pt", method='trace', example_inputs=fake_input)
     
-    print(f"@@ model exported as: {odir_name}/encoder.pt")
+    print(f"@@ model exported as: {modelpath}/encoder.pt")
 
 if save_checkpoint:
     trainer.save_checkpoint(f"{outname}checkpoint")
