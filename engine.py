@@ -26,6 +26,8 @@ def parse_args():
     parser.add_argument('--inputfile', type=str, help='Input file for online training')
     parser.add_argument('--outpath', type=str, help='Output folder for saving the training output')
     parser.add_argument('--modelpath', type=str, help='Output folder for saving the model')
+    parser.add_argument('--nepochs', type=int, help='Number of epochs to run', required=True)
+    parser.add_argument('--labels', nargs='+', help='Labels to ignore in the input files. Used for visualisation', required=True)
     
     args = parser.parse_args()
     if args.online:
@@ -54,6 +56,7 @@ if (not args.online):
     ignore_list = ["#!", "FIELDS", "time"]
     # label_list = ["phi", "psi"]
     label_list = ["dist_Au-K1"]
+
     # Input standarization
     standardize_inputs = True # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
     # Output file
@@ -84,14 +87,15 @@ if (not args.online):
         train = True
 else:
     overwrite = False
-    odir = args.outpath + "train"
+    odir = args.outpath + "/online_train"
     nntype = "AE"
     nexp = 1
     # Input directory and columns
     data_folder = args.inputfile
     ignore_list = ["#!", "FIELDS", "time"]
     # label_list = ["phi", "psi"]
-    label_list = ["phi", "psi"]
+    # label_list = ["dist_Au-K1"]
+    label_list = args.labels
     # Input standarization
     standardize_inputs = True # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
     # Output file
@@ -102,14 +106,13 @@ else:
     # Train model
     hidden_nodes = "1000,500,100,10,2" # NN hidden layers
     train = True
-    num_epochs = 100
+    num_epochs = args.nepochs
     # Optimization
     lrate = 1e-2  # Learning rate
     l2_reg = 1e-7  # Regularization of network weights
     # Save model
     save_model = True
-    save_checkpoint = False
-    save_plumed_ANN = False
+    save_checkpoint = True
     
 
 
@@ -172,7 +175,7 @@ if args.online:
 else:
     infile = f"{data_dir}/{data_folder}/INPUTS"
 
-outname = "./"+odir_name+"/"+nntype+"_"
+outname = odir_name+"/"+nntype+"_"
 
 
 colvardata = main_dl(infile, train_prop=0.8, batch_prop=0.1, 
@@ -213,10 +216,32 @@ if not train and not load_state:
     print("WARNING! Model neither loaded nor trained!")
 trainer.test(model, datamodule=colvardata)
 
+##################################
+# Serializing and checkpointing the model
+##################################
+if save_model:
+    print("[Exporting the model]")
+    
+    fake_loader = torch.utils.data.DataLoader(colvardata.all_dataset, batch_size=1, shuffle=False)
+    fake_input = next(iter(fake_loader))[0].float()
+
+    model.metaD = True
+    model.to_torchscript(file_path=f"{odir_name}/encoder.pt", method='trace', example_inputs=fake_input)
+    
+    print(f"@@ model exported as: {odir_name}/encoder.pt")
+
+if save_checkpoint:
+    trainer.save_checkpoint(f"{outname}checkpoint")
+    print(f"@@ checkpoint saved as: {outname}checkpoint")
 
 
 
 
+
+
+##################################
+# Resetting stdout
+##################################
 
 if output_to_file:
     sys.stdout = orig_stdout

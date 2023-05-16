@@ -6,4 +6,4 @@ AE/run*
 VAE/train*
 VAE/run*
 run*/
-train*/
+*train*/
