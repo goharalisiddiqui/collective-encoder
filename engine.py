@@ -26,8 +26,8 @@ def parse_args():
     parser.add_argument('--inputfile', type=str, help='Input file for online training')
     parser.add_argument('--outpath', type=str, help='Output folder for saving the training output')
     parser.add_argument('--modelpath', type=str, help='Output folder for saving the model')
-    parser.add_argument('--nepochs', type=int, help='Number of epochs to run', required=True)
-    parser.add_argument('--labels', nargs='+', help='Labels to ignore in the input files. Used for visualisation', required=True)
+    parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
+    parser.add_argument('--labels', nargs='+', help='Labels to ignore in the input files. Used for visualisation')
     
     args = parser.parse_args()
     if args.online:
@@ -50,12 +50,15 @@ if (not args.online):
     overwrite = True
     odir = "run"
     nntype = "AE"
-    nexp = 1
+    nexp = 2
     # Input directory and columns
-    data_folder = "20221201_COLLECTIVE_ENCODER_TRAINING_DATA"
+    data_dir = os.environ.get('DATA_DIR')
+    data_dir = os.getcwd() + "/.."
+    data_folder = f"{data_dir}/20221201_COLLECTIVE_ENCODER_TRAINING_DATA"
+    data_folder = f"{data_dir}/enhanced_md"
     ignore_list = ["#!", "FIELDS", "time"]
     # label_list = ["phi", "psi"]
-    label_list = ["dist_Au-K1"]
+    label_list = ["phi","psi"]
 
     # Input standarization
     standardize_inputs = True # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
@@ -67,16 +70,13 @@ if (not args.online):
     # Train model
     hidden_nodes = "1000,500,100,10,2" # NN hidden layers
     train = True
-    num_epochs = 3
+    num_epochs = 30
     # Optimization
     lrate = 1e-2  # Learning rate
     l2_reg = 1e-7  # Regularization of network weights
     # Save model
     save_model = False
     save_checkpoint = False
-    save_plumed_ANN = False
-
-
     ##################################
     # Some safety checks
     ##################################
@@ -96,6 +96,7 @@ else:
     # label_list = ["phi", "psi"]
     # label_list = ["dist_Au-K1"]
     label_list = args.labels
+    # label_list = [label for label in args.labels.split(',')]
     # Input standarization
     standardize_inputs = True # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
     # Output file
@@ -123,7 +124,7 @@ else:
 # Importing Lightning Modules
 ##################################
 #import AE_nn
-from ce_nets import LITcollAE as main_nn
+from ce_nets import LITcollVAE as main_nn
 from ce_dataloaders import LITColvarData as main_dl
 
 
@@ -172,7 +173,7 @@ data_dir = os.environ.get('DATA_DIR')
 if args.online:
     infile = args.inputfile
 else:
-    infile = f"{data_dir}/{data_folder}/INPUTS"
+    infile = f"{data_folder}/INPUTS"
 
 outname = odir_name+"/"+nntype+"_"
 
@@ -232,7 +233,7 @@ if save_model:
             os.makedirs(modelpath)
             
     model.metaD = True
-    model.to_torchscript(file_path=f"{modelpath}/encoder.pt", method='trace', example_inputs=fake_input)
+    model.to_torchscript(file_path=f"{modelpath}/encoder.pt", method='trace', example_inputs=fake_input, strict=False)
     
     print(f"@@ model exported as: {modelpath}/encoder.pt")
 
