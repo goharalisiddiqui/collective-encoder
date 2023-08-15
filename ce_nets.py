@@ -16,6 +16,8 @@ import matplotlib
 from matplotlib import rc
 from statistics import mean as list_mean
 
+from scipy.stats import multivariate_normal
+
 
 
 class LITcollAE(pl.LightningModule):
@@ -65,11 +67,14 @@ class LITcollAE(pl.LightningModule):
         self.val_loss_list = []
         self.print_loss = 1
         
+        self.register_buffer('Mean', torch.zeros(l[0]))
+        self.register_buffer('Range', torch.ones(l[0]))
+        
     def set_norm(self, Mean: torch.Tensor, Range: torch.Tensor):
         self.normIn = True
-        self.register_buffer('Mean', Mean)
-        self.register_buffer('Range', Range)
-
+        self.Mean = Mean
+        self.Range = Range
+        
     def normalize(self, x: Variable):
         batch_size = x.size(0)
         x_size = x.size(1)
@@ -300,17 +305,21 @@ class LITcollVAE(pl.LightningModule):
         # Model meta info
         self.normIn = False
         self.metaD = False
-        self.save_hyperparameters()
         
         self.step_loss_list = []
         self.train_loss_list = []
         self.val_loss_list = []
         self.print_loss = 1
         
+        # self.register_buffer('train_loss_list', [])
+        self.register_buffer('Mean', torch.zeros(l[0]))
+        self.register_buffer('Range', torch.ones(l[0]))
+        self.save_hyperparameters()
+        
     def set_norm(self, Mean: torch.Tensor, Range: torch.Tensor):
         self.normIn = True
-        self.register_buffer('Mean', Mean)
-        self.register_buffer('Range', Range)
+        self.Mean = Mean
+        self.Range = Range
 
     def normalize(self, x: Variable):
         batch_size = x.size(0)
@@ -420,7 +429,7 @@ class LITcollVAE(pl.LightningModule):
         loss = torch.mean(loss_rec + KLD, dim=0) # mean of batch
         return loss
 
-    def naive_vae_loss(self, recon_x, tru_x, beta=1, **kwargs):
+    def naive_vae_loss(self, recon_x, tru_x, beta=50, **kwargs):
         mu_latent = kwargs["mu_latent"]
         logvar_latent = kwargs["logvar_latent"]
         mu_x = kwargs["mu_x"]
@@ -507,7 +516,7 @@ class LITcollVAE(pl.LightningModule):
         
         
         
-        fig, axes = plt.subplots(n_hidden if n_hidden > 2 else 1, n_labels + 1, squeeze=False,figsize=(13, 5))
+        fig, axes = plt.subplots(n_hidden if n_hidden > 2 else 1, n_labels + 1, squeeze=False,figsize=(13, 13))
         
         self.plot_training(axes[0][0])
         for i in range(0, axes.shape[0]):
@@ -517,6 +526,9 @@ class LITcollVAE(pl.LightningModule):
         plt.tight_layout()
         fig.savefig(f"{self.hparams.outname}{epoch}_training.png", dpi=150)
         plt.close()
+        
+        fig, axes = plt.subplots(1,1, squeeze=False,figsize=(13, 13))
+        self.plot_latent_surface(fig, axes[0][0], train_x, train_y, 0)
     
         return None
 
@@ -539,7 +551,10 @@ class LITcollVAE(pl.LightningModule):
     def plot_latent(self, fig, ax, train_x, train_y, i, j):
         ax.set_title("LITcollVAE Latent-space-"+str(i))
         
-        latent_train = self.encode(train_x).cpu().detach().numpy()
+        latent_mu, latent_logvar = self.encode_(train_x)
+        latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
+        
+        latent_sd = np.sqrt(np.exp(latent_logvar))
         
         cm = plt.get_cmap('jet')
         cNorm = matplotlib.colors.Normalize(vmin=min(train_y), vmax=max(train_y))
@@ -547,13 +562,58 @@ class LITcollVAE(pl.LightningModule):
         # print(f"min={min(train_y)}, max={max(train_y)}\n")
         
         scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
-        yaxis = (i+1) if (i+1) < latent_train.shape[1] else 0
-        ax.scatter(latent_train[:, i], latent_train[:, yaxis], c=scalarMap.to_rgba(train_y), label="Whole dataset", alpha=0.3)
+        yaxis = (i+1) if (i+1) < latent_mu.shape[1] else 0
         
+        if True: ## To remove outliers
+            for ind,point in enumerate(latent_mu):
+                if (point[0] < -20) or (point[1] < -20):
+                    print(f"Outlier point: {point[0]}.{point[1]} ind:{ind}, will not be plotted")
+                    latent_mu = np.delete(latent_mu, [ind], axis=0)
+                    latent_sd = np.delete(latent_sd, [ind], axis=0)
+                    train_y = torch.cat([train_y[:ind], train_y[ind+1:]])
+        # print(latent_logvar)
+                
+        # ax.scatter(latent_mu[:, i], latent_mu[:, yaxis], c=scalarMap.to_rgba(train_y), label="Whole dataset", alpha=0.3)
+        ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], fmt='none', ecolor=scalarMap.to_rgba(train_y), alpha=0.3)
         ax.set_xlabel("h_{}".format(i))
         ax.set_ylabel("h_{}".format(yaxis))
 
         scalarMap.set_array(train_y)
         cb = fig.colorbar(scalarMap, ax=ax)
         cb.set_label(self.trainer.datamodule.hparams.label_list[j])
-        ax.legend()
+        # ax.legend()
+        
+    
+        
+        
+    def plot_latent_surface(self, fig, ax, train_x, train_y, i):
+        ax.set_title("LITcollVAE Latent-population-"+str(i))
+        
+        latent_mu, latent_logvar = self.encode_(train_x)
+        latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
+        
+        latent_sd = np.sqrt(np.exp(latent_logvar))
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        yaxis = (i+1) if (i+1) < latent_mu.shape[1] else 0
+        
+        x, y = np.mgrid[-3:3:.01, -3:3:.01]
+        pos = np.dstack((x, y))
+
+        res = np.zeros((len(x),len(y)))
+        for l in range(latent_mu.shape[0]):
+            res += multivariate_normal(mean=latent_mu[l,:], cov=[[latent_sd[l,0], 0.0],[0.0, latent_sd[l,1]]]).pdf(pos)
+        
+        cs = ax.contourf(x,y, res, 20)
+        ax.set_xlabel("h_{}".format(i))
+        ax.set_ylabel("h_{}".format(yaxis))
+        cbar = fig.colorbar(cs)
+        fig.savefig(f"{self.hparams.outname}LatentShape.png", dpi=150)

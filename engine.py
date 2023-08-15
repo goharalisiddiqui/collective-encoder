@@ -50,7 +50,7 @@ if (not args.online):
     overwrite = True
     odir = "run"
     nntype = "AE"
-    nexp = 2
+    nexp = 5
     # Input directory and columns
     data_dir = os.environ.get('DATA_DIR')
     data_dir = os.getcwd() + "/.."
@@ -66,17 +66,17 @@ if (not args.online):
     output_to_file = False
     # Load pre-trained model
     load_state = False
-    state_file = ""
+    state_file = f"{data_folder}/ce_trainings/online_train6/AE_checkpoint"
     # Train model
     hidden_nodes = "1000,500,100,10,2" # NN hidden layers
     train = True
-    num_epochs = 30
+    num_epochs = 500
     # Optimization
     lrate = 1e-2  # Learning rate
     l2_reg = 1e-7  # Regularization of network weights
     # Save model
     save_model = False
-    save_checkpoint = False
+    save_checkpoint = True
     ##################################
     # Some safety checks
     ##################################
@@ -173,7 +173,7 @@ data_dir = os.environ.get('DATA_DIR')
 if args.online:
     infile = args.inputfile
 else:
-    infile = f"{data_folder}/INPUTS"
+    infile = f"{data_folder}/INPUTS_1"
 
 outname = odir_name+"/"+nntype+"_"
 
@@ -193,7 +193,10 @@ colvardata.setup(stage="")
 nodes = [int(x) for x in hidden_nodes.split(",")]
 nodes.insert(0, colvardata.num_inputs)
 
-model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, outname=outname)
+if load_state:
+    model = main_nn.load_from_checkpoint(state_file, outname=outname)
+else:
+    model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, outname=outname)
 if standardize_inputs:  
     model.set_norm(torch.Tensor(colvardata.get_scaler_mean(), device=model.device),
                     torch.Tensor(colvardata.get_scaler_var(), device=model.device))
@@ -202,18 +205,31 @@ if standardize_inputs:
 ##################################
 # Training the NN
 ##################################
+trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name)
 if train:
     start = timer()
     
-    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name)
     trainer.fit(model, datamodule=colvardata)
 
     end = timer()
     elapsed = end - start
     print(f"\nTook {elapsed} s; {colvardata.num_inputs - len(label_list)} CVs, {len(colvardata.all_dataset)} frames")
-
+    
 if not train and not load_state:
     print("WARNING! Model neither loaded nor trained!")
+    
+    
+    
+##################################
+# Analysing a loaded model
+##################################
+
+
+
+    
+    
+##################################
+    
 trainer.test(model, datamodule=colvardata)
 
 ##################################
