@@ -516,7 +516,7 @@ class LITcollVAE(pl.LightningModule):
         
         
         
-        fig, axes = plt.subplots(n_hidden if n_hidden > 2 else 1, n_labels + 1, squeeze=False,figsize=(13, 13))
+        fig, axes = plt.subplots(n_hidden if n_hidden > 2 else 1, n_labels + 1, squeeze=False,figsize=(13, 5))
         
         self.plot_training(axes[0][0])
         for i in range(0, axes.shape[0]):

@@ -48,14 +48,14 @@ if (not args.online):
     ##################################
     # Output directory
     overwrite = True
-    odir = "run"
-    nntype = "AE"
-    nexp = 5
+    odir = "train"
+    nntype = "VAE"
+    nexp = 4
     # Input directory and columns
     data_dir = os.environ.get('DATA_DIR')
     data_dir = os.getcwd() + "/.."
     data_folder = f"{data_dir}/20221201_COLLECTIVE_ENCODER_TRAINING_DATA"
-    data_folder = f"{data_dir}/enhanced_md"
+    data_folder = f"{data_dir}/enhanced_md_manual"
     ignore_list = ["#!", "FIELDS", "time"]
     # label_list = ["phi", "psi"]
     label_list = ["phi","psi"]
@@ -75,7 +75,7 @@ if (not args.online):
     lrate = 1e-2  # Learning rate
     l2_reg = 1e-7  # Regularization of network weights
     # Save model
-    save_model = False
+    save_model = True
     save_checkpoint = True
     ##################################
     # Some safety checks
@@ -88,7 +88,7 @@ if (not args.online):
 else:
     overwrite = False
     odir = args.outpath + "/online_train"
-    nntype = "AE"
+    nntype = "VAE"
     nexp = 1
     # Input directory and columns
     data_folder = args.inputfile
@@ -100,7 +100,7 @@ else:
     # Input standarization
     standardize_inputs = True # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
     # Output file
-    output_to_file = False
+    output_to_file = True
     # Load pre-trained model
     load_state = False
     state_file = ""
@@ -159,9 +159,11 @@ if len(os. listdir("./"+odir_name)) != 0:
 if output_to_file:
     import sys
     orig_stdout = sys.stdout
+    orig_stderr = sys.stderr
     f = open("./"+odir_name+"/out.txt", 'w')
     print("Redirecting output to file ./"+odir_name+"/out.txt")
     sys.stdout = f
+    sys.stderr = f
 
 
 print("Using Pytorch", torch.__version__)
@@ -173,7 +175,7 @@ data_dir = os.environ.get('DATA_DIR')
 if args.online:
     infile = args.inputfile
 else:
-    infile = f"{data_folder}/INPUTS_1"
+    infile = f"{data_folder}/INPUTS_4"
 
 outname = odir_name+"/"+nntype+"_"
 
@@ -242,14 +244,15 @@ if save_model:
     fake_input = next(iter(fake_loader))[0].float()
 
     if args.modelpath == None:
-        modelpath = odir
+        modelpath = odir_name
     else:
         modelpath = args.modelpath
     if not os.path.isdir(modelpath):
             os.makedirs(modelpath)
             
     model.metaD = True
-    model.to_torchscript(file_path=f"{modelpath}/encoder.pt", method='trace', example_inputs=fake_input, strict=False)
+    # model.to_torchscript(file_path=f"{modelpath}/encoder.pt", method='trace', example_inputs=fake_input, strict=False)
+    torch.jit.save(model.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{modelpath}/encoder.pt") 
     
     print(f"@@ model exported as: {modelpath}/encoder.pt")
 
@@ -268,4 +271,5 @@ if save_checkpoint:
 
 if output_to_file:
     sys.stdout = orig_stdout
+    sys.stderr = orig_stderr
     f.close()
