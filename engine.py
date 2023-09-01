@@ -28,6 +28,7 @@ def parse_args():
     parser.add_argument('--modelpath', type=str, help='Output folder for saving the model')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
     parser.add_argument('--labels', nargs='+', help='Labels to ignore in the input files. Used for visualisation')
+    parser.add_argument('--gpu', action="store_true", help='Use gpu acceleration')
     
     args = parser.parse_args()
     if args.online:
@@ -207,7 +208,11 @@ if standardize_inputs:
 ##################################
 # Training the NN
 ##################################
-trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name)
+if args.gpu:
+    print("GPU enabled")
+    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name, accelerator='gpu', devices=1)
+else:
+    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name)
 if train:
     start = timer()
     
@@ -228,8 +233,7 @@ if not train and not load_state:
 
 
 
-    
-    
+
 ##################################
     
 trainer.test(model, datamodule=colvardata)

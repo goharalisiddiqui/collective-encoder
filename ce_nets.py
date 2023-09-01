@@ -553,6 +553,7 @@ class LITcollVAE(pl.LightningModule):
         
         latent_mu, latent_logvar = self.encode_(train_x)
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
+        train_y = train_y.cpu().detach().numpy()
         
         latent_sd = np.sqrt(np.exp(latent_logvar))
         
