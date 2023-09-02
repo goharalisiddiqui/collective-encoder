@@ -92,7 +92,7 @@ else:
     nntype = "VAE"
     nexp = 1
     # Input directory and columns
-    data_folder = args.inputfile
+    # data_folder = args.inputfile
     ignore_list = ["#!", "FIELDS", "time"]
     # label_list = ["phi", "psi"]
     # label_list = ["dist_Au-K1"]
