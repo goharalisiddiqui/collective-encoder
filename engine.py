@@ -49,14 +49,14 @@ if (not args.online):
     ##################################
     # Output directory
     overwrite = True
-    odir = "train"
+    odir = "run"
     nntype = "VAE"
-    nexp = 4
+    nexp = 7
     # Input directory and columns
-    data_dir = os.environ.get('DATA_DIR')
-    data_dir = os.getcwd() + "/.."
-    data_folder = f"{data_dir}/20221201_COLLECTIVE_ENCODER_TRAINING_DATA"
-    data_folder = f"{data_dir}/enhanced_md_manual"
+    # data_dir = os.environ.get('DATA_DIR')
+    data_dir = os.getcwd() + "/../.."
+    # data_folder = f"{data_dir}/20221201_COLLECTIVE_ENCODER_TRAINING_DATA"
+    data_folder = f"{data_dir}/3.Ala2_2/enhanced_md"
     ignore_list = ["#!", "FIELDS", "time"]
     # label_list = ["phi", "psi"]
     label_list = ["phi","psi"]
@@ -66,18 +66,18 @@ if (not args.online):
     # Output file
     output_to_file = False
     # Load pre-trained model
-    load_state = False
-    state_file = f"{data_folder}/ce_trainings/online_train6/AE_checkpoint"
+    load_state = True
+    state_file = os.getcwd() + "/run6/VAE_checkpoint"
     # Train model
     hidden_nodes = "1000,500,100,10,2" # NN hidden layers
-    train = True
-    num_epochs = 500
+    train = False
+    num_epochs = 50
     # Optimization
-    lrate = 1e-2  # Learning rate
+    lrate = 1e-4  # Learning rate
     l2_reg = 1e-7  # Regularization of network weights
     # Save model
-    save_model = True
-    save_checkpoint = True
+    save_model = False
+    save_checkpoint = False
     ##################################
     # Some safety checks
     ##################################
@@ -172,11 +172,10 @@ print("Using Pytorch", torch.__version__)
 ##################################
 # Creating Dataset
 ##################################
-data_dir = os.environ.get('DATA_DIR')
 if args.online:
     infile = args.inputfile
 else:
-    infile = f"{data_folder}/INPUTS_4"
+    infile = f"{data_folder}/INPUTS_COMM"
 
 outname = odir_name+"/"+nntype+"_"
 

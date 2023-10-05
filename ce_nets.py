@@ -404,10 +404,10 @@ class LITcollVAE(pl.LightningModule):
     def recon_loss_data(self, tru_x, mu_x, logvar_x):
         ## Basically only calculates log p(x|z) for one value of z taken from q(z|x) in the forward function of the model instead of calculating an expectation value
         # Sum on all the input distances
-        loss_rec = -torch.sum(
-            (-0.5 * torch.log(TORCH_PI.to(mu_x.device)))
+        loss_rec = -torch.mean(
+            (-0.5 * torch.log(2 * TORCH_PI.to(mu_x.device)))
             + (-0.5 * logvar_x)
-            + ((-0.5 / torch.exp(logvar_x))
+            + ((-0.5 / (0.0005 + torch.exp(logvar_x)))
                         * (tru_x - mu_x) ** 2.0),
             axis=1
         )
@@ -527,8 +527,8 @@ class LITcollVAE(pl.LightningModule):
         fig.savefig(f"{self.hparams.outname}{epoch}_training.png", dpi=150)
         plt.close()
         
-        fig, axes = plt.subplots(1,1, squeeze=False,figsize=(13, 13))
-        self.plot_latent_surface(fig, axes[0][0], train_x, train_y, 0)
+        # fig, axes = plt.subplots(1,1, squeeze=False,figsize=(13, 13))
+        # self.plot_latent_surface(fig, axes[0][0], train_x, train_y, 0)
     
         return None
 
@@ -574,8 +574,10 @@ class LITcollVAE(pl.LightningModule):
                     train_y = torch.cat([train_y[:ind], train_y[ind+1:]])
         # print(latent_logvar)
                 
-        # ax.scatter(latent_mu[:, i], latent_mu[:, yaxis], c=scalarMap.to_rgba(train_y), label="Whole dataset", alpha=0.3)
-        ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], fmt='none', ecolor=scalarMap.to_rgba(train_y), alpha=0.3)
+        if False:
+            ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], fmt='none', ecolor=scalarMap.to_rgba(train_y), alpha=0.3)
+        else:
+            ax.scatter(latent_mu[:, i], latent_mu[:, yaxis], c=scalarMap.to_rgba(train_y), label="Whole dataset", alpha=0.3)
         ax.set_xlabel("h_{}".format(i))
         ax.set_ylabel("h_{}".format(yaxis))
 
