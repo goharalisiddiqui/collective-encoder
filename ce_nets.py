@@ -376,6 +376,8 @@ class LITcollVAE(pl.LightningModule):
         else:
             z = mu_latent
 
+        if self.metaD:
+            return mu_latent
         mu_x, logvar_x = self.decode(z) # q(x|z)
         if self.training:
             x_out = self.reparametrize(mu_x, logvar_x)
@@ -412,6 +414,7 @@ class LITcollVAE(pl.LightningModule):
             axis=1
         )
         return loss_rec
+    
 
     def vae_loss(self, recon_x, tru_x, beta=1, **kwargs):
         # full vae loss for modeling a distributive latent space
@@ -496,7 +499,7 @@ class LITcollVAE(pl.LightningModule):
         result, meta = self(data)
         target = self.normalize(data)
         
-        loss = self.vae_loss(result, target, **meta)
+        loss = self.naive_vae_loss(result, target, **meta)
         self.val_loss_list.append(loss)
         self.log('val_loss', loss.item(), prog_bar=True)
         return loss
@@ -554,6 +557,13 @@ class LITcollVAE(pl.LightningModule):
         latent_mu, latent_logvar = self.encode_(train_x)
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         train_y = train_y.cpu().detach().numpy()
+        
+        if latent_mu.shape[0] > 5000:
+            index = np.random.choice(latent_mu.shape[0], 5000, replace=False)
+            latent_mu = latent_mu[index]
+            latent_logvar = latent_logvar[index]
+            train_y = train_y[index]
+        
         
         latent_sd = np.sqrt(np.exp(latent_logvar))
         
