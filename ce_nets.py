@@ -377,7 +377,7 @@ class LITcollVAE(pl.LightningModule):
             z = mu_latent
 
         if self.metaD:
-            return mu_latent
+            return mu_latent, logvar_latent
         mu_x, logvar_x = self.decode(z) # q(x|z)
         if self.training:
             x_out = self.reparametrize(mu_x, logvar_x)
@@ -575,16 +575,16 @@ class LITcollVAE(pl.LightningModule):
         scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
         yaxis = (i+1) if (i+1) < latent_mu.shape[1] else 0
         
-        if True: ## To remove outliers
+        if False: ## To remove outliers
             for ind,point in enumerate(latent_mu):
                 if (point[0] < -20) or (point[1] < -20):
-                    print(f"Outlier point: {point[0]}.{point[1]} ind:{ind}, will not be plotted")
+                    print(f"\nOutlier point: {point[0]}.{point[1]} ind:{ind}, will not be plotted")
                     latent_mu = np.delete(latent_mu, [ind], axis=0)
                     latent_sd = np.delete(latent_sd, [ind], axis=0)
-                    train_y = torch.cat([train_y[:ind], train_y[ind+1:]])
+                    train_y = np.delete(train_y, [ind], axis=0)
         # print(latent_logvar)
                 
-        if False:
+        if True:
             ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], fmt='none', ecolor=scalarMap.to_rgba(train_y), alpha=0.3)
         else:
             ax.scatter(latent_mu[:, i], latent_mu[:, yaxis], c=scalarMap.to_rgba(train_y), label="Whole dataset", alpha=0.3)
