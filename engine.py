@@ -51,7 +51,7 @@ if (not args.online):
     overwrite = True
     odir = "run"
     nntype = "VAE"
-    nexp = 7
+    nexp = 1
     # Input directory and columns
     # data_dir = os.environ.get('DATA_DIR')
     data_dir = os.getcwd() + "/../.."
@@ -67,7 +67,7 @@ if (not args.online):
     output_to_file = False
     # Load pre-trained model
     load_state = True
-    state_file = os.getcwd() + "/run6/VAE_checkpoint"
+    state_file = data_folder + "/iter20/online_train1/VAE_checkpoint"
     # Train model
     hidden_nodes = "1000,500,100,10,2" # NN hidden layers
     train = False

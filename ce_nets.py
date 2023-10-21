@@ -558,11 +558,22 @@ class LITcollVAE(pl.LightningModule):
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         train_y = train_y.cpu().detach().numpy()
         
-        if latent_mu.shape[0] > 5000:
+        if True and latent_mu.shape[0] > 5000:
             index = np.random.choice(latent_mu.shape[0], 5000, replace=False)
             latent_mu = latent_mu[index]
             latent_logvar = latent_logvar[index]
             train_y = train_y[index]
+            
+        if False:
+            choices = train_y
+            latent_mu = latent_mu[choices > 0]
+            latent_logvar = latent_logvar[choices > 0]
+            train_y = train_y[choices > 0]
+            
+            choices = train_y
+            latent_mu = latent_mu[choices < 2.0]
+            latent_logvar = latent_logvar[choices < 2.0]
+            train_y = train_y[choices < 2.0]
         
         
         latent_sd = np.sqrt(np.exp(latent_logvar))
@@ -585,7 +596,7 @@ class LITcollVAE(pl.LightningModule):
         # print(latent_logvar)
                 
         if True:
-            ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], fmt='none', ecolor=scalarMap.to_rgba(train_y), alpha=0.3)
+            ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], fmt='none', ecolor=scalarMap.to_rgba(train_y), alpha=0.1)
         else:
             ax.scatter(latent_mu[:, i], latent_mu[:, yaxis], c=scalarMap.to_rgba(train_y), label="Whole dataset", alpha=0.3)
         ax.set_xlabel("h_{}".format(i))
