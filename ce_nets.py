@@ -413,7 +413,7 @@ class LITcollVAE(pl.LightningModule):
                         * (tru_x - mu_x) ** 2.0),
             axis=1
         )
-        return loss_rec
+        return loss_rec.nan_to_num(loss_rec, nan=0.0)
     
 
     def vae_loss(self, recon_x, tru_x, beta=1, **kwargs):
@@ -426,22 +426,11 @@ class LITcollVAE(pl.LightningModule):
         logvar_x = kwargs["logvar_x"]
 
         loss_rec = self.recon_loss_data(tru_x, mu_x, logvar_x)
+        # loss_rec = F.mse_loss(mu_x, tru_x, reduction='mean')
         KLD = beta * self.kld(mu_latent, logvar_latent)
         # print(KLD)
         # print(loss_rec)
         loss = torch.mean(loss_rec + KLD, dim=0) # mean of batch
-        return loss
-
-    def naive_vae_loss(self, recon_x, tru_x, beta=50, **kwargs):
-        mu_latent = kwargs["mu_latent"]
-        logvar_latent = kwargs["logvar_latent"]
-        mu_x = kwargs["mu_x"]
-        logvar_x = kwargs["logvar_x"]
-
-        loss_rec = F.mse_loss(mu_x, tru_x, reduction='mean')
-
-        KLD = beta * self.kld(mu_latent, logvar_latent)
-        loss = torch.mean(loss_rec + KLD, dim=0)
         return loss
 
     
@@ -482,7 +471,7 @@ class LITcollVAE(pl.LightningModule):
         result, meta = self(data)
         target = self.normalize(data)
         
-        loss = self.naive_vae_loss(result, target, **meta)
+        loss = self.vae_loss(result, target, **meta)
         
         self.step_loss_list.append(loss.item())
             
@@ -499,7 +488,7 @@ class LITcollVAE(pl.LightningModule):
         result, meta = self(data)
         target = self.normalize(data)
         
-        loss = self.naive_vae_loss(result, target, **meta)
+        loss = self.vae_loss(result, target, **meta)
         self.val_loss_list.append(loss)
         self.log('val_loss', loss.item(), prog_bar=True)
         return loss
