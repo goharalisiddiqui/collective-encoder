@@ -7,6 +7,7 @@ import torch
 import os
 import argparse
 
+
 from timeit import default_timer as timer
 import pytorch_lightning as pl
 
@@ -29,6 +30,7 @@ def parse_args():
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
     parser.add_argument('--labels', nargs='+', help='Labels to ignore in the input files. Used for visualisation')
     parser.add_argument('--gpu', action="store_true", help='Use gpu acceleration')
+    parser.add_argument('--beta', type=float, default=1.0, help='beta for the beta-VAE')
     
     args = parser.parse_args()
     if args.online:
@@ -53,28 +55,33 @@ if (not args.online):
     nntype = "VAE"
     nexp = 1
     # Input directory and columns
-    # data_dir = os.environ.get('DATA_DIR')
-    data_dir = os.getcwd() + "/../.."
+    data_dir = os.environ.get('DATA_DIR')
+    # data_dir = os.getcwd() + "/../.."
     # data_folder = f"{data_dir}/20221201_COLLECTIVE_ENCODER_TRAINING_DATA"
-    data_folder = f"{data_dir}/3.Ala2_2/enhanced_md"
+    data_folder = f"{data_dir}/20221016_COLLLECTIVE_ENCODER_TRAINING_DATA_OAH"
+    # data_folder = f"{data_dir}/3.Ala2_2/enhanced_md"
     ignore_list = ["#!", "FIELDS", "time"]
-    # label_list = ["phi", "psi"]
-    label_list = ["phi","psi"]
+    # label_list = ["dist_Au-K1.z"]
+    label_list = ["dist_hg.z"]
+    # label_list = ["phi","psi"]
 
     # Input standarization
     standardize_inputs = True # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
     # Output file
-    output_to_file = False
+    output_to_file = True
+    output_to_terminal = True
     # Load pre-trained model
-    load_state = True
+    load_state = False
     state_file = data_folder + "/iter20/online_train1/VAE_checkpoint"
     # Train model
     hidden_nodes = "1000,500,100,10,2" # NN hidden layers
-    train = False
-    num_epochs = 50
+    train = True
+    num_epochs = 10
     # Optimization
     lrate = 1e-4  # Learning rate
     l2_reg = 1e-7  # Regularization of network weights
+    # Hyperparameters
+    beta = 5.0
     # Save model
     save_model = False
     save_checkpoint = False
@@ -102,6 +109,7 @@ else:
     standardize_inputs = True # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
     # Output file
     output_to_file = True
+    output_to_terminal = False
     # Load pre-trained model
     load_state = False
     state_file = ""
@@ -112,6 +120,8 @@ else:
     # Optimization
     lrate = 1e-2  # Learning rate
     l2_reg = 1e-7  # Regularization of network weights
+    # Hyperparameters
+    beta = args.beta
     # Save model
     save_model = True
     save_checkpoint = True
@@ -159,12 +169,13 @@ if len(os. listdir("./"+odir_name)) != 0:
 ##################################
 if output_to_file:
     import sys
-    orig_stdout = sys.stdout
-    orig_stderr = sys.stderr
-    f = open("./"+odir_name+"/out.txt", 'w')
+    import subprocess
     print("Redirecting output to file ./"+odir_name+"/out.txt")
-    sys.stdout = f
-    sys.stderr = f
+    tee = subprocess.Popen(["tee", "./"+odir_name+"/out.txt"], stdin=subprocess.PIPE)
+    # Cause tee's stdin to get a copy of our stdin/stdout (as well as that
+    # of any child processes we spawn)
+    os.dup2(tee.stdin.fileno(), sys.stdout.fileno())
+    os.dup2(tee.stdin.fileno(), sys.stderr.fileno())
 
 
 print("Using Pytorch", torch.__version__)
@@ -175,7 +186,7 @@ print("Using Pytorch", torch.__version__)
 if args.online:
     infile = args.inputfile
 else:
-    infile = f"{data_folder}/INPUTS_COMM"
+    infile = f"{data_folder}/INPUTS"
 
 outname = odir_name+"/"+nntype+"_"
 
@@ -196,9 +207,9 @@ nodes = [int(x) for x in hidden_nodes.split(",")]
 nodes.insert(0, colvardata.num_inputs)
 
 if load_state:
-    model = main_nn.load_from_checkpoint(state_file, outname=outname)
+    model = main_nn.load_from_checkpoint(state_file, beta=beta, outname=outname)
 else:
-    model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, outname=outname)
+    model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, beta=beta, outname=outname)
 if standardize_inputs:  
     model.set_norm(torch.Tensor(colvardata.get_scaler_mean(), device=model.device),
                     torch.Tensor(colvardata.get_scaler_var(), device=model.device))
@@ -207,10 +218,11 @@ if standardize_inputs:
 ##################################
 # Training the NN
 ##################################
-if args.gpu:
+if (args.gpu or not args.online) and torch.cuda.is_available():
     print("GPU enabled")
     trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name, accelerator='gpu', devices=1)
 else:
+    print("NO GPU")
     trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name)
 if train:
     start = timer()
@@ -266,13 +278,3 @@ if save_checkpoint:
 
 
 
-
-
-##################################
-# Resetting stdout
-##################################
-
-if output_to_file:
-    sys.stdout = orig_stdout
-    sys.stderr = orig_stderr
-    f.close()

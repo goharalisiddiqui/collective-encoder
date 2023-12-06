@@ -256,7 +256,8 @@ class LITcollAE(pl.LightningModule):
 
 
 class LITcollVAE(pl.LightningModule):
-    def __init__(self, l:list, lr : float = 0.01, l2_reg : float = 1e-7, 
+    def __init__(self, l:list, lr : float = 0.01, l2_reg : float = 1e-7,
+                 beta : float = 1.0, 
                  outname : str = './LITcollVAE_untitled/LITcollVAE_'):
         super().__init__()
         assert len(l) >= 3
@@ -317,6 +318,7 @@ class LITcollVAE(pl.LightningModule):
         self.save_hyperparameters()
         
     def set_norm(self, Mean: torch.Tensor, Range: torch.Tensor):
+        Range[Range == 0.0] = 1.0
         self.normIn = True
         self.Mean = Mean
         self.Range = Range
@@ -393,6 +395,7 @@ class LITcollVAE(pl.LightningModule):
         # https://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
         # Second Gaussian is zero mean and variance of 1, the prior on z
         kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), axis=1) # sum for all the latent variables
+        # return torch.nan_to_num(kld, nan=0.0)
         return kld
 
 
@@ -409,14 +412,18 @@ class LITcollVAE(pl.LightningModule):
         loss_rec = -torch.mean(
             (-0.5 * torch.log(2 * TORCH_PI.to(mu_x.device)))
             + (-0.5 * logvar_x)
-            + ((-0.5 / (0.0005 + torch.exp(logvar_x)))
+            + ((-0.5 / (0.0 + torch.exp(logvar_x)))
                         * (tru_x - mu_x) ** 2.0),
             axis=1
         )
-        return loss_rec.nan_to_num(loss_rec, nan=0.0)
+        # filtered_loss = torch.nan_to_num(loss_rec)
+        # print(filtered_loss.isnan().any().detach().numpy())
+        # return filtered_loss
+        return torch.nan_to_num(loss_rec, nan=0.0)
+        # return loss_rec
     
 
-    def vae_loss(self, recon_x, tru_x, beta=1, **kwargs):
+    def vae_loss(self, recon_x, tru_x, **kwargs):
         # full vae loss for modeling a distributive latent space
         # AND a distributive reconstruction
         # correct formulation here:
@@ -424,13 +431,29 @@ class LITcollVAE(pl.LightningModule):
         logvar_latent = kwargs["logvar_latent"]
         mu_x = kwargs["mu_x"]
         logvar_x = kwargs["logvar_x"]
+        
 
         loss_rec = self.recon_loss_data(tru_x, mu_x, logvar_x)
         # loss_rec = F.mse_loss(mu_x, tru_x, reduction='mean')
-        KLD = beta * self.kld(mu_latent, logvar_latent)
+        KLD = self.hparams.beta * self.kld(mu_latent, logvar_latent)
         # print(KLD)
         # print(loss_rec)
+        # if loss_rec.isnan().any().detach().numpy():
+        #     print("loss_rec contains nan. Using mse for this batch")
+        #     loss_rec = F.mse_loss(mu_x, tru_x, reduction='mean')
+        #     # exit()
+        # if KLD.isnan().any().detach().numpy():
+        #     print("kld contains nan")
+        #     KLD = torch.nan_to_num(KLD, nan=0.0)
+            # exit()
         loss = torch.mean(loss_rec + KLD, dim=0) # mean of batch
+        if loss.isnan().any().detach().numpy():
+            print("loss contains nan")
+            # print(loss_rec.isnan().any().detach().numpy())
+            # print(KLD.isnan().any().detach().numpy())
+            # print(mu_x.isnan().any().detach().numpy())
+            # print(tru_x.isnan().any().detach().numpy())
+            exit()
         return loss
 
     
@@ -469,8 +492,11 @@ class LITcollVAE(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
         data = train_batch[0].float()
         result, meta = self(data)
+        # print("data: " + str(data.isnan().any().detach().numpy()))
+        # print("Mean: " + str(self.Mean))
+        # print("Range: " + str(self.Range))
         target = self.normalize(data)
-        
+        # print("target: " + str(target.isnan().any().detach().numpy()))
         loss = self.vae_loss(result, target, **meta)
         
         self.step_loss_list.append(loss.item())
@@ -584,7 +610,7 @@ class LITcollVAE(pl.LightningModule):
                     train_y = np.delete(train_y, [ind], axis=0)
         # print(latent_logvar)
                 
-        if True:
+        if False:
             ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], fmt='none', ecolor=scalarMap.to_rgba(train_y), alpha=0.1)
         else:
             ax.scatter(latent_mu[:, i], latent_mu[:, yaxis], c=scalarMap.to_rgba(train_y), label="Whole dataset", alpha=0.3)
