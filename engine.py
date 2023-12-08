@@ -230,7 +230,7 @@ if save_model:
             
     model.metaD = True
     # model.to_torchscript(file_path=f"{modelpath}/encoder.pt", method='trace', example_inputs=fake_input, strict=False)
-    torch.jit.save(model.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{odir}/{modelpath}/encoder.pt") 
+    torch.jit.save(model.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{odir_name}/{modelpath}/encoder.pt") 
     
     print(f"@@ model exported as: {modelpath}/encoder.pt")
 
