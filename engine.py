@@ -116,17 +116,17 @@ if not overwrite:
     while True:
         odir_name = odir+str(nexp)
         if not os.path.isdir(odir_name):
-            os.makedirs("./"+odir_name)
+            os.makedirs(odir_name)
             break
         nexp = nexp + 1
 else:
     if not os.path.isdir(odir_name):
-        os.mkdir("./"+odir_name)
+        os.mkdir(odir_name)
 
-if len(os. listdir("./"+odir_name)) != 0:
+if len(os. listdir(odir_name)) != 0:
     import shutil
-    shutil.rmtree("./"+odir_name, ignore_errors=True)
-    os.mkdir("./"+odir_name)
+    shutil.rmtree(odir_name, ignore_errors=True)
+    os.mkdir(odir_name)
 
 
 
@@ -136,8 +136,8 @@ if len(os. listdir("./"+odir_name)) != 0:
 if output_to_file:
     import sys
     import subprocess
-    print("Redirecting output to file ./"+odir_name+"/out.txt")
-    tee = subprocess.Popen(["tee", "./"+odir_name+"/out.txt"], stdin=subprocess.PIPE)
+    print("Redirecting output to file "+odir_name+"/out.txt")
+    tee = subprocess.Popen(["tee", odir_name+"/out.txt"], stdin=subprocess.PIPE)
     # Cause tee's stdin to get a copy of our stdin/stdout (as well as that
     # of any child processes we spawn)
     os.dup2(tee.stdin.fileno(), sys.stdout.fileno())
@@ -183,10 +183,10 @@ if standardize_inputs:
 ##################################
 if args.gpu and torch.cuda.is_available():
     print("GPU enabled")
-    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name, accelerator='gpu', devices=1)
+    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir=odir_name, accelerator='gpu', devices=1)
 else:
     print("NO GPU")
-    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name)
+    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir=odir_name)
 if train:
     start = timer()
     
@@ -230,7 +230,7 @@ if save_model:
             
     model.metaD = True
     # model.to_torchscript(file_path=f"{modelpath}/encoder.pt", method='trace', example_inputs=fake_input, strict=False)
-    torch.jit.save(model.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{outname}{modelpath}/encoder.pt") 
+    torch.jit.save(model.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{odir}/{modelpath}/encoder.pt") 
     
     print(f"@@ model exported as: {modelpath}/encoder.pt")
 
