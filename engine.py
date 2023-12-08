@@ -16,26 +16,42 @@ np.random.seed(0)
 
 
 ##################################
-# Arguments used for online training during metad
+# Arguments
 ##################################
 def parse_args():
     desc = "Autoencoder neural network for enhanced sampling MD"
     parser = argparse.ArgumentParser(description=desc)
 
-    parser.add_argument('--online', action='store_true', help='Is the script being used as part of online training during metaD.')
     
-    parser.add_argument('--inputfile', type=str, help='Input file for online training')
-    parser.add_argument('--outpath', type=str, help='Output folder for saving the training output')
+    
+    parser.add_argument('--inputfile', type=str, help='Input file for training')
+    parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
+    
+    
     parser.add_argument('--modelpath', type=str, help='Output folder for saving the model')
-    parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
+    parser.add_argument('--save_model', action="store_true", help='Save Model')
+    
+    parser.add_argument('--load_model', action="store_true", help='Save Model')
+    parser.add_argument('--modelfile', type=str, help='From where to load the model')
+    
+    
     parser.add_argument('--labels', nargs='+', help='Labels to ignore in the input files. Used for visualisation')
     parser.add_argument('--gpu', action="store_true", help='Use gpu acceleration')
+    parser.add_argument('--overwrite', action="store_true", help='Overwrite output folder')
+    parser.add_argument('--normalize', action="store_true", help='Normalize input or not')
+    parser.add_argument('--output_to_file', action="store_true", help='Also store output in a file')
+   
     parser.add_argument('--beta', type=float, default=1.0, help='beta for the beta-VAE')
+    parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
+    parser.add_argument('--l2norm', type=float, default=1e-7, help='Weights regularization for the training')
     
+    
+    parser.add_argument('--network', type=str, default= '1000,500,100,10,2', help='Architecture of the Autoencoder')
+    parser.add_argument('--networktype', type=str, default='VAE', help='Type of the Autoencoder')
+    parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
+    
+    parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
     args = parser.parse_args()
-    if args.online:
-        if (args.inputfile is None or args.outpath is None or args.modelpath is None):
-            parser.error("--online requires --inputfile, --outpath and --modelpath")
     
     return args
     
@@ -44,87 +60,37 @@ args = parse_args()
 
 start = timer()
 
-
-if (not args.online):
-    ##################################
-    # Run Settings
-    ##################################
-    # Output directory
-    overwrite = True
-    odir = "run"
-    nntype = "VAE"
-    nexp = 1
-    # Input directory and columns
-    data_dir = os.environ.get('DATA_DIR')
-    # data_dir = os.getcwd() + "/../.."
-    # data_folder = f"{data_dir}/20221201_COLLECTIVE_ENCODER_TRAINING_DATA"
-    data_folder = f"{data_dir}/20221016_COLLLECTIVE_ENCODER_TRAINING_DATA_OAH"
-    # data_folder = f"{data_dir}/3.Ala2_2/enhanced_md"
-    ignore_list = ["#!", "FIELDS", "time"]
-    # label_list = ["dist_Au-K1.z"]
-    label_list = ["dist_hg.z"]
-    # label_list = ["phi","psi"]
-
-    # Input standarization
-    standardize_inputs = True # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
-    # Output file
-    output_to_file = True
-    output_to_terminal = True
-    # Load pre-trained model
-    load_state = False
-    state_file = data_folder + "/iter20/online_train1/VAE_checkpoint"
-    # Train model
-    hidden_nodes = "1000,500,100,10,2" # NN hidden layers
-    train = True
-    num_epochs = 10
-    # Optimization
-    lrate = 1e-4  # Learning rate
-    l2_reg = 1e-7  # Regularization of network weights
-    # Hyperparameters
-    beta = 5.0
-    # Save model
-    save_model = False
-    save_checkpoint = False
-    ##################################
-    # Some safety checks
-    ##################################
-    if odir == "train":
-        overwrite = False
-        output_to_file = True
-        save_checkpoint = True
-        train = True
-else:
-    overwrite = False
-    odir = args.outpath + "/online_train"
-    nntype = "VAE"
-    nexp = 1
-    # Input directory and columns
-    # data_folder = args.inputfile
-    ignore_list = ["#!", "FIELDS", "time"]
-    # label_list = ["phi", "psi"]
-    # label_list = ["dist_Au-K1"]
-    label_list = args.labels
-    # label_list = [label for label in args.labels.split(',')]
-    # Input standarization
-    standardize_inputs = True # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
-    # Output file
-    output_to_file = True
-    output_to_terminal = False
-    # Load pre-trained model
-    load_state = False
-    state_file = ""
-    # Train model
-    hidden_nodes = "1000,500,100,10,2" # NN hidden layers
-    train = True
-    num_epochs = args.nepochs
-    # Optimization
-    lrate = 1e-2  # Learning rate
-    l2_reg = 1e-7  # Regularization of network weights
-    # Hyperparameters
-    beta = args.beta
-    # Save model
-    save_model = True
-    save_checkpoint = True
+overwrite = args.overwrite
+odir = args.outpath + "/ce_training_"
+nntype = args.networktype
+nexp = 1
+# Input directory and columns
+# data_folder = args.inputfile
+ignore_list = ["#!", "FIELDS", "time"]
+# label_list = ["phi", "psi"]
+# label_list = ["dist_Au-K1"]
+label_list = args.labels
+# label_list = [label for label in args.labels.split(',')]
+# Input standarization
+standardize_inputs = args.normalize # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
+# Output file
+output_to_file = args.output_to_file
+output_to_terminal = True
+# Load pre-trained model
+load_state = args.load_model
+state_file = args.modelfile
+# Train model
+hidden_nodes = args.network # NN hidden layers
+num_epochs = args.nepochs
+train = True if num_epochs > 0 else False
+# Optimization
+lrate = args.lrate  # Learning rate
+l2_reg = args.l2norm  # Regularization of network weights
+# Hyperparameters
+beta = args.beta
+# Save model
+save_model = args.save_model
+save_checkpoint = args.save_checkpoint
     
 
 
@@ -183,10 +149,7 @@ print("Using Pytorch", torch.__version__)
 ##################################
 # Creating Dataset
 ##################################
-if args.online:
-    infile = args.inputfile
-else:
-    infile = f"{data_folder}/INPUTS"
+infile = args.inputfile
 
 outname = odir_name+"/"+nntype+"_"
 
@@ -218,7 +181,7 @@ if standardize_inputs:
 ##################################
 # Training the NN
 ##################################
-if (args.gpu or not args.online) and torch.cuda.is_available():
+if args.gpu and torch.cuda.is_available():
     print("GPU enabled")
     trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir="./"+odir_name, accelerator='gpu', devices=1)
 else:
@@ -267,7 +230,7 @@ if save_model:
             
     model.metaD = True
     # model.to_torchscript(file_path=f"{modelpath}/encoder.pt", method='trace', example_inputs=fake_input, strict=False)
-    torch.jit.save(model.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{modelpath}/encoder.pt") 
+    torch.jit.save(model.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{outname}{modelpath}/encoder.pt") 
     
     print(f"@@ model exported as: {modelpath}/encoder.pt")
 

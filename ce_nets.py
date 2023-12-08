@@ -412,7 +412,7 @@ class LITcollVAE(pl.LightningModule):
         loss_rec = -torch.mean(
             (-0.5 * torch.log(2 * TORCH_PI.to(mu_x.device)))
             + (-0.5 * logvar_x)
-            + ((-0.5 / (0.0 + torch.exp(logvar_x)))
+            + ((-0.5 / (1e-12 + torch.exp(logvar_x)))
                         * (tru_x - mu_x) ** 2.0),
             axis=1
         )

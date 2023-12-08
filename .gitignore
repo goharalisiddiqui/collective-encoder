@@ -1,9 +1,6 @@
 __pycache__/
 *checkpoint*
 core
-AE/train*
-AE/run*
-VAE/train*
-VAE/run*
 run*/
 *train*/
+ce_training*/
