@@ -458,7 +458,7 @@ class LITcollVAE(pl.LightningModule):
 
     
     # def configure_optimizers(self):
-    #     optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
+    #     optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
     #     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
     #                                                    factor=0.7, patience=10,
     #                                                    min_lr=0.0000001)
@@ -482,6 +482,8 @@ class LITcollVAE(pl.LightningModule):
         print("[Optimization Settings]")
         print("- Learning rate \t=", self.hparams.lr)
         print("- l2 regularization \t=", self.hparams.l2_reg)
+        print("[Hyperparameters]")
+        print("- Beta \t=", self.hparams.beta)
         print("==================================\n\n")
         
         
