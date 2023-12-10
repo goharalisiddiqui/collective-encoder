@@ -447,7 +447,7 @@ class LITcollVAE(pl.LightningModule):
         #     KLD = torch.nan_to_num(KLD, nan=0.0)
             # exit()
         loss = torch.mean(loss_rec + KLD, dim=0) # mean of batch
-        if loss.isnan().any().detach().numpy():
+        if loss.isnan().any().detach().cpu().numpy():
             print("loss contains nan")
             # print(loss_rec.isnan().any().detach().numpy())
             # print(KLD.isnan().any().detach().numpy())
