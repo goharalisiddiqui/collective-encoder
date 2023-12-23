@@ -26,6 +26,7 @@ def parse_args():
     
     parser.add_argument('--inputfile', type=str, help='Input file for training')
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
+    parser.add_argument('--nexp', required=False, default=1, type=int, help='Experiment number for output names')
     
     
     parser.add_argument('--modelpath', type=str, help='Output folder for saving the model')
@@ -64,7 +65,7 @@ start = timer()
 overwrite = args.overwrite
 odir = args.outpath + "/ce_training_"
 nntype = args.networktype
-nexp = 1
+nexp = args.nexp
 # Input directory and columns
 # data_folder = args.inputfile
 ignore_list = ["#!", "FIELDS", "time"]
@@ -205,7 +206,7 @@ if not train and not load_state:
 ##################################
 # Analysing a loaded model
 ##################################
-
+model.get_fve(colvardata)
 
 
 
