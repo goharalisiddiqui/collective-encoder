@@ -31,6 +31,8 @@ def parse_args():
     parser.add_argument('--modelpath', type=str, help='Output folder for saving the model')
     parser.add_argument('--save_model', action="store_true", help='Save Model')
     
+    parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
+    
     parser.add_argument('--load_model', action="store_true", help='Save Model')
     parser.add_argument('--modelfile', type=str, help='From where to load the model')
     
@@ -50,7 +52,6 @@ def parse_args():
     parser.add_argument('--networktype', type=str, default='VAE', help='Type of the Autoencoder')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
     
-    parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
     args = parser.parse_args()
     
     return args
@@ -170,7 +171,7 @@ nodes = [int(x) for x in hidden_nodes.split(",")]
 nodes.insert(0, colvardata.num_inputs)
 
 if load_state:
-    model = main_nn.load_from_checkpoint(state_file, beta=beta, outname=outname)
+    model = main_nn.load_from_checkpoint(state_file, beta=beta, lr=lrate, l2_reg=l2_reg, outname=outname)
 else:
     model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, beta=beta, outname=outname)
 if standardize_inputs:  

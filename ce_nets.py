@@ -457,23 +457,22 @@ class LITcollVAE(pl.LightningModule):
         return loss
 
     
-    # def configure_optimizers(self):
-    #     optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
-    #     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-    #                                                    factor=0.7, patience=10,
-    #                                                    min_lr=0.0000001)
-    #     return {
-    #         "optimizer": optimizer,
-    #         "lr_scheduler": {
-    #             "scheduler": scheduler,
-    #             "monitor": "val_error",
-    #             "frequency": 1,
-    #         }
-    #     }
-    
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
-        return optimizer
+        if False:
+            return optimizer
+        
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
+                                                       factor=0.7, patience=10,
+                                                       min_lr=0.0000001)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+                "frequency": 1,
+            }
+        }
     
     def on_train_start(self):
         print("\n\n==================================")
@@ -536,7 +535,7 @@ class LITcollVAE(pl.LightningModule):
         
         
         
-        fig, axes = plt.subplots(n_hidden if n_hidden > 2 else 1, n_labels + 1, squeeze=False,figsize=(13, 5))
+        fig, axes = plt.subplots(n_hidden if n_hidden > 2 else 1, n_labels + 1, squeeze=False,figsize=(13, 5 * (n_hidden - 1)))
         
         self.plot_training(axes[0][0])
         for i in range(0, axes.shape[0]):
