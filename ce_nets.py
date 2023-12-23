@@ -551,6 +551,29 @@ class LITcollVAE(pl.LightningModule):
         # self.plot_latent_surface(fig, axes[0][0], train_x, train_y, 0)
     
         return None
+    
+    def get_fve(self, datamodule):
+        dl = datamodule.test_dataloader()
+        flag = self.training
+        self.training = False
+        with torch.no_grad():
+            data = next(iter(dl))[0].float()
+            output,_ = self(data)
+            ss_err = torch.sum(torch.pow(torch.sub(data, output), 2), dim=0)
+            meann = torch.mean(data, dim=0, keepdim=True)
+            ss_tot = torch.sum(torch.pow(torch.sub(data, meann), 2), dim=0)
+            fve = 1 - torch.div(ss_err, ss_tot)
+            fve_mean = torch.mean(fve).detach().cpu().numpy()
+        print("\n\n=======================================")
+        print("Fraction of Variation Explined (FVE)")
+        print("=======================================")
+        print("FVE = ", fve_mean)
+        # print("SS_err = ", ss_err)
+        # print("SS_tot = ", ss_tot)
+        # print("meann = ", meann)
+        print("=======================================\n\n")
+        self.training = flag
+        return fve_mean
 
 
     def plot_training(self, ax):
