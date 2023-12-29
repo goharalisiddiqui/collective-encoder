@@ -46,14 +46,14 @@ fi
 
 srun python engine.py    \
                     --inputfile $DATA_DIR/20221016_COLLLECTIVE_ENCODER_TRAINING_DATA_OAH/INPUTS \
-                    --outpath . \
+                    --outpath ./saved_runs \
                     --modelpath . \
                     --save_model \
                     --nepochs 500 \
                     --labels "dist_hg.z" \
                     --output_to_file \
                     --gpu \
-                    --network "1000,500,100,50,20" \
+                    --network "1000,500,100,10,2" \
                     --normalize \
                     --beta=1.5 \
                     --lrate=0.001

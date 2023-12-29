@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch.autograd import Variable
-from torch.distributions.normal import Normal
 torch.manual_seed(0)
 TORCH_PI = torch.acos(torch.zeros(1))*2
 
@@ -20,14 +19,12 @@ from statistics import mean as list_mean
 from scipy.stats import multivariate_normal
 
 
-class LITcollVAE(pl.LightningModule):
+class LITcollVAESimple(pl.LightningModule):
     def __init__(self, 
                  l:list, 
                  lr : float = 0.01, 
                  l2_reg : float = 1e-7,
                  beta : float = 1.0,
-                 loss_type : str = 'elbo_full',
-                 n_samples : int = 10,
                  outname : str = './LITcollVAE_untitled/LITcollVAE_'):
         super().__init__()
         assert len(l) >= 3
@@ -65,12 +62,9 @@ class LITcollVAE(pl.LightningModule):
             decoder_layers.append(nn.BatchNorm1d(l[a - i - 1]))
             print("(batch_normalization layer)")
         self.decoder_hidden = nn.Sequential(*decoder_layers)
-        self.decoder_mu = nn.Linear(l[1], l[0])
+        self.decoder_output = nn.Linear(l[1], l[0])
         print(l[1], " --> ", l[0], end=" ")
-        print("(mu for feature space)")
-        self.decoder_logvar = nn.Linear(l[1], l[0])
-        print( "  ", " \--> ", l[0], end=" ")
-        print("(logvar for feature space)\n\n")
+        print("(feature space)")
         print("======================")
         
         # Model meta info
@@ -120,15 +114,8 @@ class LITcollVAE(pl.LightningModule):
         Range = self.Range.unsqueeze(0).expand(batch_size, x_size)
 
         return x.mul(Range).add(Mean)
-    
-    def encode(self, x):
-        m, l = self.encode_(x)
-        if self.training:
-            return self.reparametrize(m, l)
-        else:
-            return m
         
-    def encode_(self, x):
+    def encode(self, x):
         if self.normIn:
             x = self.normalize(x)
         x = self.encoder_hidden(x)
@@ -149,22 +136,17 @@ class LITcollVAE(pl.LightningModule):
         return mu, logvar
 
     def forward(self, x):
-        mu_latent, logvar_latent = self.encode_(x) # p(z|x)
+        mu_latent, logvar_latent = self.encode(x) # p(z|x)
+        if self.metaD:
+            return mu_latent, logvar_latent
         if self.training:
             z = self.reparametrize(mu_latent, logvar_latent)
         else:
             z = mu_latent
-
-        if self.metaD:
-            return mu_latent, logvar_latent
-        mu_x, logvar_x = self.decode(z) # q(x|z)
-        if self.training:
-            x_out = self.reparametrize(mu_x, logvar_x)
-        else:
-            x_out = mu_x
         
-        return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent,
-                       "mu_x" : mu_x, "logvar_x" : logvar_x}
+        x_out = self.decode(z)
+        
+        return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent}
         
         
     def kld(self, mu, logvar): 
@@ -172,97 +154,30 @@ class LITcollVAE(pl.LightningModule):
         # https://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
         # Second Gaussian is zero mean and variance of 1, the prior on z
         kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), axis=1) # sum for all the latent variables
-        return torch.nan_to_num(kld, nan=0.0)
-        # return kld
+        # return torch.nan_to_num(kld, nan=0.0)
+        return kld
 
 
-    # def ortho_loss(self, recon_x, tru_x, **kwargs):
-    #     latent = kwargs["latent"]
 
-    def recon_loss(self, tru_x, mu_z, logvar_z):
-        ## Basically only calculates log p(x|z) for one value of z taken from q(z|x) in the forward function of the model instead of calculating an expectation value
-        # Sum on all the input distances
-        mu_z_n = mu_z.unsqueeze(0).expand(self.hparams.n_samples, -1, -1)
-        logvar_z_n = logvar_z.unsqueeze(0).expand(self.hparams.n_samples, -1, -1)
-        z = self.reparametrize(mu_z_n, logvar_z_n)
-        
-        loss_rec_n = torch.zeros(z.size(dim=0), z.size(dim=1), device=z.device)
-        for i in range(self.hparams.n_samples):
-            mu_x, logvar_x = self.decode(z[i])
-            p_x = Normal(mu_x, torch.exp(logvar_x))
-            p_x.log_prob(tru_x)
-            loss_rec = -torch.mean(p_x.log_prob(tru_x), axis=1)
-            # loss_rec = -torch.mean(
-            #     (-0.5 * torch.log(2 * TORCH_PI.to(mu_x.device)))
-            #     + (-0.5 * logvar_x)
-            #     + ((-0.5 / (1e-8 + torch.exp(logvar_x)))
-            #                 * (tru_x - mu_x) ** 2.0),
-            #     axis=1
-            # )
-            loss_rec_n[i] = loss_rec
-        loss_rec = torch.mean(loss_rec_n, dim=0)
-        
-        # filtered_loss = torch.nan_to_num(loss_rec)
-        # print(filtered_loss.isnan().any().detach().numpy())
-        # return filtered_loss
-        # return torch.nan_to_num(loss_rec, nan=0.0)
-        return loss_rec
-    
-    def recon_loss_single(self, tru_x, mu_x, logvar_x):
-        ## Basically only calculates log p(x|z) for one value of z taken from q(z|x) in the forward function of the model instead of calculating an expectation value
-        # Sum on all the input distances
-        p_x = Normal(mu_x, torch.exp(logvar_x))
-        p_x.log_prob(tru_x)
-        loss_rec = -torch.mean(p_x.log_prob(tru_x), axis=1)
-
-        # loss_rec = -torch.mean(
-        #         (-0.5 * torch.log(2 * TORCH_PI.to(mu_x.device)))
-        #         + (-0.5 * logvar_x)
-        #         + ((-0.5 / (1e-12 + torch.exp(logvar_x)))
-        #                     * (tru_x - mu_x) ** 2.0),
-        #         axis=1
-        #     )
-        
-        return loss_rec
     
 
     def vae_loss(self, recon_x, tru_x, **kwargs):
         mu_latent = kwargs["mu_latent"]
         logvar_latent = kwargs["logvar_latent"]
-        mu_x = kwargs["mu_x"]
-        logvar_x = kwargs["logvar_x"]
         
-        if self.hparams.loss_type == 'elbo_full': # samples q(z|x) n_samples time and calculate a mean of log p(x|z)
-            loss_rec = self.recon_loss(tru_x, mu_latent, logvar_latent)
-        elif self.hparams.loss_type == 'elbo_single': # samples q(z|x) only one time and calculate only on value of log p(x|z)
-            loss_rec = self.recon_loss_single(tru_x, mu_x, logvar_x)
-        elif self.hparams.loss_type == 'mse':
-            loss_rec = F.mse_loss(mu_x, tru_x, reduction='mean')
-        else:
-            print("Unrecognized loss_type used in VAE model")
-            exit()
+        loss_rec = F.mse_loss(recon_x, tru_x, reduction='mean')
         loss_reg = self.kld(mu_latent, logvar_latent)
+        
         KLD = self.hparams.beta * loss_reg
-        # print(KLD)
-        # print(loss_rec)
-        # if loss_rec.isnan().any().detach().numpy():
-        #     print("loss_rec contains nan. Using mse for this batch")
-        #     loss_rec = F.mse_loss(mu_x, tru_x, reduction='mean')
-        #     # exit()
-        # if KLD.isnan().any().detach().numpy():
-        #     print("kld contains nan")
-        #     KLD = torch.nan_to_num(KLD, nan=0.0)
-            # exit()
+        
         loss = torch.mean(loss_rec + KLD, dim=0) # mean of batch
         
+        if loss.isnan().any().detach().cpu().numpy():
+            print("loss contains nan. Can't continue")
+            exit()
+            
         loss_rec = torch.mean(loss_rec, dim = 0)
         loss_reg = torch.mean(loss_reg, dim = 0)
-        if loss_rec.isnan().any().detach().cpu().numpy():
-            print("loss_rec contains nan. Can't continue")
-            exit()
-        if loss_reg.isnan().any().detach().cpu().numpy():
-            print("loss_reg contains nan. Can't continue")
-            exit()
         return loss, loss_rec, loss_reg
 
     
@@ -464,7 +379,7 @@ class LITcollVAE(pl.LightningModule):
     def plot_latent(self, fig, ax, train_x, train_y, i, j):
         ax.set_title("collenVAE Latent-space-"+str(i))
         
-        latent_mu, latent_logvar = self.encode_(train_x)
+        latent_mu, latent_logvar = self.encode(train_x)
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         train_y = train_y.cpu().detach().numpy()
         
@@ -523,7 +438,7 @@ class LITcollVAE(pl.LightningModule):
     def plot_latent_surface(self, fig, ax, train_x, train_y, i):
         ax.set_title("LITcollVAE Latent-population-"+str(i))
         
-        latent_mu, latent_logvar = self.encode_(train_x)
+        latent_mu, latent_logvar = self.encode(train_x)
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         
         latent_sd = np.sqrt(np.exp(latent_logvar))
