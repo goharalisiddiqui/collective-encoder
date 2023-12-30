@@ -49,12 +49,12 @@ srun python engine.py    \
                     --outpath ./saved_runs \
                     --modelpath . \
                     --save_model \
-                    --nepochs 500 \
+                    --nepochs 5000 \
                     --labels "dist_hg.z" \
                     --output_to_file \
                     --gpu \
-                    --network "1000,500,100,10,2" \
+                    --network "1000,500,100,50,20" \
                     --normalize \
                     --beta=1.5 \
-                    --lrate=0.001
+                    --lrate=0.00001
 

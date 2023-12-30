@@ -128,12 +128,10 @@ class LITcollVAESimple(pl.LightningModule):
         eps = torch.randn_like(std)
         return mu + eps*std
 
-    def decode(self, x):
-        # x = x.to(device)
-        x = self.decoder_hidden(x)
-        mu = self.decoder_mu(x)
-        logvar = self.decoder_logvar(x)
-        return mu, logvar
+    def decode(self, z):
+        z = self.decoder_hidden(z)
+        x_out = self.decoder_output(z)
+        return x_out
 
     def forward(self, x):
         mu_latent, logvar_latent = self.encode(x) # p(z|x)
@@ -187,8 +185,9 @@ class LITcollVAESimple(pl.LightningModule):
             return optimizer
         
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                                       factor=0.5, patience=10,
-                                                       min_lr=0.0000001,
+                                                       factor=0.8, patience=20,
+                                                       min_lr=1e-10,
+                                                       cooldown = 50
                                                        verbose =True)
         return {
             "optimizer": optimizer,
@@ -210,19 +209,11 @@ class LITcollVAESimple(pl.LightningModule):
         print("- Beta \t=", self.hparams.beta)
         print("==================================\n\n")
         
-        
-
-        # print("[{:>3}/{:>3}] {:>10}".format("ep", "tot", "train_loss",  "val_loss"))
-    
     
     def training_step(self, train_batch, batch_idx):
         data = train_batch[0].float()
         result, meta = self(data)
-        # print("data: " + str(data.isnan().any().detach().numpy()))
-        # print("Mean: " + str(self.Mean))
-        # print("Range: " + str(self.Range))
         target = self.normalize(data)
-        # print("target: " + str(target.isnan().any().detach().numpy()))
         loss, rec_loss, reg_loss = self.vae_loss(result, target, **meta)
         
         
@@ -230,8 +221,6 @@ class LITcollVAESimple(pl.LightningModule):
         self.step_rec_loss_list.append(rec_loss.item())
         self.step_reg_loss_list.append(reg_loss.item())
             
-        # print(f"\nbatch_id={batch_idx}, loss_list_size={len(self.train_loss_list)}")
-        # self.log('train_loss', loss.item(), prog_bar=True)
         return loss
 
     def on_train_epoch_end(self):
@@ -277,8 +266,6 @@ class LITcollVAESimple(pl.LightningModule):
         
 
     def test_step(self, test_batch, batch_idx):
-
-        
         train_x, train_y = test_batch[0].float(), test_batch[1].float()
         self.plot_all(train_x, train_y)
         
