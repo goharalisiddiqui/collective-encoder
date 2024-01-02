@@ -25,12 +25,12 @@ class LITcollVAESimple(pl.LightningModule):
                  lr : float = 0.01, 
                  l2_reg : float = 1e-7,
                  beta : float = 1.0,
-                 outname : str = './LITcollVAE_untitled/LITcollVAE_'):
+                 outname : str = './LITcollVAESimple_untitled/LITcollVAESimple_'):
         super().__init__()
         assert len(l) >= 3
         
         #### Setting up the layers of the netwrok ####
-        print("[Initializing LITcollVAE Module]")
+        print("[Initializing LITcollVAESimple Module]")
         print("- hidden layers:", l)
         print("")
         print("========= NN =========")
@@ -185,9 +185,9 @@ class LITcollVAESimple(pl.LightningModule):
             return optimizer
         
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                                       factor=0.8, patience=20,
+                                                       factor=0.8, patience=10,
                                                        min_lr=1e-10,
-                                                       cooldown = 50
+                                                       cooldown = 30,
                                                        verbose =True)
         return {
             "optimizer": optimizer,
@@ -200,7 +200,7 @@ class LITcollVAESimple(pl.LightningModule):
     
     def on_train_start(self):
         print("\n\n==================================")
-        print("Starting training LITcollVAE module")
+        print("Starting training LITcollVAESimple module")
         print("==================================")
         print("[Optimization Settings]")
         print("- Learning rate \t=", self.hparams.lr)
@@ -252,18 +252,14 @@ class LITcollVAESimple(pl.LightningModule):
         if len(self.train_reg_loss_list) > 0:
             return self.train_reg_loss_list[-1]
         else:
-            return 0
+            return 0.0
     
     def get_rec_loss(self):
         if len(self.train_rec_loss_list) > 0:
             return self.train_rec_loss_list[-1]
         else:
-            return 0
+            return 0.0
 
-    # def on_validation_epoch_end(self):
-    #     if (len(train_loss_list)) % self.print_loss == 0:
-    #         print("[{:3d}/{:3d}] {:10.3f} {:10.3f}".format(len(self.train_loss_list),self.max_epochs, train_loss_list[-1], val_loss_list[-1]))
-        
 
     def test_step(self, test_batch, batch_idx):
         train_x, train_y = test_batch[0].float(), test_batch[1].float()
@@ -278,10 +274,11 @@ class LITcollVAESimple(pl.LightningModule):
         with torch.no_grad():
             data = next(iter(dl))[0].float()
             output,_ = self(data)
-            sub = torch.sub(data, output)
+            target = self.normalize(data)
+            sub = torch.sub(target, output)
             ss_err = torch.sum(torch.pow(sub, 2), dim=0)
-            meann = torch.mean(data, dim=0, keepdim=True)
-            sub_meann = torch.sub(data, meann)
+            meann = torch.mean(target, dim=0, keepdim=True)
+            sub_meann = torch.sub(target, meann)
             ss_tot = torch.sum(torch.pow(sub_meann, 2), dim=0)
             fve = 1 - torch.div(ss_err, ss_tot)
             fve_mean = torch.mean(fve).detach().cpu().numpy() # This calculates FVE for each input dim and mean it

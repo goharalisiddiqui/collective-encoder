@@ -150,14 +150,21 @@ class LITcollVAE(pl.LightningModule):
 
     def forward(self, x):
         mu_latent, logvar_latent = self.encode_(x) # p(z|x)
+        if mu_latent.isnan().any().detach().cpu().numpy() or logvar_latent.isnan().any().detach().cpu().numpy():
+            print("Nan in encoder network (Gradient diminished or exploded). Can't continue")
+            print(mu_latent)
+            print(logvar_latent)
+            exit()
+        if self.metaD:
+            return mu_latent, logvar_latent
         if self.training:
             z = self.reparametrize(mu_latent, logvar_latent)
         else:
             z = mu_latent
-
-        if self.metaD:
-            return mu_latent, logvar_latent
         mu_x, logvar_x = self.decode(z) # q(x|z)
+        if mu_x.isnan().any().detach().cpu().numpy() or logvar_x.isnan().any().detach().cpu().numpy():
+            print("Nan in decoder network (Gradient diminished or exploded). Can't continue")
+            exit()
         if self.training:
             x_out = self.reparametrize(mu_x, logvar_x)
         else:
@@ -272,8 +279,9 @@ class LITcollVAE(pl.LightningModule):
             return optimizer
         
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                                       factor=0.5, patience=10,
-                                                       min_lr=0.0000001,
+                                                       factor=0.8, patience=50,
+                                                       min_lr=1e-12,
+                                                       cooldown=100,
                                                        verbose =True)
         return {
             "optimizer": optimizer,
@@ -376,10 +384,11 @@ class LITcollVAE(pl.LightningModule):
         with torch.no_grad():
             data = next(iter(dl))[0].float()
             output,_ = self(data)
-            sub = torch.sub(data, output)
+            target = self.normalize(data)
+            sub = torch.sub(target, output)
             ss_err = torch.sum(torch.pow(sub, 2), dim=0)
-            meann = torch.mean(data, dim=0, keepdim=True)
-            sub_meann = torch.sub(data, meann)
+            meann = torch.mean(target, dim=0, keepdim=True)
+            sub_meann = torch.sub(target, meann)
             ss_tot = torch.sum(torch.pow(sub_meann, 2), dim=0)
             fve = 1 - torch.div(ss_err, ss_tot)
             fve_mean = torch.mean(fve).detach().cpu().numpy() # This calculates FVE for each input dim and mean it

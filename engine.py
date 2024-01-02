@@ -26,6 +26,7 @@ def parse_args():
     
     parser.add_argument('--inputfile', type=str, help='Input file for training')
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
+    parser.add_argument('--outfolder', type=str, default='ce_training', help='Stem of the folder name to save the output')
     parser.add_argument('--nexp', required=False, default=1, type=int, help='Experiment number for output names')
     
     
@@ -46,7 +47,7 @@ def parse_args():
    
     parser.add_argument('--beta', type=float, default=1.0, help='beta for the beta-VAE')
     parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
-    parser.add_argument('--l2norm', type=float, default=1e-7, help='Weights regularization for the training')
+    parser.add_argument('--l2norm', type=float, default=1e-3, help='Weights regularization for the training')
     
     
     parser.add_argument('--network', type=str, default= '1000,500,100,10,2', help='Architecture of the Autoencoder')
@@ -63,7 +64,7 @@ args = parse_args()
 start = timer()
 
 overwrite = args.overwrite
-odir = args.outpath + "/ce_training_"
+odir = args.outpath + "/" + args.outfolder + "_"
 nntype = args.networktype
 nexp = args.nexp
 # Input directory and columns
@@ -103,7 +104,10 @@ save_checkpoint = args.save_checkpoint
 # Importing Lightning Modules
 ##################################
 #import AE_nn
-from ce_nets import LITcollVAE as main_nn
+if nntype == 'VAE':
+    from ce_nets import LITcollVAE as main_nn
+elif nntype == 'VAESimple':
+    from ce_nets import LITcollVAESimple as main_nn
 from ce_dataloaders import LITColvarData as main_dl
 
 
@@ -188,10 +192,10 @@ if args.gpu and torch.cuda.is_available():
     trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir=odir_name, accelerator='gpu', devices=1)
 else:
     print("NO GPU")
-    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir=odir_name)
+    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir=odir_name, auto_lr_find=True)
 if train:
     start = timer()
-    
+    # trainer.tune(model, datamodule=colvardata) # To auto find the lr
     trainer.fit(model, datamodule=colvardata)
 
     end = timer()

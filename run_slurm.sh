@@ -49,12 +49,15 @@ srun python engine.py    \
                     --outpath ./saved_runs \
                     --modelpath . \
                     --save_model \
+                    --save_checkpoint \
                     --nepochs 5000 \
                     --labels "dist_hg.z" \
                     --output_to_file \
                     --gpu \
-                    --network "1000,500,100,50,20" \
+                    --networktype 'VAESimple' \
+                    --outfolder 'VAESimple_Short_ld10_5000' \
+                    --network "1500,10" \
                     --normalize \
-                    --beta=1.5 \
-                    --lrate=0.00001
+                    --beta=1.0 \
+                    --lrate=0.01 \
 
