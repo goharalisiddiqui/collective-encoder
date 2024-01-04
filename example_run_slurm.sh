@@ -45,19 +45,19 @@ fi
 
 
 srun python engine.py    \
-                    --inputfile $DATA_DIR/20221016_COLLLECTIVE_ENCODER_TRAINING_DATA_OAH/INPUTS \
-                    --outpath ./saved_runs \
+                    --inputfile $PWD/../enhanced_md/INPUTS \
+                    --outpath . \
                     --modelpath . \
                     --save_model \
                     --save_checkpoint \
-                    --nepochs 5000 \
-                    --labels "dist_hg.z" \
+                    --nepochs 10 \
+                    --labels "" \
                     --output_to_file \
-                    --gpu \
                     --networktype 'VAESimple' \
-                    --outfolder 'VAESimple_Short_ld10_5000' \
-                    --network "1500,10" \
                     --normalize \
                     --beta=1.0 \
                     --lrate=0.01 \
+                    --gpu \
+                    # --outfolder 'VAESimple_Short_l9_5000' \
+                    # --network "200,9" \
 

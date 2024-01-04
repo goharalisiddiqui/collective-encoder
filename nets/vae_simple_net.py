@@ -9,6 +9,9 @@ torch.manual_seed(0)
 TORCH_PI = torch.acos(torch.zeros(1))*2
 
 
+import pandas as pd
+pd.set_option('display.max_columns', None) 
+
 
 
 import matplotlib.pyplot as plt
@@ -318,9 +321,44 @@ class LITcollVAESimple(pl.LightningModule):
         n_rows = n_hidden if n_hidden > 2 else 1
         fig, axes = plt.subplots(n_rows, n_labels, squeeze=False, figsize=(6 * n_labels, 6 * n_rows))
         
+        
+        
+        latent_mu, latent_logvar = self.encode(data_x)
+        latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
+        train_y = data_y.cpu().detach().numpy()
+        
+        data_df = pd.DataFrame(np.concatenate((latent_mu, train_y), axis=1), columns=["Latent Dimension %d"%i for i in range(latent_mu.shape[1])] + self.trainer.datamodule.hparams.label_list)
+        print("\n\n=======================================")
+        print("Correlation of latent space with labels")
+        print("=======================================")
+        print(data_df.corr())
+        print("=======================================\n\n")
+        
+        
+        
+        if True and latent_mu.shape[0] > 5000: # Limit plots to 5000 points
+            index = np.random.choice(latent_mu.shape[0], 5000, replace=False)
+            latent_mu = latent_mu[index]
+            latent_logvar = latent_logvar[index]
+            train_y = train_y[index]
+            
+        if False: # Ignore input points outside a certain range
+            choices = train_y
+            latent_mu = latent_mu[choices > 0]
+            latent_logvar = latent_logvar[choices > 0]
+            train_y = train_y[choices > 0]
+            
+            choices = train_y
+            latent_mu = latent_mu[choices < 2.0]
+            latent_logvar = latent_logvar[choices < 2.0]
+            train_y = train_y[choices < 2.0]
+        
+        
+        latent_sd = np.sqrt(np.exp(latent_logvar))
+        
         for i in range(0, axes.shape[0]):
             for j in range(n_labels):
-                self.plot_latent(fig, axes[i][j], data_x, data_y[:,j], i, j)
+                self.plot_latent(fig, axes[i][j], latent_mu, latent_logvar, train_y[:,j], i, j)
         
         plt.tight_layout()
         fig.savefig(f"{self.hparams.outname}{epoch}_latent_space.png", dpi=150)
@@ -360,32 +398,10 @@ class LITcollVAESimple(pl.LightningModule):
         
         
 
-    def plot_latent(self, fig, ax, train_x, train_y, i, j):
+    def plot_latent(self, fig, ax, latent_mu, latent_logvar, train_y, i, j):
         ax.set_title("collenVAE Latent-space-"+str(i))
         
-        latent_mu, latent_logvar = self.encode(train_x)
-        latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
-        train_y = train_y.cpu().detach().numpy()
         
-        if True and latent_mu.shape[0] > 5000: # Limit plots to 5000 points
-            index = np.random.choice(latent_mu.shape[0], 5000, replace=False)
-            latent_mu = latent_mu[index]
-            latent_logvar = latent_logvar[index]
-            train_y = train_y[index]
-            
-        if False: # Ignore input points outside a certain range
-            choices = train_y
-            latent_mu = latent_mu[choices > 0]
-            latent_logvar = latent_logvar[choices > 0]
-            train_y = train_y[choices > 0]
-            
-            choices = train_y
-            latent_mu = latent_mu[choices < 2.0]
-            latent_logvar = latent_logvar[choices < 2.0]
-            train_y = train_y[choices < 2.0]
-        
-        
-        latent_sd = np.sqrt(np.exp(latent_logvar))
         
         cm = plt.get_cmap('jet')
         cNorm = matplotlib.colors.Normalize(vmin=min(train_y), vmax=max(train_y))
