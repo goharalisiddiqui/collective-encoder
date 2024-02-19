@@ -91,13 +91,16 @@ class LITColvarData(pl.LightningDataModule):
 
         # called on every process in DDP
     def train_dataloader(self):
-        return DataLoader(self.training_data, batch_size=self.train_batchsize, shuffle=True, drop_last=True, num_workers=1)
+        train_data = self.target_scaler.transform(self.training_data) if self.hparams.standardize_inputs else self.training_data
+        return DataLoader(train_data, batch_size=self.train_batchsize, shuffle=True, drop_last=True, num_workers=1)
 
     def val_dataloader(self):
-        return DataLoader(self.validation_data, batch_size=len(self.validation_data), shuffle=False, drop_last=True, num_workers=1)
+        valid_data = self.target_scaler.transform(self.validation_data) if self.hparams.standardize_inputs else self.validation_data
+        return DataLoader(valid_data, batch_size=len(self.validation_data), shuffle=False, drop_last=True, num_workers=1)
 
     def test_dataloader(self):
-        return DataLoader(self.all_dataset, batch_size=len(self.all_dataset), shuffle=False, drop_last=True)
+        test_data = self.target_scaler.transform(self.all_dataset) if self.hparams.standardize_inputs else self.all_dataset
+        return DataLoader(test_data, batch_size=len(self.all_dataset), shuffle=False, drop_last=True)
 
     def target_scaler(self, X):
         return self.target_scaler.transform(X)

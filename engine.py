@@ -51,7 +51,7 @@ def parse_args():
     
     
     parser.add_argument('--network', type=str, default= '1000,500,100,10,2', help='Architecture of the Autoencoder')
-    parser.add_argument('--networktype', type=str, default='VAE', help='Type of the Autoencoder')
+    parser.add_argument('--networktype', type=str, default='VAE_mse', help='Type of the Autoencoder')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
     
     args = parser.parse_args()
@@ -68,12 +68,8 @@ odir = args.outpath + "/" + args.outfolder + "_"
 nntype = args.networktype
 nexp = args.nexp
 # Input directory and columns
-# data_folder = args.inputfile
 ignore_list = ["#!", "FIELDS", "time"]
-# label_list = ["phi", "psi"]
-# label_list = ["dist_Au-K1"]
 label_list = args.labels
-# label_list = [label for label in args.labels.split(',')]
 # Input standarization
 standardize_inputs = args.normalize # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
 # Output file
@@ -104,10 +100,7 @@ save_checkpoint = args.save_checkpoint
 # Importing Lightning Modules
 ##################################
 #import AE_nn
-if nntype == 'VAE':
-    from ce_nets import LITcollVAE as main_nn
-elif nntype == 'VAESimple':
-    from ce_nets import LITcollVAESimple as main_nn
+from ce_nets import LITcollVAE as main_nn
 from ce_dataloaders import LITColvarData as main_dl
 
 
@@ -161,7 +154,7 @@ outname = odir_name+"/"+nntype+"_"
 
 
 colvardata = main_dl(infile, train_prop=0.8, batch_prop=0.1, 
-                     label_list=label_list, standardize_inputs=True)
+                     label_list=label_list, standardize_inputs=False) # We dont standardize the inputs here, we do it in the model otherwise it does not work with plumed
 
 colvardata.setup(stage="")
 
@@ -175,10 +168,18 @@ colvardata.setup(stage="")
 nodes = [int(x) for x in hidden_nodes.split(",")]
 nodes.insert(0, colvardata.num_inputs)
 
+if nntype == "VAE_mse":
+    loss_type = "mse"
+elif nntype == "VAE":
+    loss_type = "elbo"
+elif nntype == "VAE_elbo_mean":
+    loss_type = "elbo_mean"
+else
+    raise ValueError("Unknown network type")
 if load_state:
-    model = main_nn.load_from_checkpoint(state_file, beta=beta, lr=lrate, l2_reg=l2_reg, outname=outname)
+    model = main_nn.load_from_checkpoint(state_file, beta=beta, loss_type=loss_type, lr=lrate, l2_reg=l2_reg, outname=outname)
 else:
-    model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, beta=beta, outname=outname)
+    model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, beta=beta, loss_type=loss_type, outname=outname)
 if standardize_inputs:  
     model.set_norm(torch.Tensor(colvardata.get_scaler_mean(), device=model.device),
                     torch.Tensor(colvardata.get_scaler_var(), device=model.device))
