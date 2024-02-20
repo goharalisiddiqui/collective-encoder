@@ -100,7 +100,10 @@ save_checkpoint = args.save_checkpoint
 # Importing Lightning Modules
 ##################################
 #import AE_nn
-from ce_nets import LITcollVAE as main_nn
+if nntype == "AE":
+    from ce_nets import LITcollAE as main_nn
+else:
+    from ce_nets import LITcollVAE as main_nn
 from ce_dataloaders import LITColvarData as main_dl
 
 
@@ -182,7 +185,7 @@ else:
     model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, beta=beta, loss_type=loss_type, outname=outname)
 if standardize_inputs:  
     model.set_norm(torch.Tensor(colvardata.get_scaler_mean(), device=model.device),
-                    torch.Tensor(colvardata.get_scaler_var(), device=model.device))
+                    torch.Tensor(colvardata.get_scaler_scale(), device=model.device))
 
 
 ##################################

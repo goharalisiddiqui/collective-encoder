@@ -113,3 +113,6 @@ class LITColvarData(pl.LightningDataModule):
     
     def get_scaler_var(self):
         return self.target_scaler.var_
+    
+    def get_scaler_scale(self):
+        return self.target_scaler.scale_
