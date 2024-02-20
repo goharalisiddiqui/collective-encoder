@@ -22,7 +22,7 @@ from statistics import mean as list_mean
 from scipy.stats import multivariate_normal
 
 
-class LITcollVAESimple(pl.LightningModule):
+class LITcollVAE(pl.LightningModule):
     def __init__(self, 
                  l:list, 
                  lr : float = 0.01, 
@@ -67,11 +67,21 @@ class LITcollVAESimple(pl.LightningModule):
             decoder_layers.append(nn.BatchNorm1d(l[a - i - 1]))
             print("(batch_normalization layer)")
         self.decoder_hidden = nn.Sequential(*decoder_layers)
-        self.decoder_output = nn.Linear(l[1], l[0])
-        print(l[1], " --> ", l[0], end=" ")
-        print("(feature space)")
-        print("======================")
-        
+        if loss_type == 'mse':
+            self.decoder_output = nn.Linear(l[1], l[0])
+            print(l[1], " --> ", l[0], end=" ")
+            print("(feature space)")
+            print("======================")
+        else:
+            self.decoder_mu = nn.Linear(l[1], l[0])
+            print(l[1], " --> ", l[0], end=" ")
+            print("(mu for feature space)")
+            self.decoder_logvar = nn.Linear(l[1], l[0])
+            print( "  ", " \--> ", l[0], end=" ")
+            print("(logvar for feature space)\n\n")
+            print("======================")
+
+            
         # Model meta info
         self.normIn = False
         self.metaD = False
@@ -126,7 +136,7 @@ class LITcollVAESimple(pl.LightningModule):
         return mu, logvar
 
     def reparametrize(self, mu, logvar): # Drawing a random sample from the normal distribution mu, logvar
-        std = torch.exp(0.5*logvar) ### Why 0.5? maybe std = standard deviation
+        std = torch.exp(0.5*logvar) 
         eps = torch.randn_like(std)
         return mu + eps*std
 
@@ -137,16 +147,28 @@ class LITcollVAESimple(pl.LightningModule):
 
     def forward(self, x):
         mu_latent, logvar_latent = self.encode(x) # p(z|x)
+        if mu_latent.isnan().any().detach().cpu().numpy() or logvar_latent.isnan().any().detach().cpu().numpy():
+            print("Nan in encoder network (Gradient diminished or exploded). Can't continue")
+            exit()
         if self.metaD:
             return mu_latent, logvar_latent
         if self.training:
             z = self.reparametrize(mu_latent, logvar_latent)
         else:
             z = mu_latent
+        if self.hparams.loss_type == 'mse':
+            x_out = self.decode(z)
+            return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent}
+        else:
+            mu_x, logvar_x = self.decode(z) # q(x|z)
+            if mu_x.isnan().any().detach().cpu().numpy() or logvar_x.isnan().any().detach().cpu().numpy():
+                print("Nan in decoder network (Gradient diminished or exploded). Can't continue")
+                exit()
+            x_out = mu_x
         
-        x_out = self.decode(z)
-        
-        return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent}
+            return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent,
+                        "mu_x" : mu_x, "logvar_x" : logvar_x}
+
         
         
     def kld(self, mu, logvar): 
@@ -158,8 +180,6 @@ class LITcollVAESimple(pl.LightningModule):
         return kld
 
     def recon_loss(self, tru_x, mu_z, logvar_z):
-        ## Basically only calculates log p(x|z) for one value of z taken from q(z|x) in the forward function of the model instead of calculating an expectation value
-        # Sum on all the input distances
         mu_z_n = mu_z.unsqueeze(0).expand(self.hparams.n_samples, -1, -1)
         logvar_z_n = logvar_z.unsqueeze(0).expand(self.hparams.n_samples, -1, -1)
         z = self.reparametrize(mu_z_n, logvar_z_n)
@@ -174,15 +194,6 @@ class LITcollVAESimple(pl.LightningModule):
         loss_rec = torch.mean(loss_rec_n, dim=0)
         
         return loss_rec
-    
-    def recon_loss_mean(self, tru_x, mu_x, logvar_x):
-        ## Basically only calculates log p(x|z) for one value of z taken from q(z|x) in the forward function of the model instead of calculating an expectation value
-        # Sum on all the input distances
-        p_x = Normal(mu_x, torch.exp(logvar_x))
-        p_x.log_prob(tru_x)
-        loss_rec = -torch.mean(p_x.log_prob(tru_x), axis=1)
-        
-        return loss_rec
 
     
 
@@ -192,10 +203,8 @@ class LITcollVAESimple(pl.LightningModule):
         
         if self.hparams.loss_type == 'elbo': # samples q(z|x) n_samples time and calculate a mean of log p(x|z)
             loss_rec = self.recon_loss(tru_x, mu_latent, logvar_latent)
-        elif self.hparams.loss_type == 'elbo_mean': # samples q(z|x) only one time and calculate only on value of log p(x|z)
-            loss_rec = self.recon_loss_mean(tru_x, mu_x, logvar_x)
         elif self.hparams.loss_type == 'mse':
-            loss_rec = F.mse_loss(mu_x, tru_x, reduction='mean')
+            loss_rec = F.mse_loss(recon_x, tru_x, reduction='mean')
         else:
             print("Unrecognized loss_type used in VAE model")
             exit()

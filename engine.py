@@ -50,8 +50,8 @@ def parse_args():
     parser.add_argument('--l2norm', type=float, default=1e-3, help='Weights regularization for the training')
     
     
-    parser.add_argument('--network', type=str, default= '1000,500,100,10,2', help='Architecture of the Autoencoder')
-    parser.add_argument('--networktype', type=str, default='VAE_mse', help='Type of the Autoencoder')
+    parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
+    parser.add_argument('--networktype', type=str, default='VAE_mse', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
     
     args = parser.parse_args()
@@ -171,18 +171,23 @@ colvardata.setup(stage="")
 nodes = [int(x) for x in hidden_nodes.split(",")]
 nodes.insert(0, colvardata.num_inputs)
 
-if nntype == "VAE_mse":
-    loss_type = "mse"
+netargs = {'lr': lrate, 'l2_reg' :l2_reg, 'outname': outname}
+
+if nntype == "AE":
+    pass
+elif nntype == "VAE_mse":
+    netargs['loss_type'] = "mse"
+    netargs['beta'] = beta
 elif nntype == "VAE":
-    loss_type = "elbo"
-elif nntype == "VAE_elbo_mean":
-    loss_type = "elbo_mean"
-else
-    raise ValueError("Unknown network type")
-if load_state:
-    model = main_nn.load_from_checkpoint(state_file, beta=beta, loss_type=loss_type, lr=lrate, l2_reg=l2_reg, outname=outname)
+    netargs['loss_type'] = "elbo"
+    netargs['beta'] = beta
 else:
-    model = main_nn(nodes, lr=lrate, l2_reg=l2_reg, beta=beta, loss_type=loss_type, outname=outname)
+    raise ValueError("Unknown network type")
+
+if load_state:
+    model = main_nn.load_from_checkpoint(state_file, **netargs)
+else:
+    model = main_nn(nodes, **netargs)
 if standardize_inputs:  
     model.set_norm(torch.Tensor(colvardata.get_scaler_mean(), device=model.device),
                     torch.Tensor(colvardata.get_scaler_scale(), device=model.device))
@@ -214,7 +219,8 @@ if not train and not load_state:
 ##################################
 # Analysing a loaded model
 ##################################
-model.get_fve(colvardata)
+if nntype != "AE":
+    model.get_fve(colvardata)
 
 
 

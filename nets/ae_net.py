@@ -117,23 +117,24 @@ class LITcollAE(pl.LightningModule):
     def loss_fn(self, output, target):
         return F.mse_loss(output, target)
     
-    # def configure_optimizers(self):
-    #     optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
-    #     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-    #                                                    factor=0.7, patience=10,
-    #                                                    min_lr=0.0000001)
-    #     return {
-    #         "optimizer": optimizer,
-    #         "lr_scheduler": {
-    #             "scheduler": scheduler,
-    #             "monitor": "val_error",
-    #             "frequency": 1,
-    #         }
-    #     }
-    
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
-        return optimizer
+        if False:
+            return optimizer
+        
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
+                                                       factor=0.8, patience=10,
+                                                       min_lr=1e-10,
+                                                       cooldown = 30,
+                                                       verbose =True)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+                "frequency": 1,
+            }
+        }
     
     def on_train_start(self):
         print("\n\n==================================")
