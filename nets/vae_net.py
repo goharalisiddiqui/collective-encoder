@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch.autograd import Variable
+from torch.distributions.normal import Normal
 torch.manual_seed(0)
 TORCH_PI = torch.acos(torch.zeros(1))*2
 
