@@ -58,7 +58,7 @@ def qy_map(n_x, k, hidden_dims=[16, 16]):
     
     # Output layers.
     qy_logit = nn.Sequential(*qy_layers)
-    qy_ytransform = nn.Softmax(k)
+    qy_ytransform = nn.Softmax(dim=1)
     
     return qy_logit, qy_ytransform
 
@@ -83,7 +83,7 @@ def qz_map(n_x, k, n_z, hidden_dims=[16,16]):
     
     # Output layers.
     qz_zmtransform = nn.Linear(hidden_dims[-1], n_z)
-    qz_zvtransform = nn.Sequential([nn.Linear(hidden_dims[-1], n_z), nn.Softplus()])#+1e-5
+    qz_zvtransform = nn.Sequential(nn.Linear(hidden_dims[-1], n_z), nn.Softplus())#+1e-5
 
     return qz_ytransform, qz_hlayers, qz_zmtransform, qz_zvtransform
 
@@ -104,20 +104,20 @@ def pz_map(k, n_z, hidden_dims=[16]):
     
     # Output layers.
     pz_zmtransform = nn.Linear(hidden_dims[-1], n_z)
-    pz_zvtransform = nn.Sequential([nn.Linear(hidden_dims[-1], n_z), nn.Softplus()])#+1e-5
+    pz_zvtransform = nn.Sequential(nn.Linear(hidden_dims[-1], n_z), nn.Softplus())#+1e-5
 
     return pz_hlayers, pz_zmtransform, pz_zvtransform
 
 def px_fixed_map(n_z, n_x):
     """p(x|z) is computed here."""
-    px_logit = nn.Sequential([nn.Linear(n_z, n_h),nn.ReLU(True),nn.Linear(n_h, n_x)])
+    px_logit = nn.Sequential(nn.Linear(n_z, n_h),nn.ReLU(True),nn.Linear(n_h, n_x))
     return px_logit
 
 def px_map(n_z, n_x, hidden_dims=[16,16]):
     """p(x|z) is computed here."""
     # Hidden layers.
     px_hlayers = []
-    px_hlayers.append(nn.Linear(k, hidden_dims[0]))
+    px_hlayers.append(nn.Linear(n_z, hidden_dims[0]))
     px_hlayers.append(nn.ReLU(True))
     if use_batch_norm:
         px_hlayers.append(nn.BatchNorm1d(hidden_dims[0]))
@@ -129,8 +129,8 @@ def px_map(n_z, n_x, hidden_dims=[16,16]):
     px_hlayers = nn.Sequential(*px_hlayers)
     
     # Output layers.
-    px_xmtransform = nn.Linear(hidden_dims[-1], n_z)
-    px_xvtransform = nn.Sequential([nn.Linear(hidden_dims[-1], n_z), nn.Softplus()])#+1e-5
+    px_xmtransform = nn.Linear(hidden_dims[-1], n_x)
+    px_xvtransform = nn.Sequential(nn.Linear(hidden_dims[-1], n_x), nn.Softplus())#+1e-5
 
     return px_hlayers, px_xmtransform, px_xvtransform
 

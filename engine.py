@@ -102,8 +102,12 @@ save_checkpoint = args.save_checkpoint
 #import AE_nn
 if nntype == "AE":
     from ce_nets import LITcollAE as main_nn
-else:
+elif nntype == "VAE_mse" or nntype == "VAE":
     from ce_nets import LITcollVAE as main_nn
+elif nntype == "GMVAE":
+    from ce_nets import GMVAE as main_nn
+else:
+    raise ValueError("Unknown network type")
 from ce_dataloaders import LITColvarData as main_dl
 
 
@@ -174,20 +178,25 @@ nodes.insert(0, colvardata.num_inputs)
 netargs = {'lr': lrate, 'l2_reg' :l2_reg, 'outname': outname}
 
 if nntype == "AE":
-    pass
+    netargs['l'] = nodes
 elif nntype == "VAE_mse":
+    netargs['l'] = nodes
     netargs['loss_type'] = "mse"
     netargs['beta'] = beta
 elif nntype == "VAE":
+    netargs['l'] = nodes
     netargs['loss_type'] = "elbo"
     netargs['beta'] = beta
+elif nntype == "GMVAE":
+    netargs['n_x'] = nodes[0]
+    netargs['n_z'] = nodes[-1]
 else:
     raise ValueError("Unknown network type")
 
 if load_state:
     model = main_nn.load_from_checkpoint(state_file, **netargs)
 else:
-    model = main_nn(nodes, **netargs)
+    model = main_nn(**netargs)
 if standardize_inputs:  
     model.set_norm(torch.Tensor(colvardata.get_scaler_mean(), device=model.device),
                     torch.Tensor(colvardata.get_scaler_scale(), device=model.device))
@@ -219,7 +228,7 @@ if not train and not load_state:
 ##################################
 # Analysing a loaded model
 ##################################
-if nntype != "AE":
+if nntype != "AE" and nntype != "GMVAE":
     model.get_fve(colvardata)
 
 
