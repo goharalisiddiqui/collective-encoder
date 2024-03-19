@@ -407,10 +407,7 @@ class VAEGAN(pl.LightningModule):
         fig.savefig(f"{self.hparams.outname}{epoch}_training.png", dpi=150)
         plt.close()
         
-        if n_hidden > 10 :
-            n_hidden = 10
-        n_rows = n_hidden if n_hidden > 2 else 1
-        fig, axes = plt.subplots(n_rows, n_labels, squeeze=False, figsize=(6 * n_labels, 6 * n_rows))
+        
         
         
         
@@ -447,13 +444,28 @@ class VAEGAN(pl.LightningModule):
         
         latent_sd = np.sqrt(np.exp(latent_logvar))
         
-        for i in range(0, axes.shape[0]):
-            for j in range(n_labels):
-                self.plot_latent(fig, axes[i][j], latent_mu, latent_logvar, train_y[:,j], i, j)
-        
-        plt.tight_layout()
-        fig.savefig(f"{self.hparams.outname}{epoch}_latent_space.png", dpi=150)
-        plt.close()
+        n_fig = 10
+        k = 0
+        while (n_hidden > 0):
+            n_rows = n_hidden if n_hidden > 2 else 1
+            if n_rows > n_fig:
+                n_rows = n_fig
+            fig, axes = plt.subplots(n_rows, n_labels, squeeze=False, figsize=(6 * n_labels, 6 * n_rows))
+            
+            for i in range(0, axes.shape[0]):
+                for j in range(n_labels):
+                    self.plot_latent(fig, axes[i][j], latent_mu, latent_sd, train_y[:,j], i + k*n_fig, j)
+            n_hidden -= n_rows
+            if n_hidden == 1:
+                n_hidden = 0
+            
+            plt.tight_layout()
+            if k == 0 and n_hidden == 0:
+                fig.savefig(f"{self.hparams.outname}{epoch}_latent_space.png", dpi=150)
+            else:
+                fig.savefig(f"{self.hparams.outname}{epoch}_latent_space_{k+1}.png", dpi=150)
+            plt.close()
+            k += 1
         
 
     def plot_training(self, ax):
@@ -499,7 +511,7 @@ class VAEGAN(pl.LightningModule):
         
         
 
-    def plot_latent(self, fig, ax, latent_mu, latent_logvar, train_y, i, j):
+    def plot_latent(self, fig, ax, latent_mu, latent_sd, train_y, i, j):
         ax.set_title("VAEGAN Latent-space-"+str(i))
         
         
@@ -517,9 +529,8 @@ class VAEGAN(pl.LightningModule):
                 if (point[0] < -1.0) or (point[1] < -1.0):
                     print(f"\nOutlier point: {point[0]}.{point[1]} ind:{ind}, will not be plotted")
                     latent_mu = np.delete(latent_mu, [ind], axis=0)
-                    latent_logvar = np.delete(latent_logvar, [ind], axis=0)
+                    latent_sd = np.delete(latent_sd, [ind], axis=0)
                     train_y = np.delete(train_y, [ind], axis=0)
-        # print(latent_logvar)
                 
         if False:
             ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], fmt='none', ecolor=scalarMap.to_rgba(train_y), alpha=0.1)
