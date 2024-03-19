@@ -41,10 +41,10 @@ class GMVAE(pl.LightningModule):
                  n_x : int, 
                  n_z : int,
                  k : int = 2,
-                 qy_dims : list = [16,16],
-                 qz_dims : list = [16,16],
+                 qy_dims : list = [200,100,50,16],
+                 qz_dims : list = [200,100,50,16],
                  pz_dims : list = [16,16],
-                 px_dims : list = [16,16],
+                 px_dims : list = [16,50,100,200],
                  r_nent : int = 1, # 0.5 was good.
                  lr : float = 0.01, 
                  l2_reg : float = 1e-7,
@@ -75,17 +75,17 @@ class GMVAE(pl.LightningModule):
         self.qy_logit, self.qy_ytransform = qy_map(n_x, k, qy_dims)
 
         # NN(Q_z)
-        self.qz_ytransform, self.qz_hlayers, self.qz_zmtransform, self.qz_zvtransform = [[None] * k for i in range(4)]
+        self.qz_ytransform, self.qz_hlayers, self.qz_zmtransform, self.qz_zvtransform = [nn.ModuleList([None] * k) for i in range(4)]
         for i in range(k):
             self.qz_ytransform[i], self.qz_hlayers[i], self.qz_zmtransform[i], self.qz_zvtransform[i] = qz_map(n_x, k, n_z, qz_dims)
 
         # NN(P_z)
-        self.pz_hlayers, self.pz_zmtransform, self.pz_zvtransform = [[None] * k for i in range(3)]
+        self.pz_hlayers, self.pz_zmtransform, self.pz_zvtransform = [nn.ModuleList([None] * k) for i in range(3)]
         for i in range(k):
             self.pz_hlayers[i], self.pz_zmtransform[i], self.pz_zvtransform[i] = pz_map(k, n_z, pz_dims)
         
         # NN(P_x)  
-        self.px_hlayers, self.px_xmtransform, self.px_xvtransform = [[None] * k for i in range(3)]
+        self.px_hlayers, self.px_xmtransform, self.px_xvtransform = [nn.ModuleList([None] * k) for i in range(3)]
         for i in range(k):
             self.px_hlayers[i], self.px_xmtransform[i], self.px_xvtransform[i] = px_map(n_z, n_x, px_dims)
             
@@ -98,7 +98,20 @@ class GMVAE(pl.LightningModule):
         self.step_loss_list = []
         self.train_loss_list = []
         
-        #TODO: Save and log individual losses
+        self.step_nent_loss_list = []
+        self.train_nent_loss_list = []
+        
+        self.step_P_y_loss_list = []
+        self.train_P_y_loss_list = []
+        
+        self.step_P_x_z_loss_list = []
+        self.train_P_x_z_loss_list = []
+        
+        self.step_P_z_y_loss_list = []
+        self.train_P_z_y_loss_list = []
+        
+        self.step_Q_z_xy_loss_list = []
+        self.train_Q_z_xy_loss_list = []
         
         self.val_loss_list = []
         self.print_loss = 1
@@ -146,7 +159,7 @@ class GMVAE(pl.LightningModule):
             with torch.no_grad():
                 k_oh = torch.zeros(self.hparams.k)
                 k_oh[i] = 1
-                k_expand = k_oh.unsqueeze(0).expand(x_data.size(0), self.hparams.k)
+                k_expand = k_oh.unsqueeze(0).expand(x_data.size(0), self.hparams.k).to(self.device)
             z_input = torch.cat((x_data, self.qz_ytransform[i](k_expand)), dim = 1)
             z_hidden = self.qz_hlayers[i](z_input)
             zm[i] = self.qz_zmtransform[i](z_hidden)
@@ -156,18 +169,18 @@ class GMVAE(pl.LightningModule):
     
     
 
-    def decode(self, x_data):
+    def decode(self, x_data, z):
         xm, xv, zm, zv = [[None] * self.hparams.k for i in range(4)]
         for i in range(self.hparams.k):
             with torch.no_grad():
                 k_oh = torch.zeros(self.hparams.k)
                 k_oh[i] = 1
-                k_expand = k_oh.unsqueeze(0).expand(x_data.size(0), self.hparams.k)
+                k_expand = k_oh.unsqueeze(0).expand(x_data.size(0), self.hparams.k).to(self.device)
             z_hidden = self.pz_hlayers[i](k_expand)
             zm[i] = self.pz_zmtransform[i](z_hidden)
             zv[i] = self.pz_zvtransform[i](z_hidden)
-            z = gaussian_sample(zm[i], zv[i])
-            x_hidden = self.px_hlayers[i](z)
+            # z = gaussian_sample(zm[i], zv[i])
+            x_hidden = self.px_hlayers[i](z[i])
             xm[i] = self.px_xmtransform[i](x_hidden)
             xv[i] = self.px_xvtransform[i](x_hidden)
         return xm, xv, zm, zv
@@ -179,66 +192,52 @@ class GMVAE(pl.LightningModule):
         z, zm, zv = self.encode(x_data)
         if self.metaD:
             return torch.cat(tuple([pyx_soft[:, i] * z[i] for i in range(self.hparams.k)]), dim = 1).sum(dim = 1).mean(dim=0)
-        xm, xv, zm_prior, zv_prior = self.decode(x_data)
+        xm, xv, zm_prior, zv_prior = self.decode(x_data, z)
 
-        # print("\nSize pyx = ", pyx.shape)
-        # print("Size pyx_soft = ", pyx_soft.shape)
-        # print("Size zm = ", zm.shape)
-        # print("Size zv = ", zv.shape)
-        # print("Size z = ", z.shape)
-        # print("Size zm_prior = ", zm_prior.shape)
-        # print("Size zv_prior = ", zv_prior.shape)
-        # print("Size xm = ", xm.shape)
-        # print("Size xv = ", xv.shape)
-        # exit()
-        
-        
         return pyx, pyx_soft, zm, zv, z, zm_prior, zv_prior, xm, xv, x_data
 
 
 
-    def labeled_loss(self, k, x, xm, xv, z, zm, zv, zm_prior, zv_prior):
+    def labeled_losses(self, k, x, xm, xv, z, zm, zv, zm_prior, zv_prior):
         """Variational loss for the mixture VAE given for each given q(y=i|x, z), hence the
             name labeled_loss."""
-            
-        # print("\nSize zm = ", zm.shape)
-        # print("Size zv = ", zv.shape)
-        # print("Size z = ", z.shape)
-        # print("Size zm_prior = ", zm_prior.shape)
-        # print("Size zv_prior = ", zv_prior.shape)
-        # print("Size xm = ", xm.shape)
-        # print("Size xv = ", xv.shape)
-        # print("Size x = ", x.shape)
-        
+
         # Sum over the dimensions
-        log_P_y = torch.ones(x.size(0),1) * np.log(1/k)
-        log_P_x_z = log_normal(x, xm, xv).sum(dim=1, keepdim=True)
+        log_P_y = (torch.ones(x.size(0),1) * np.log(1/k)).to(self.device)
+        log_P_x_z = log_normal(x, xm, xv).sum(dim=1, keepdim=True) # Sum over the dimensions (product of probabilities is sum in log space)
         log_Q_z_xy =  log_normal(z, zm, zv).sum(dim=1, keepdim=True)
         log_P_z_y = log_normal(z, zm_prior, zv_prior).sum(dim=1, keepdim=True)
         
-        # print("\nSize log_P_y = ", log_P_y.shape)
-        # print("Size log_P_x_z = ", log_P_x_z.shape)
-        # print("Size log_Q_z_xy = ", log_Q_z_xy.shape)
-        # print("Size log_P_z_y = ", log_P_z_y.shape)
-        # exit()
-        
-        return -log_P_x_z + log_Q_z_xy - log_P_z_y - log_P_y
+        return -log_P_x_z, log_Q_z_xy, -log_P_z_y, -log_P_y
+        # return log_P_x_z, -log_Q_z_xy, log_P_z_y, log_P_y
 
 
 
 
     def gmvae_loss(self, pyx, pyx_soft, zm, zv, z, zm_prior, zv_prior, xm, xv, x):
         
-        nent = -self.nent_loss(pyx, pyx_soft) # Why is this negative?
-        # print("\nSize nent = ", nent.shape)
-        losses = [None] * self.hparams.k
+        nent = -self.nent_loss(pyx, pyx_soft)
+        loss_log_P_x_z = [None] * self.hparams.k
+        loss_log_Q_z_xy = [None] * self.hparams.k
+        loss_log_P_z_y = [None] * self.hparams.k
+        loss_log_P_y = [None] * self.hparams.k
         for i in range(self.hparams.k):
-            losses[i] = self.labeled_loss(self.hparams.k, x, xm[i], xv[i],
-                                        z[i], zm[i], zv[i],
-                                        zm_prior[i], zv_prior[i])
-        loss = torch.cat(tuple([pyx_soft[:, i] * losses[i] for i in range(self.hparams.k)]), dim = 1).sum(dim = 1)
+            loss_log_P_x_z[i], loss_log_Q_z_xy[i], loss_log_P_z_y[i], loss_log_P_y[i] = self.labeled_losses(self.hparams.k, x, xm[i], xv[i],
+                                                                                            z[i], zm[i], zv[i],
+                                                                                            zm_prior[i], zv_prior[i])
         
-        loss = nent * self.hparams.r_nent + torch.mean(loss, dim=0) # Batch Mean
+        loss_log_P_x_z = torch.cat(tuple([pyx_soft[:, i] * loss_log_P_x_z[i] for i in range(self.hparams.k)]), dim = 1).sum(dim = 1).mean(dim=0)
+        loss_log_Q_z_xy = torch.cat(tuple([pyx_soft[:, i] * loss_log_Q_z_xy[i] for i in range(self.hparams.k)]), dim = 1).sum(dim = 1).mean(dim=0)
+        loss_log_P_z_y = torch.cat(tuple([pyx_soft[:, i] * loss_log_P_z_y[i] for i in range(self.hparams.k)]), dim = 1).sum(dim = 1).mean(dim=0)
+        loss_log_P_y = torch.cat(tuple([pyx_soft[:, i] * loss_log_P_y[i] for i in range(self.hparams.k)]), dim = 1).sum(dim = 1).mean(dim=0)
+        
+        self.step_nent_loss_list.append(nent.item())
+        self.step_P_x_z_loss_list.append(loss_log_P_x_z.item())
+        self.step_Q_z_xy_loss_list.append(loss_log_Q_z_xy.item())
+        self.step_P_z_y_loss_list.append(loss_log_P_z_y.item())
+        self.step_P_y_loss_list.append(loss_log_P_y.item())
+        
+        loss = nent * self.hparams.r_nent + loss_log_P_x_z + loss_log_Q_z_xy + loss_log_P_z_y + loss_log_P_y
         
         return loss
 
@@ -282,8 +281,6 @@ class GMVAE(pl.LightningModule):
         loss = self.gmvae_loss(pyx, pyx_soft, zm, zv, z, zm_prior, zv_prior, xm, xv, x_data)
         
         self.step_loss_list.append(loss.item())
-        # self.step_rec_loss_list.append(rec_loss.item())
-        # self.step_reg_loss_list.append(reg_loss.item())
             
         return loss
 
@@ -291,11 +288,21 @@ class GMVAE(pl.LightningModule):
         self.train_loss_list.append(list_mean(self.step_loss_list))
         self.step_loss_list.clear()  # free memory
         
-        # self.train_rec_loss_list.append(list_mean(self.step_rec_loss_list))
-        # self.step_rec_loss_list.clear()  # free memory
+        self.train_nent_loss_list.append(list_mean(self.step_nent_loss_list))
+        self.step_nent_loss_list.clear()  # free memory
         
-        # self.train_reg_loss_list.append(list_mean(self.step_reg_loss_list))
-        # self.step_reg_loss_list.clear()  # free memory
+        self.train_P_x_z_loss_list.append(list_mean(self.step_P_x_z_loss_list))
+        self.step_P_x_z_loss_list.clear()  # free memory
+        
+        self.train_Q_z_xy_loss_list.append(list_mean(self.step_Q_z_xy_loss_list))
+        self.step_Q_z_xy_loss_list.clear()  # free memory
+        
+        self.train_P_z_y_loss_list.append(list_mean(self.step_P_z_y_loss_list))
+        self.step_P_z_y_loss_list.clear()  # free memory
+        
+        self.train_P_y_loss_list.append(list_mean(self.step_P_y_loss_list))
+        self.step_P_y_loss_list.clear()  # free memory
+        
     
     def validation_step(self, val_batch, batch_idx):
         data = val_batch[0].float()
@@ -307,21 +314,43 @@ class GMVAE(pl.LightningModule):
         # self.log('val_rec_loss', rec_loss.item(), prog_bar=True)
         # self.log('val_reg_loss', reg_loss.item(), prog_bar=True)
         
-        # self.log('rec_loss', self.get_rec_loss(), prog_bar=True)
-        # self.log('reg_loss', self.get_reg_loss(), prog_bar=True)
+        self.log('nent_loss', self.get_nent_loss(), prog_bar=True)
+        self.log('P_x_z_loss', self.get_P_x_z_loss(), prog_bar=True)
+        self.log('Q_z_xy_loss', self.get_Q_z_xy_loss(), prog_bar=True)
+        self.log('P_z_y_loss', self.get_P_z_y_loss(), prog_bar=True)
+        self.log('P_y_loss', self.get_P_y_loss(), prog_bar=True)
         return loss
     
-    # def get_reg_loss(self):
-    #     if len(self.train_reg_loss_list) > 0:
-    #         return self.train_reg_loss_list[-1]
-    #     else:
-    #         return 0.0
     
-    # def get_rec_loss(self):
-    #     if len(self.train_rec_loss_list) > 0:
-    #         return self.train_rec_loss_list[-1]
-    #     else:
-    #         return 0.0
+    def get_nent_loss(self):
+        if len(self.train_nent_loss_list) > 0:
+            return self.train_nent_loss_list[-1]
+        else:
+            return 0.0
+        
+    def get_P_x_z_loss(self):
+        if len(self.train_P_x_z_loss_list) > 0:
+            return self.train_P_x_z_loss_list[-1]
+        else:
+            return 0.0
+    
+    def get_Q_z_xy_loss(self):
+        if len(self.train_Q_z_xy_loss_list) > 0:
+            return self.train_Q_z_xy_loss_list[-1]
+        else:
+            return 0.0
+        
+    def get_P_z_y_loss(self):
+        if len(self.train_P_z_y_loss_list) > 0:
+            return self.train_P_z_y_loss_list[-1]
+        else:
+            return 0.0
+        
+    def get_P_y_loss(self):
+        if len(self.train_P_y_loss_list) > 0:
+            return self.train_P_y_loss_list[-1]
+        else:
+            return 0.0
 
 
     def test_step(self, test_batch, batch_idx):
@@ -367,7 +396,7 @@ class GMVAE(pl.LightningModule):
         n_labels = data_y.shape[-1]
         
 
-        fig, axes = plt.subplots(1, 3, squeeze=True,figsize=(6 * 3, 6))
+        fig, axes = plt.subplots(1, 6, squeeze=True,figsize=(6 * 6, 6))
         
         self.plot_training(axes)
         plt.tight_layout()
@@ -422,7 +451,7 @@ class GMVAE(pl.LightningModule):
 
     def plot_training(self, ax):
         ax[0].set_title("Network Loss minimization")
-        ax[0].set_yscale("log")
+        # ax[0].set_yscale("log")
         ax[0].plot(
             np.asarray(self.train_loss_list),
             ".-",
@@ -431,25 +460,56 @@ class GMVAE(pl.LightningModule):
         ax[0].set_xlabel("Epoch")
         ax[0].set_ylabel("Loss")
         
-        # ax[1].set_title("Reconstruction Loss minimization")
+        ax[1].set_title("Nent Loss minimization")
         # ax[1].set_yscale("log")
-        # ax[1].plot(
-        #     np.asarray(self.train_rec_loss_list),
-        #     ".-",
-        #     c="tab:blue",
-        # )
-        # ax[1].set_xlabel("Epoch")
-        # ax[1].set_ylabel("Reconstruction loss")
+        ax[1].plot(
+            np.asarray(self.train_nent_loss_list),
+            ".-",
+            c="tab:blue",
+        )
+        ax[1].set_xlabel("Epoch")
+        ax[1].set_ylabel("Nent loss")
         
-        # ax[2].set_title("Regularization Loss minimization")
+        ax[2].set_title("P_x_z Loss minimization")
         # ax[2].set_yscale("log")
-        # ax[2].plot(
-        #     np.asarray(self.train_reg_loss_list),
-        #     ".-",
-        #     c="tab:red",
-        # )
-        # ax[2].set_xlabel("Epoch")
-        # ax[2].set_ylabel("Regularization loss")
+        ax[2].plot(
+            np.asarray(self.train_P_x_z_loss_list),
+            ".-",
+            c="tab:red",
+        )
+        ax[2].set_xlabel("Epoch")
+        ax[2].set_ylabel("P_x_z loss")
+        
+        ax[3].set_title("Q_z_xy Loss minimization")
+        # ax[3].set_yscale("log")
+        ax[3].plot(
+            np.asarray(self.train_Q_z_xy_loss_list),
+            ".-",
+            c="tab:green",
+        )
+        ax[3].set_xlabel("Epoch")
+        ax[3].set_ylabel("Q_z_xy loss")
+        
+        ax[4].set_title("P_z_y Loss minimization")
+        # ax[4].set_yscale("log")
+        ax[4].plot(
+            np.asarray(self.train_P_z_y_loss_list),
+            ".-",
+            c="tab:blue",
+        )
+        ax[4].set_xlabel("Epoch")
+        ax[4].set_ylabel("P_z_y loss")
+        
+        ax[5].set_title("P_y Loss minimization")
+        # ax[5].set_yscale("log")
+        ax[5].plot(
+            np.asarray(self.train_P_y_loss_list),
+            ".-",
+            c="tab:red",
+        )
+        ax[5].set_xlabel("Epoch")
+        ax[5].set_ylabel("P_y loss")
+        
         
         
 

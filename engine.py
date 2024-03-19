@@ -35,7 +35,7 @@ def parse_args():
     
     parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
     
-    parser.add_argument('--load_model', action="store_true", help='Save Model')
+    parser.add_argument('--load_model', action="store_true", help='Load Model')
     parser.add_argument('--modelfile', type=str, help='From where to load the model')
     
     
@@ -106,6 +106,8 @@ elif nntype == "VAE_mse" or nntype == "VAE":
     from ce_nets import LITcollVAE as main_nn
 elif nntype == "GMVAE":
     from ce_nets import GMVAE as main_nn
+elif nntype == "VAEGAN" or nntype == "VAEGAN_mse":
+    from ce_nets import VAEGAN as main_nn
 else:
     raise ValueError("Unknown network type")
 from ce_dataloaders import LITColvarData as main_dl
@@ -179,11 +181,11 @@ netargs = {'lr': lrate, 'l2_reg' :l2_reg, 'outname': outname}
 
 if nntype == "AE":
     netargs['l'] = nodes
-elif nntype == "VAE_mse":
+elif nntype == "VAE_mse" or nntype == "VAEGAN_mse":
     netargs['l'] = nodes
     netargs['loss_type'] = "mse"
     netargs['beta'] = beta
-elif nntype == "VAE":
+elif nntype == "VAE" or nntype == "VAEGAN":
     netargs['l'] = nodes
     netargs['loss_type'] = "elbo"
     netargs['beta'] = beta
@@ -233,9 +235,7 @@ if nntype != "AE" and nntype != "GMVAE":
 
 
 
-##################################
-    
-trainer.test(model, datamodule=colvardata)
+
 
 ##################################
 # Serializing and checkpointing the model
@@ -263,6 +263,9 @@ if save_checkpoint:
     trainer.save_checkpoint(f"{outname}checkpoint")
     print(f"@@ checkpoint saved as: {outname}checkpoint")
 
+
+##################################
+trainer.test(model, datamodule=colvardata)
 
 
 

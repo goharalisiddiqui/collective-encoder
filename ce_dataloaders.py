@@ -39,7 +39,8 @@ class LITColvarData(pl.LightningDataModule):
         header = [x for x in first_line if x not in ignore_list and x not in label_list]
         first_col = len(ignore_list) + len(label_list) - 2  # 0-indexed
         self.header_string = ",".join(header)
-        self.num_inputs = len(header)
+        header_distvec = [x for x in header if "distvec" in x]
+        self.num_inputs = len(header_distvec)
         
         col_range = range(first_col, first_col + self.num_inputs)
         alldata = np.loadtxt(colvar_file, usecols=col_range)

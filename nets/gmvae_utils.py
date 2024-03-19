@@ -19,18 +19,18 @@ def gaussian_sample(mean, var):
     eps = torch.randn_like(std)
     return mean + eps*std
 		
-def log_normal(x, mu, var, eps=0.0):
+def log_normal(x, mu, var, eps=1e-10):
     if eps > 0.0:
         var = torch.add(var, eps)
-    p_x = Normal(mu, var) 
+    p_x = Normal(mu, torch.sqrt(var)) 
     return p_x.log_prob(x)
 		
 # n_x is number input features
 # n_z is dim of latent space
 # k is number of clusters/categories in gaussian mix
 
-n_h=16
-use_batch_norm = False
+n_h = 16
+use_batch_norm = True
 
 # vae subgraphs
 def qy_map(n_x, k, hidden_dims=[16, 16]):
