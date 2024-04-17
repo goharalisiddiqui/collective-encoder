@@ -23,25 +23,60 @@ from statistics import mean as list_mean
 from scipy.stats import multivariate_normal
 
 
-class VAEGAN(pl.LightningModule):
+class VAECGAN(pl.LightningModule):
     def __init__(self,
-                 l:list,
+                 l : list,
+                 lw : list,
                  lr : float = 0.01,
                  l2_reg : float = 1e-7,
                  beta : float = 1.0,
                  loss_type : str = 'mse',
                  n_samples : int = 1,
-                 outname : str = './VAEGAN_untitled/LITcollVAE_'):
+                 outname : str = './VAECGAN_untitled/LITcollVAE_'):
         super().__init__()
         assert len(l) >= 3
+        assert len(lw) == 3
+        self.n_solv = np.prod(lw)
 
         #### Setting up the layers of the netwrok ####
-        print("[Initializing VAEGAN Module]")
+        print("[Initializing VAECGAN Module]")
         print("- hidden layers:", l)
+        print("- solvation convolution layers:", lw)
         print("")
-        print("========= NN =========")
+        print("========= Input Conv NN =========")
+        conv_input_layers = []
+        print(self.n_solv, " -unflatten-> ", lw, end=" ")
+        conv_input_layers.append(nn.Unflatten(1, (1,-1)))
+        conv_input_layers.append(nn.Unflatten(2, (lw[0], lw[1], lw[2])))
+        print(lw, " -conv-> ", lw, end=" ")
+        conv_input_layers.append(nn.Conv3d(1, 1, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+        print("(relu)")
+        conv_input_layers.append(nn.ReLU(True))
+        print(lw, " -flatten-> ", self.n_solv)
+        conv_input_layers.append(nn.Flatten())
+        print("(batch_normalization layer)")
+        conv_input_layers.append(nn.BatchNorm1d(self.n_solv))
+        print(self.n_solv, " --> ", l[1] - l[1]//2)
+        conv_input_layers.append(nn.Linear(self.n_solv, l[1] - l[1]//2))
+        print("(relu)")
+        conv_input_layers.append(nn.ReLU(True))
+        self.conv_input = nn.Sequential(*conv_input_layers)
+        print("=============================")
+        print("")
+        print("========= Input Linear NN =========")
+        lin_input_layers = []
+        print(l[0] -  self.n_solv, " --> ", l[1]//2, end=" ")
+        lin_input_layers.append(nn.Linear(l[0] -  self.n_solv, l[1]//2))
+        print("(relu)")
+        lin_input_layers.append(nn.ReLU(True))
+        print("(batch_normalization layer)")
+        lin_input_layers.append(nn.BatchNorm1d(l[1]//2))
+        self.lin_input = nn.Sequential(*lin_input_layers)
+        print("=============================")
+        print("")
+        print("========= Encoder-Decoder NN =========")
         encoder_layers = []
-        for i in range(len(l) - 2):
+        for i in range(1, len(l) - 2):
             print(l[i], " --> ", l[i + 1], end=" ")
             encoder_layers.append(nn.Linear(l[i], l[i + 1]))
             encoder_layers.append(nn.ReLU(True))
@@ -68,19 +103,51 @@ class VAEGAN(pl.LightningModule):
             decoder_layers.append(nn.BatchNorm1d(l[a - i - 1]))
             print("(batch_normalization layer)")
         self.decoder_hidden = nn.Sequential(*decoder_layers)
+        print("======================")
+
+
+        print("========= Output Linear NN =========")
         if loss_type == 'mse':
-            self.decoder_output = nn.Linear(l[1], l[0])
-            print(l[1], " --> ", l[0], end=" ")
-            print("(feature space)")
-            print("======================")
+            lin_output_layers = []
+            print(l[1], " --> ", l[0] - self.n_solv)
+            lin_output_layers.append(nn.Linear(l[1], l[0] - self.n_solv))
+            self.lin_output = nn.Sequential(*lin_output_layers)
         else:
+            assert False, "VAECGAN elbo version not implemented yet"
             self.decoder_mu = nn.Linear(l[1], l[0])
             print(l[1], " --> ", l[0], end=" ")
             print("(mu for feature space)")
             self.decoder_logvar = nn.Linear(l[1], l[0])
             print( "  ", " \--> ", l[0], end=" ")
             print("(logvar for feature space)\n\n")
-            print("======================")
+        print("=============================")
+
+        print("========= Output Conv NN =========")
+        if loss_type == 'mse':
+            conv_output_layers = []
+            print(l[1], " --> ", self.n_solv)
+            conv_output_layers.append(nn.Linear(l[1], self.n_solv))
+            print("(relu)")
+            conv_output_layers.append(nn.ReLU(True))
+            conv_output_layers.append(nn.BatchNorm1d(self.n_solv))
+            print("(batch_normalization layer)")
+            print(self.n_solv, " -unflatten-> ", lw)
+            conv_output_layers.append(nn.Unflatten(1, (1,-1)))
+            conv_output_layers.append(nn.Unflatten(2, (lw[0], lw[1], lw[2])))
+            print(lw, " -conv-> ", lw, end=" ")
+            conv_output_layers.append(nn.Conv3d(1, 1, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+            print(lw, " -flatten-> ", self.n_solv, end=" ")
+            conv_output_layers.append(nn.Flatten())
+            self.conv_output = nn.Sequential(*conv_output_layers)
+        else:
+            assert False, "VAECGAN elbo version not implemented yet"
+            self.decoder_mu = nn.Linear(l[1], l[0])
+            print(l[1], " --> ", l[0], end=" ")
+            print("(mu for feature space)")
+            self.decoder_logvar = nn.Linear(l[1], l[0])
+            print( "  ", " \--> ", l[0], end=" ")
+            print("(logvar for feature space)\n\n")
+        print("=============================")
 
 
         self.discriminator = nn.Sequential(
@@ -146,6 +213,9 @@ class VAEGAN(pl.LightningModule):
     def encode(self, x):
         if self.normIn:
             x = self.normalize(x)
+        x_lin = self.lin_input(x[:,:x.size()[1] - self.n_solv])
+        x_conv = self.conv_input(x[:,0:self.n_solv])
+        x = torch.cat((x_lin, x_conv), dim=1)
         x = self.encoder_hidden(x)
         mu = self.encoder_mu(x)
         logvar = self.encoder_logvar(x)
@@ -158,7 +228,9 @@ class VAEGAN(pl.LightningModule):
 
     def decode(self, z):
         z = self.decoder_hidden(z)
-        x_out = self.decoder_output(z)
+        z_lin = self.lin_output(z)
+        z_conv = self.conv_output(z)
+        x_out = torch.cat((z_lin, z_conv), dim=1)
         return x_out
 
 
@@ -194,6 +266,7 @@ class VAEGAN(pl.LightningModule):
             gan_loss = self.gan_forward(x, x_out)
             return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent, "gan_loss" : gan_loss}
         else:
+            assert False, "VAECGAN elbo version not implemented yet"
             mu_x, logvar_x = self.decode(z) # q(x|z)
             if mu_x.isnan().any().detach().cpu().numpy() or logvar_x.isnan().any().detach().cpu().numpy():
                 print("Nan in decoder network (Gradient diminished or exploded). Can't continue")
@@ -279,7 +352,7 @@ class VAEGAN(pl.LightningModule):
 
     def on_train_start(self):
         print("\n\n==================================")
-        print("Starting training VAEGAN module")
+        print("Starting training VAECGAN module")
         print("==================================")
         print("[Optimization Settings]")
         print("- Learning rate \t=", self.hparams.lr)
@@ -295,7 +368,7 @@ class VAEGAN(pl.LightningModule):
         target = self.normalize(data)
         loss, rec_loss, reg_loss = self.vae_loss(result, target, **meta)
         gan_loss = meta["gan_loss"]
-        loss = loss + gan_loss
+        # loss = loss + gan_loss
 
         self.step_loss_list.append(loss.item())
         self.step_rec_loss_list.append(rec_loss.item())
@@ -469,7 +542,7 @@ class VAEGAN(pl.LightningModule):
 
 
     def plot_training(self, ax):
-        ax[0].set_title("VAEGAN Network Loss minimization")
+        ax[0].set_title("VAECGAN Network Loss minimization")
         ax[0].set_yscale("log")
         ax[0].plot(
             np.asarray(self.train_loss_list),
@@ -512,7 +585,7 @@ class VAEGAN(pl.LightningModule):
 
 
     def plot_latent(self, fig, ax, latent_mu, latent_sd, train_y, i, j):
-        ax.set_title("VAEGAN Latent-space-"+str(i))
+        ax.set_title("VAECGAN Latent-space-"+str(i))
 
 
 
@@ -524,7 +597,7 @@ class VAEGAN(pl.LightningModule):
         scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
         yaxis = (i+1) if (i+1) < latent_mu.shape[1] else 0
 
-        if True: ## To remove outliers
+        if False: ## To remove outliers
             for ind,point in enumerate(latent_mu):
                 if (point[0] < -1.0) or (point[1] < -1.0):
                     print(f"\nOutlier point: {point[0]}.{point[1]} ind:{ind}, will not be plotted")

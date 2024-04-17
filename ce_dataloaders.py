@@ -23,7 +23,7 @@ class ColvarDataset(Dataset):
 
 
 class LITColvarData(pl.LightningDataModule):
-    def __init__(self, colvar_file, train_prop : int = 0.6, batch_size : int = -1, 
+    def __init__(self, colvar_file, train_prop : int = 0.6, batch_size : int = -1,
                  batch_prop : float = 0.1,
                  label_list : list = [],
                  standardize_inputs : bool = True):
@@ -39,16 +39,30 @@ class LITColvarData(pl.LightningDataModule):
         header = [x for x in first_line if x not in ignore_list and x not in label_list]
         first_col = len(ignore_list) + len(label_list) - 2  # 0-indexed
         self.header_string = ",".join(header)
-        header_distvec = [x for x in header if "distvec" in x]
-        self.num_inputs = len(header_distvec)
-        
+        self.num_inputs = len(header)
+
+
+
         col_range = range(first_col, first_col + self.num_inputs)
+
+        header_dist = [x for x in header if "distvec" in x]
+        header_solv = [x for x in header if "VV" in x]
+
+        if False: # Use only distance vectors
+            print("[WARNING: Using only distvec from data file. Ignoring solvation descriptors]")
+            self.num_inputs = len(header_dist)
+            col_range = range(first_col, first_col + self.num_inputs)
+        if False: # Use only solvation
+            print("[WARNING: Using only VV from data file. Ignoring distances]")
+            self.num_inputs = len(header_solv)
+            col_range = range(first_col + len(header_dist), first_col + len(header_dist) + self.num_inputs)
+
         alldata = np.loadtxt(colvar_file, usecols=col_range)
         alllabel = np.loadtxt(colvar_file, usecols=[a for a in range(1,len(label_list) + 1)], ndmin = 2)
 
 
-        
-        
+
+
         p = np.random.permutation(len(alldata))
         alldata, alllabel = alldata[p], alllabel[p]
 
@@ -60,7 +74,7 @@ class LITColvarData(pl.LightningDataModule):
             self.train_batchsize = int(self.n_train_data * batch_prop)
         else:
             self.train_batchsize = batch_size
-            
+
         # Printing
         print("[Imported data]")
         print("- data.shape:", alldata.shape)
@@ -68,23 +82,23 @@ class LITColvarData(pl.LightningDataModule):
         assert alldata.shape[0] == alllabel.shape[0]
         self.target_scaler = StandardScaler()
         self.target_scaler.fit(alldata)
-            
+
         print(f"Total frames: {FRAMES}, Train size: {self.n_train_data}, Batch size: {self.train_batchsize}, Validation size: {self.n_valid_data}")
         print("==========================================")
         self.save_hyperparameters()
         self.all_dataset = ColvarDataset([alldata, alllabel])
-        
+
         # print(f"\nshape={alllabel.shape}\n")
         # print(f"\nmax={np.amax(alllabel)}\n")
         # print(f"\nmin={np.amin(alllabel)}\n")
         # exit()
-        
-        
-        
+
+
+
 
     # def prepare_data(self): # only called on 1 GPU/TPU in distributed
 
-        
+
     def setup(self, stage): # Called on every GPU/TPU in distributed
         # Assign train/val datasets for use in dataloaders
         self.training_data, self.validation_data = train_test_split(self.all_dataset, train_size=self.hparams.train_prop, random_state=1868)
@@ -105,15 +119,15 @@ class LITColvarData(pl.LightningDataModule):
 
     def target_scaler(self, X):
         return self.target_scaler.transform(X)
-    
+
     def target_inverse_scaler(self, X):
         return self.target_scaler.inverse_transform(X)
-    
+
     def get_scaler_mean(self):
         return self.target_scaler.mean_
-    
+
     def get_scaler_var(self):
         return self.target_scaler.var_
-    
+
     def get_scaler_scale(self):
         return self.target_scaler.scale_
