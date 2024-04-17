@@ -368,7 +368,7 @@ class VAECGAN(pl.LightningModule):
         target = self.normalize(data)
         loss, rec_loss, reg_loss = self.vae_loss(result, target, **meta)
         gan_loss = meta["gan_loss"]
-        # loss = loss + gan_loss
+        loss = loss + gan_loss
 
         self.step_loss_list.append(loss.item())
         self.step_rec_loss_list.append(rec_loss.item())
