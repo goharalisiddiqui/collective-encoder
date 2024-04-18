@@ -113,6 +113,9 @@ elif nntype == "VAEGAN" or nntype == "VAEGAN_mse":
 elif nntype == "VAECGAN" or nntype == "VAECGAN_mse":
     assert solvation != '0', "Solvation grid size not provided"
     from ce_nets import VAECGAN as main_nn
+elif nntype == "VAEC" or nntype == "VAEC_mse":
+    assert solvation != '0', "Solvation grid size not provided"
+    from ce_nets import VAEC as main_nn
 else:
     raise ValueError("Unknown network type")
 from ce_dataloaders import LITColvarData as main_dl
@@ -196,12 +199,12 @@ elif nntype == "VAE" or nntype == "VAEGAN":
     netargs['l'] = nodes
     netargs['loss_type'] = "elbo"
     netargs['beta'] = beta
-elif nntype == "VAECGAN":
+elif nntype == "VAECGAN" or nntype == "VAEC":
     netargs['l'] = nodes
     netargs['lw'] = solv
     netargs['loss_type'] = "elbo"
     netargs['beta'] = beta
-elif nntype == "VAECGAN_mse":
+elif nntype == "VAECGAN_mse" or nntype == "VAEC_mse":
     netargs['l'] = nodes
     netargs['lw'] = solv
     netargs['loss_type'] = "mse"
