@@ -34,6 +34,7 @@ class VAECGAN(pl.LightningModule):
                  n_samples : int = 1,
                  outname : str = './VAECGAN_untitled/LITcollVAE_'):
         super().__init__()
+        self.automatic_optimization = False # This turns off pytorch lightning's automatic optimization
         assert len(l) >= 3
         assert len(lw) == 3
         self.n_solv = np.prod(lw)
@@ -150,6 +151,7 @@ class VAECGAN(pl.LightningModule):
         print("=============================")
 
 
+        self.generator = nn.ModuleList([self.lin_input, self.conv_input, self.encoder_hidden, self.encoder_mu, self.encoder_logvar, self.decoder_hidden, self.lin_output, self.conv_output])
         self.discriminator = nn.Sequential(
             nn.Linear(l[0], 512),
             nn.LeakyReLU(0.2, inplace=True),
@@ -240,11 +242,11 @@ class VAECGAN(pl.LightningModule):
         fake = Variable(torch.Tensor(x.size(0), 1).fill_(0.0), requires_grad=False).to(self.device)
         gan_gen_loss = self.gan_loss(self.discriminator(x_out), valid)
 
-        real_loss = self.gan_loss(self.discriminator(x), valid)
-        fake_loss = self.gan_loss(self.discriminator(x_out.detach()), fake) # Detach to avoid backpropagation twice through the autoencoder
-        gan_des_loss = (real_loss + fake_loss) / 2
+        real_loss = self.gan_loss(self.discriminator(x), valid) # This trains the discriminator as its the ability of the discriminator to recongnise real data
+        fake_loss = self.gan_loss(self.discriminator(x_out.detach()), fake) # This trains the discriminator as its the ability of the identify fake data
+        gan_dis_loss = (real_loss + fake_loss) / 2
 
-        return gan_gen_loss + gan_des_loss
+        return gan_gen_loss, gan_dis_loss
 
 
 
@@ -263,8 +265,8 @@ class VAECGAN(pl.LightningModule):
 
         if self.hparams.loss_type == 'mse':
             x_out = self.decode(z)
-            gan_loss = self.gan_forward(x, x_out)
-            return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent, "gan_loss" : gan_loss}
+            gan_gen_loss, gan_dis_loss = self.gan_forward(x, x_out)
+            return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent, "gan_gen_loss" : gan_gen_loss, "gan_dis_loss" : gan_dis_loss}
         else:
             assert False, "VAECGAN elbo version not implemented yet"
             mu_x, logvar_x = self.decode(z) # q(x|z)
@@ -272,10 +274,10 @@ class VAECGAN(pl.LightningModule):
                 print("Nan in decoder network (Gradient diminished or exploded). Can't continue")
                 exit()
             x_out = mu_x
-            gan_loss = self.gan_forward(x, x_out)
+            gan_gen_loss, gan_dis_loss = self.gan_forward(x, x_out)
 
             return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent,
-                        "mu_x" : mu_x, "logvar_x" : logvar_x, "gan_loss" : gan_loss}
+                        "mu_x" : mu_x, "logvar_x" : logvar_x, "gan_gen_loss" : gan_gen_loss, "gan_dis_loss" : gan_dis_loss}
 
 
 
@@ -332,23 +334,41 @@ class VAECGAN(pl.LightningModule):
 
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
+        optimizer = torch.optim.Adam(self.generator.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
+        optimizer_descriminator = torch.optim.Adam(self.discriminator.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
+
         if False:
-            return optimizer
+            return [optimizer, optimizer_descriminator]
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
                                                        factor=0.8, patience=10,
                                                        min_lr=1e-10,
                                                        cooldown = 30,
                                                        verbose =True)
-        return {
+
+        scheduler_discriminator = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_descriminator, mode='min',
+                                                       factor=0.8, patience=10,
+                                                       min_lr=1e-10,
+                                                       cooldown = 30,
+                                                       verbose =True)
+        return (
+            {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
                 "monitor": "val_loss",
                 "frequency": 1,
+            },
+            },
+            {
+            "optimizer": optimizer_descriminator,
+            "lr_scheduler": {
+                "scheduler": scheduler_discriminator,
+                "monitor": "val_gan_loss",
+                "frequency": 1,
+            },
             }
-        }
+        )
 
     def on_train_start(self):
         print("\n\n==================================")
@@ -363,19 +383,41 @@ class VAECGAN(pl.LightningModule):
 
 
     def training_step(self, train_batch, batch_idx):
+        # Gettting optimizers and schedulers for manual optimization
+        optimizer_g, optimizer_d = self.optimizers()
+        # sch_g, sch_d = self.lr_schedulers()
+
+        # Forward pass
         data = train_batch[0].float()
         result, meta = self(data)
         target = self.normalize(data)
-        loss, rec_loss, reg_loss = self.vae_loss(result, target, **meta)
-        gan_loss = meta["gan_loss"]
-        loss = loss + gan_loss
 
-        self.step_loss_list.append(loss.item())
+        # train generator
+        self.toggle_optimizer(optimizer_g)
+
+        g_loss, rec_loss, reg_loss = self.vae_loss(result, target, **meta)
+        g_loss = g_loss + meta["gan_gen_loss"]
+        self.manual_backward(g_loss)
+        optimizer_g.step()
+        optimizer_g.zero_grad()
+        # sch_g.step()
+        self.untoggle_optimizer(optimizer_g)
+
+        # train discriminator
+        self.toggle_optimizer(optimizer_d)
+
+        d_loss = meta["gan_dis_loss"]
+        self.manual_backward(d_loss)
+        optimizer_d.step()
+        optimizer_d.zero_grad()
+        # sch_d.step()
+        self.untoggle_optimizer(optimizer_d)
+
+
+        self.step_loss_list.append(g_loss.item())
         self.step_rec_loss_list.append(rec_loss.item())
         self.step_reg_loss_list.append(reg_loss.item())
-        self.step_gan_loss_list.append(gan_loss.item())
-
-        return loss
+        self.step_gan_loss_list.append(d_loss.item())
 
     def on_train_epoch_end(self):
         self.train_loss_list.append(list_mean(self.step_loss_list))
@@ -391,25 +433,27 @@ class VAECGAN(pl.LightningModule):
         self.step_gan_loss_list.clear()  # free memory
 
     def validation_step(self, val_batch, batch_idx):
+        sch_g, sch_d = self.lr_schedulers()
         data = val_batch[0].float()
         result, meta = self(data)
         target = self.normalize(data)
 
-        loss, rec_loss, reg_loss = self.vae_loss(result, target, **meta)
-        gan_loss = meta["gan_loss"]
-        loss = loss + gan_loss
+        g_loss, rec_loss, reg_loss = self.vae_loss(result, target, **meta)
+        g_loss = g_loss + meta["gan_gen_loss"]
+        d_loss = meta["gan_dis_loss"]
 
+        sch_g.step(g_loss)
+        sch_d.step(d_loss)
 
-        self.val_loss_list.append(loss)
-        self.log('val_loss', loss.item(), prog_bar=True)
+        self.val_loss_list.append(g_loss)
+        self.log('val_loss', g_loss.item(), prog_bar=True)
         self.log('val_rec_loss', rec_loss.item(), prog_bar=True)
         self.log('val_reg_loss', reg_loss.item(), prog_bar=True)
-        self.log('val_gan_loss', gan_loss.item(), prog_bar=True)
+        self.log('val_gan_loss', d_loss.item(), prog_bar=True)
 
         self.log('rec_loss', self.get_rec_loss(), prog_bar=True)
         self.log('reg_loss', self.get_reg_loss(), prog_bar=True)
         self.log('gan_loss', self.get_gan_loss(), prog_bar=True)
-        return loss
 
     def get_reg_loss(self):
         if len(self.train_reg_loss_list) > 0:
