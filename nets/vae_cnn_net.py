@@ -154,6 +154,7 @@ class VAEC(pl.LightningModule):
         # Model meta info
         self.normIn = False
         self.metaD = False
+        self.export_latent = False
 
         self.step_loss_list = []
         self.train_loss_list = []
@@ -444,6 +445,10 @@ class VAEC(pl.LightningModule):
         latent_mu, latent_logvar = self.encode(data_x)
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         train_y = data_y.cpu().detach().numpy()
+
+        if self.export_latent:
+            data_lat = pd.DataFrame(data=latent_mu, columns=['latent space dimension %d'%i for i in range(latent_mu.shape[1])])
+            data_lat.to_csv(f"{self.hparams.outname}{epoch}_latent_space.csv", index=False)
 
         data_df = pd.DataFrame(np.concatenate((latent_mu, train_y), axis=1), columns=["Latent Dimension %d"%i for i in range(latent_mu.shape[1])] + self.trainer.datamodule.hparams.label_list)
         print("\n\n=======================================")

@@ -57,17 +57,15 @@ class LITColvarData(pl.LightningDataModule):
             self.num_inputs = len(header_solv)
             col_range = range(first_col + len(header_dist), first_col + len(header_dist) + self.num_inputs)
 
-        alldata = np.loadtxt(colvar_file, usecols=col_range)
-        alllabel = np.loadtxt(colvar_file, usecols=[a for a in range(1,len(label_list) + 1)], ndmin = 2)
+        self.alldata = np.loadtxt(colvar_file, usecols=col_range)
+        self.alllabel = np.loadtxt(colvar_file, usecols=[a for a in range(1,len(label_list) + 1)], ndmin = 2)
 
 
 
 
-        p = np.random.permutation(len(alldata))
-        alldata, alllabel = alldata[p], alllabel[p]
 
         ## Dividing data into training and validation data
-        FRAMES = alldata.shape[0]
+        FRAMES = self.alldata.shape[0]
         self.n_train_data = int(FRAMES * train_prop)
         self.n_valid_data = int(FRAMES * (1.0 - train_prop))
         if batch_size == -1:
@@ -77,21 +75,18 @@ class LITColvarData(pl.LightningDataModule):
 
         # Printing
         print("[Imported data]")
-        print("- data.shape:", alldata.shape)
-        print("- label.shape:", alllabel.shape)
-        assert alldata.shape[0] == alllabel.shape[0]
+        print("- data.shape:", self.alldata.shape)
+        print("- label.shape:", self.alllabel.shape)
+        assert self.alldata.shape[0] == self.alllabel.shape[0]
         self.target_scaler = StandardScaler()
-        self.target_scaler.fit(alldata)
+        self.target_scaler.fit(self.alldata)
 
         print(f"Total frames: {FRAMES}, Train size: {self.n_train_data}, Batch size: {self.train_batchsize}, Validation size: {self.n_valid_data}")
         print("==========================================")
         self.save_hyperparameters()
-        self.all_dataset = ColvarDataset([alldata, alllabel])
+        p = np.random.permutation(len(self.alldata))
+        self.all_dataset = ColvarDataset([self.alldata[p], self.alllabel[p]])
 
-        # print(f"\nshape={alllabel.shape}\n")
-        # print(f"\nmax={np.amax(alllabel)}\n")
-        # print(f"\nmin={np.amin(alllabel)}\n")
-        # exit()
 
 
 
@@ -114,8 +109,8 @@ class LITColvarData(pl.LightningDataModule):
         return DataLoader(valid_data, batch_size=len(self.validation_data), shuffle=False, drop_last=True, num_workers=1)
 
     def test_dataloader(self):
-        test_data = self.target_scaler.transform(self.all_dataset) if self.hparams.standardize_inputs else self.all_dataset
-        return DataLoader(test_data, batch_size=len(self.all_dataset), shuffle=False, drop_last=True)
+        all_dataset = ColvarDataset([self.alldata, self.alllabel])
+        return DataLoader(all_dataset, batch_size=len(all_dataset), shuffle=False, drop_last=False)
 
     def target_scaler(self, X):
         return self.target_scaler.transform(X)

@@ -55,6 +55,9 @@ def parse_args():
     parser.add_argument('--networktype', type=str, default='VAE_mse', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
 
+    parser.add_argument('--export_latent', action="store_true", help='Export latent space values on the data')
+
+
     args = parser.parse_args()
 
     return args
@@ -65,6 +68,7 @@ args = parse_args()
 start = timer()
 
 overwrite = args.overwrite
+export_latent = args.export_latent
 odir = args.outpath + "/" + args.outfolder + "_"
 nntype = args.networktype
 nexp = args.nexp
@@ -254,6 +258,14 @@ if nntype != "AE" and nntype != "GMVAE":
 
 
 
+#####################################
+# Output latent space of the dataset
+#####################################
+
+if export_latent:
+    model.export_latent = True
+
+
 
 
 ##################################
@@ -285,6 +297,9 @@ if save_checkpoint:
 
 ##################################
 trainer.test(model, datamodule=colvardata)
+
+
+
 
 
 
