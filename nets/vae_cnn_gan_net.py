@@ -34,11 +34,16 @@ class VAECGAN(pl.LightningModule):
                  n_samples : int = 1,
                  outname : str = './VAECGAN_untitled/LITcollVAE_'):
         super().__init__()
-        self.automatic_optimization = False # This turns off pytorch lightning's automatic optimization
+        self.automatic_optimization = False
         assert len(l) >= 3
         assert len(lw) == 3
         self.n_solv = np.prod(lw)
+        self.n_lin = l[0] -  self.n_solv
 
+        assert self.n_lin >= 0, "Number of linear input nodes must be greater than or equal to zero"
+        n_hin = l[1] - l[1]//2
+        if self.n_lin == 0:
+            n_hin = l[1]
         #### Setting up the layers of the netwrok ####
         print("[Initializing VAECGAN Module]")
         print("- hidden layers:", l)
@@ -57,22 +62,26 @@ class VAECGAN(pl.LightningModule):
         conv_input_layers.append(nn.Flatten())
         print("(batch_normalization layer)")
         conv_input_layers.append(nn.BatchNorm1d(self.n_solv))
-        print(self.n_solv, " --> ", l[1] - l[1]//2)
-        conv_input_layers.append(nn.Linear(self.n_solv, l[1] - l[1]//2))
+        print(self.n_solv, " --> ", n_hin)
+        conv_input_layers.append(nn.Linear(self.n_solv, n_hin))
         print("(relu)")
         conv_input_layers.append(nn.ReLU(True))
         self.conv_input = nn.Sequential(*conv_input_layers)
         print("=============================")
         print("")
         print("========= Input Linear NN =========")
-        lin_input_layers = []
-        print(l[0] -  self.n_solv, " --> ", l[1]//2, end=" ")
-        lin_input_layers.append(nn.Linear(l[0] -  self.n_solv, l[1]//2))
-        print("(relu)")
-        lin_input_layers.append(nn.ReLU(True))
-        print("(batch_normalization layer)")
-        lin_input_layers.append(nn.BatchNorm1d(l[1]//2))
-        self.lin_input = nn.Sequential(*lin_input_layers)
+        if self.n_lin == 0:
+            print("No linear input layer")
+            self.lin_input = nn.Identity()
+        else:
+            lin_input_layers = []
+            print(l[0] -  self.n_solv, " --> ", l[1]//2, end=" ")
+            lin_input_layers.append(nn.Linear(l[0] -  self.n_solv, l[1]//2))
+            print("(relu)")
+            lin_input_layers.append(nn.ReLU(True))
+            print("(batch_normalization layer)")
+            lin_input_layers.append(nn.BatchNorm1d(l[1]//2))
+            self.lin_input = nn.Sequential(*lin_input_layers)
         print("=============================")
         print("")
         print("========= Encoder-Decoder NN =========")
@@ -108,15 +117,19 @@ class VAECGAN(pl.LightningModule):
 
 
         print("========= Output Linear NN =========")
-        if loss_type == 'mse':
-            lin_output_layers = []
-            print(l[1], " --> ", l[0] - self.n_solv)
-            lin_output_layers.append(nn.Linear(l[1], l[0] - self.n_solv))
-            self.lin_output = nn.Sequential(*lin_output_layers)
+        if self.n_lin == 0:
+            print("No linear output layer")
+            self.lin_output = nn.Identity()
         else:
-            assert False, "VAECGAN elbo version not implemented yet"
-            self.decoder_mu = nn.Linear(l[1], l[0])
-            print(l[1], " --> ", l[0], end=" ")
+            if loss_type == 'mse':
+                lin_output_layers = []
+                print(l[1], " --> ", self.n_lin)
+                lin_output_layers.append(nn.Linear(l[1], self.n_lin))
+                self.lin_output = nn.Sequential(*lin_output_layers)
+            else:
+                assert False, "VAEC elbo version not implemented yet"
+                self.decoder_mu = nn.Linear(l[1], l[0])
+                print(l[1], " --> ", l[0], end=" ")
             print("(mu for feature space)")
             self.decoder_logvar = nn.Linear(l[1], l[0])
             print( "  ", " \--> ", l[0], end=" ")
@@ -135,9 +148,9 @@ class VAECGAN(pl.LightningModule):
             print(self.n_solv, " -unflatten-> ", lw)
             conv_output_layers.append(nn.Unflatten(1, (1,-1)))
             conv_output_layers.append(nn.Unflatten(2, (lw[0], lw[1], lw[2])))
-            print(lw, " -conv-> ", lw, end=" ")
+            print(lw, " -conv-> ", lw)
             conv_output_layers.append(nn.Conv3d(1, 1, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
-            print(lw, " -flatten-> ", self.n_solv, end=" ")
+            print(lw, " -flatten-> ", self.n_solv)
             conv_output_layers.append(nn.Flatten())
             self.conv_output = nn.Sequential(*conv_output_layers)
         else:
@@ -216,9 +229,12 @@ class VAECGAN(pl.LightningModule):
     def encode(self, x):
         if self.normIn:
             x = self.normalize(x)
-        x_lin = self.lin_input(x[:,:x.size()[1] - self.n_solv])
-        x_conv = self.conv_input(x[:,0:self.n_solv])
-        x = torch.cat((x_lin, x_conv), dim=1)
+        if self.n_lin == 0:
+            x = self.conv_input(x)
+        else:
+            x_lin = self.lin_input(x[:,:x.size()[1] - self.n_solv])
+            x_conv = self.conv_input(x[:,0:self.n_solv])
+            x = torch.cat((x_lin, x_conv), dim=1)
         x = self.encoder_hidden(x)
         mu = self.encoder_mu(x)
         logvar = self.encoder_logvar(x)
@@ -231,9 +247,12 @@ class VAECGAN(pl.LightningModule):
 
     def decode(self, z):
         z = self.decoder_hidden(z)
-        z_lin = self.lin_output(z)
-        z_conv = self.conv_output(z)
-        x_out = torch.cat((z_lin, z_conv), dim=1)
+        if self.n_lin == 0:
+            x_out =  self.conv_output(z)
+        else:
+            z_lin = self.lin_output(z)
+            z_conv = self.conv_output(z)
+            x_out = torch.cat((z_lin, z_conv), dim=1)
         return x_out
 
 
