@@ -7,3 +7,4 @@ ce_training*/
 run.sh
 run_slurm.sh
 saved_runs/
+wandb/

@@ -10,6 +10,7 @@ import argparse
 
 from timeit import default_timer as timer
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import WandbLogger
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -28,7 +29,7 @@ def parse_args():
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
     parser.add_argument('--outfolder', type=str, default='ce_training', help='Stem of the folder name to save the output')
     parser.add_argument('--nexp', required=False, default=1, type=int, help='Experiment number for output names')
-
+    parser.add_argument('--wand', action="store_true", help='Log to WandB logger')
 
     parser.add_argument('--modelpath', type=str, help='Output folder for saving the model')
     parser.add_argument('--save_model', action="store_true", help='Save Model')
@@ -108,8 +109,10 @@ save_checkpoint = args.save_checkpoint
 #import AE_nn
 if nntype == "AE":
     from ce_nets import LITcollAE as main_nn
-elif nntype == "VAE_mse" or nntype == "VAE":
-    from ce_nets import LITcollVAE as main_nn
+elif nntype == "VAE_mse":
+    from ce_nets import VAE_mse as main_nn
+elif nntype == "VAE":
+    from ce_nets import VAE as main_nn
 elif nntype == "GMVAE":
     from ce_nets import GMVAE as main_nn
 elif nntype == "VAEGAN" or nntype == "VAEGAN_mse":
@@ -131,6 +134,7 @@ from ce_dataloaders import LITColvarData as main_dl
 # Output directory
 ##################################
 odir_name = odir+str(nexp)
+modelpath = args.modelpath if args.modelpath != None else odir_name
 
 if not overwrite:
     while True:
@@ -197,11 +201,9 @@ if nntype == "AE":
     netargs['l'] = nodes
 elif nntype == "VAE_mse" or nntype == "VAEGAN_mse":
     netargs['l'] = nodes
-    netargs['loss_type'] = "mse"
     netargs['beta'] = beta
 elif nntype == "VAE" or nntype == "VAEGAN":
     netargs['l'] = nodes
-    netargs['loss_type'] = "elbo"
     netargs['beta'] = beta
 elif nntype == "VAECGAN" or nntype == "VAEC":
     netargs['l'] = nodes
@@ -230,12 +232,18 @@ if standardize_inputs:
 ##################################
 # Training the NN
 ##################################
+trainargs = {"max_epochs" : num_epochs,
+             "log_every_n_steps" : 1,
+             "default_root_dir" : odir_name}
 if args.gpu and torch.cuda.is_available():
-    print("GPU enabled")
-    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir=odir_name, accelerator='gpu', devices=1)
-else:
-    print("NO GPU")
-    trainer = pl.Trainer(max_epochs=num_epochs, log_every_n_steps=1, default_root_dir=odir_name)
+    trainargs["accelerator"] = 'gpu'
+    trainargs["devices"] = 1
+if args.wand:
+    wandb_logger = WandbLogger(log_model="all")
+    trainargs["logger"] = wandb_logger
+
+
+trainer = pl.Trainer(**trainargs)
 if train:
     start = timer()
     # trainer.tune(model, datamodule=colvardata) # To auto find the lr
@@ -253,8 +261,7 @@ if not train and not load_state:
 ##################################
 # Analysing a loaded model
 ##################################
-if nntype != "AE" and nntype != "GMVAE":
-    model.get_fve(colvardata)
+# model.print_fve(colvardata)
 
 
 
@@ -263,7 +270,7 @@ if nntype != "AE" and nntype != "GMVAE":
 #####################################
 
 if export_latent:
-    model.export_latent = True
+    model.export_latent(next(iter(colvardata.test_dataloader())))
 
 
 
@@ -272,23 +279,7 @@ if export_latent:
 # Serializing and checkpointing the model
 ##################################
 if save_model:
-    print("[Exporting the model]")
-
-    fake_loader = torch.utils.data.DataLoader(colvardata.all_dataset, batch_size=1, shuffle=False)
-    fake_input = next(iter(fake_loader))[0].float()
-
-    if args.modelpath == None:
-        modelpath = odir_name
-    else:
-        modelpath = args.modelpath
-    if not os.path.isdir(modelpath):
-            os.makedirs(modelpath)
-
-    model.metaD = True
-    # model.to_torchscript(file_path=f"{modelpath}/encoder.pt", method='trace', example_inputs=fake_input, strict=False)
-    torch.jit.save(model.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{odir_name}/{modelpath}/encoder.pt")
-
-    print(f"@@ model exported as: {odir_name}/{modelpath}/encoder.pt")
+    model.export_serial_model(f'{odir_name}/{modelpath}')
 
 if save_checkpoint:
     trainer.save_checkpoint(f"{outname}checkpoint")
