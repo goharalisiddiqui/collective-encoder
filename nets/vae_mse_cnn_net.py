@@ -25,7 +25,7 @@ from scipy.stats import multivariate_normal
 from nets.vae_net import VAE
 
 
-class VAEC(VAE):
+class VAEC_mse(VAE):
     def __init__(self,
                  l : list,
                  lw : list,
@@ -65,16 +65,13 @@ class VAEC(VAE):
         print("========= Encoder-Decoder NN =========")
         self.init_encoder()
         print("(Reparameterization Sampler)\n\n")
-        self.init_decoder_layers()
+        self.init_decoder()
         print("======================")
         print("========= Output Linear NN =========")
         self.init_output_lin()
         print("=============================")
         print("========= Output Conv NN =========")
         self.init_output_conv()
-        print("=============================")
-        print("========= Output  NN =========")
-        self.init_decoder_output()
         print("=============================")
 
     def init_input_conv(self):
@@ -132,6 +129,12 @@ class VAEC(VAE):
                 print("(batch_normalization layer)")
         self.encoder_hidden = nn.Sequential(*encoder_layers)
 
+    def init_decoder_output(self):
+        l = self.hparams.l
+        self.decoder_output = nn.Linear(l[1], l[0])
+        print(l[1], " --> ", l[0], end=" ")
+        print("(feature space)")
+
     def init_output_lin(self):
         l = self.hparams.l
         if self.n_lin == 0:
@@ -139,12 +142,10 @@ class VAEC(VAE):
             self.lin_output = nn.Identity()
         else:
             lin_output_layers = []
+            print(l[1], " --> ", self.n_lin)
             lin_output_layers.append(nn.Linear(l[1], self.n_lin))
-            print(l[1], " --> ", self.n_lin, end=" ")
-            lin_output_layers.append(nn.ReLU(True))
-            print("(relu)")
             self.lin_output = nn.Sequential(*lin_output_layers)
-            print("\n\n")
+            print("(feature space)\n\n")
 
     def init_output_conv(self):
         batch_norm = self.hparams.batch_norm
@@ -164,21 +165,9 @@ class VAEC(VAE):
         conv_output_layers.append(nn.Unflatten(2, (lw[0], lw[1], lw[2])))
         print(lw, " -conv-> ", lw)
         conv_output_layers.append(nn.Conv3d(1, 1, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
-        print(lw, " -flatten-> ", self.n_solv, end=" ")
+        print(lw, " -flatten-> ", self.n_solv)
         conv_output_layers.append(nn.Flatten())
-        print("(relu)")
-        conv_output_layers.append(nn.ReLU(True))
         self.conv_output = nn.Sequential(*conv_output_layers)
-
-    def init_decoder_output(self):
-        l = self.hparams.l
-        self.decoder_mu = nn.Linear(l[0], l[0])
-        print(l[0], " --> ", l[0], end=" ")
-        print("(mu for feature space)")
-        self.decoder_logvar = nn.Linear(l[0], l[0])
-        print( "  ", " \--> ", l[0], end=" ")
-        print("(logvar for feature space)\n\n")
-        print("======================")
 
     def encode(self, x):
         x = self.normalize(x)
@@ -196,15 +185,53 @@ class VAEC(VAE):
     def decode(self, z):
         z = self.decoder_hidden(z)
         if self.n_lin == 0:
-            x_h =  self.conv_output(z)
+            x_out =  self.conv_output(z)
         else:
             z_lin = self.lin_output(z)
             z_conv = self.conv_output(z)
-            x_h = torch.cat((z_lin, z_conv), dim=1)
-        x_mu = self.decoder_mu(x_h)
-        x_logvar = self.decoder_mu(x_h)
-        return x_mu, x_logvar
+            x_out = torch.cat((z_lin, z_conv), dim=1)
+        return x_out
+
+    def forward(self, x):
+        mu_latent, logvar_latent = self.encode(x)
+        if mu_latent.isnan().any() or logvar_latent.isnan().any():
+            print("Nan in encoder network (Gradient diminished or exploded). Can't continue")
+            exit()
+
+        if self.metaD:
+            return mu_latent, logvar_latent
+
+        z = self.reparametrize_multivariate(mu_latent, logvar_latent)
+
+        x_out = self.decode(z)
+
+        return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent, "z_sample" : z}
+
+    def recon_loss(self, tru_x, recon_x):
+        loss_rec = F.mse_loss(recon_x, tru_x, reduction='none')
+        loss_rec = torch.mean(loss_rec, dim = 1)
+
+        return loss_rec
+
+    def loss(self, recon_x, tru_x, **kwargs):
+        mu_latent = kwargs["mu_latent"]
+        logvar_latent = kwargs["logvar_latent"]
+        z_sample = kwargs["z_sample"]
+
+        loss_rec = self.recon_loss(tru_x, recon_x)
+        loss_reg = self.reg_loss(z_sample, mu_latent, logvar_latent)
 
 
+        loss_rec = torch.mean(loss_rec) # Mean of batch
+        loss_reg = torch.mean(loss_reg) # Mean of batch
+        loss = loss_rec + self.hparams.beta * loss_reg
+
+        if loss.isnan().any().detach().cpu().numpy():
+            print("loss contains nan. Can't continue")
+            exit()
+
+        loss_mae = self.mae_loss(recon_x, tru_x)
+
+        return {'loss' : loss, 'mae_loss' : loss_mae, 'rec_loss' : loss_rec, 'reg_loss' : loss_reg}
 
 

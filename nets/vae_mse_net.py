@@ -37,10 +37,11 @@ class VAE_mse(VAE):
                  outname : str = './VAE_mse_untitled/VAE_mse_'):
         super().__init__(l, lr, l2_reg, beta, batch_norm, lr_scheduler, plot_every, outname)
 
+    def init_decoder_output(self):
+        l = self.hparams.l
         self.decoder_output = nn.Linear(l[1], l[0])
         print(l[1], " --> ", l[0], end=" ")
         print("(feature space)")
-        print("======================")
 
     def decode(self, z):
         z = self.decoder_hidden(z)

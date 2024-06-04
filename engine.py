@@ -124,7 +124,10 @@ elif nntype == "VAEGAN" or nntype == "VAEGAN_mse":
 elif nntype == "VAECGAN" or nntype == "VAECGAN_mse":
     assert solvation != '0', "Solvation grid size not provided"
     from ce_nets import VAECGAN as main_nn
-elif nntype == "VAEC" or nntype == "VAEC_mse":
+elif nntype == "VAEC_mse":
+    assert solvation != '0', "Solvation grid size not provided"
+    from ce_nets import VAEC_mse as main_nn
+elif nntype == "VAEC":
     assert solvation != '0', "Solvation grid size not provided"
     from ce_nets import VAEC as main_nn
 else:
@@ -216,13 +219,15 @@ elif nntype == "VAE" or nntype == "VAEGAN":
 elif nntype == "VAECGAN" or nntype == "VAEC":
     netargs['l'] = nodes
     netargs['lw'] = solv
-    netargs['loss_type'] = "elbo"
     netargs['beta'] = beta
+    netargs['batch_norm'] = args.nobatchnorm
+    netargs['plot_every'] = args.plot_every
 elif nntype == "VAECGAN_mse" or nntype == "VAEC_mse":
     netargs['l'] = nodes
     netargs['lw'] = solv
-    netargs['loss_type'] = "mse"
     netargs['beta'] = beta
+    netargs['batch_norm'] = args.nobatchnorm
+    netargs['plot_every'] = args.plot_every
 elif nntype == "GMVAE":
     netargs['n_x'] = nodes[0]
     netargs['n_z'] = nodes[-1]

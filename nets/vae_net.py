@@ -27,7 +27,7 @@ from nets.ae_base import AEBase
 
 class VAE(AEBase):
     def __init__(self,
-                 l:list,
+                 l: list,
                  lr : float = 0.01,
                  l2_reg : float = 1e-7,
                  beta : float = 1.0,
@@ -37,12 +37,33 @@ class VAE(AEBase):
                  outname : str = './LITcollVAE_untitled/LITcollVAE_'):
         super().__init__(l[0], l[-1], lr, l2_reg, lr_scheduler, outname, plot_every)
         assert len(l) >= 3
+        self.save_hyperparameters()
 
         #### Setting up the layers of the netwrok ####
+        self.init_network()
+
+
+    def init_network(self):
         print(f"[Initializing {type(self).__name__} Module]")
-        print("- hidden layers:", l)
+        print("- hidden layers:", self.hparams.l)
         print("")
         print("========= NN =========")
+        self.init_encoder()
+        print("(Reparameterization Sampler)\n\n")
+        self.init_decoder()
+        print("======================")
+
+    def init_encoder(self):
+        self.init_encoder_layers()
+        self.init_encoder_output()
+
+    def init_decoder(self):
+        self.init_decoder_layers()
+        self.init_decoder_output()
+
+    def init_encoder_layers(self):
+        l = self.hparams.l
+        batch_norm = self.hparams.batch_norm
         encoder_layers = []
         for i in range(len(l) - 2):
             print(l[i], " --> ", l[i + 1], end=" ")
@@ -53,15 +74,10 @@ class VAE(AEBase):
                 encoder_layers.append(nn.BatchNorm1d(l[i + 1]))
                 print("(batch_normalization layer)")
         self.encoder_hidden = nn.Sequential(*encoder_layers)
-        self.encoder_mu = nn.Linear(l[-2], l[-1])
-        print(l[-2], " --> ", l[-1], end=" ")
-        print("(mu for latent space)")
-        self.encoder_logvar = nn.Linear(l[-2], l[-1])
-        print( "  ", " \--> ", l[-1], end=" ")
-        print("(logvar for latent space)\n\n")
 
-        print("(Reparameterization Sampler)\n\n")
-
+    def init_decoder_layers(self):
+        l = self.hparams.l
+        batch_norm = self.hparams.batch_norm
         decoder_layers = []
         a = len(l) - 1
         for i in range(len(l) - 2):
@@ -74,17 +90,24 @@ class VAE(AEBase):
                 print("(batch_normalization layer)")
         self.decoder_hidden = nn.Sequential(*decoder_layers)
 
-        if type(self).__name__ == "VAE":
-            self.decoder_mu = nn.Linear(l[1], l[0])
-            print(l[1], " --> ", l[0], end=" ")
-            print("(mu for feature space)")
-            self.decoder_logvar = nn.Linear(l[1], l[0])
-            print( "  ", " \--> ", l[0], end=" ")
-            print("(logvar for feature space)\n\n")
-            print("======================")
+    def init_encoder_output(self):
+        l = self.hparams.l
+        self.encoder_mu = nn.Linear(l[-2], l[-1])
+        print(l[-2], " --> ", l[-1], end=" ")
+        print("(mu for latent space)")
+        self.encoder_logvar = nn.Linear(l[-2], l[-1])
+        print( "  ", " \--> ", l[-1], end=" ")
+        print("(logvar for latent space)\n\n")
 
-
-        self.save_hyperparameters()
+    def init_decoder_output(self):
+        l = self.hparams.l
+        self.decoder_mu = nn.Linear(l[1], l[0])
+        print(l[1], " --> ", l[0], end=" ")
+        print("(mu for feature space)")
+        self.decoder_logvar = nn.Linear(l[1], l[0])
+        print( "  ", " \--> ", l[0], end=" ")
+        print("(logvar for feature space)\n\n")
+        print("======================")
 
     def print_hparams(self):
         print("- Beta \t=", self.hparams.beta)

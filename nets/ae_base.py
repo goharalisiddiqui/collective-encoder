@@ -323,9 +323,6 @@ class AEBase(pl.LightningModule):
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         labels = data[1].float().cpu().detach().numpy() if len(data) > 1 else None
 
-        n_rows = self.dim_latent if self.dim_latent > 2 else 1
-        n_cols = labels.shape[1] if labels is not None else 1
-        fig, ax = plt.subplots(n_rows, n_cols, squeeze=False, figsize=(6 * n_cols, 6 * n_rows))
 
         if latent_mu.shape[0] > self.plot_points_limit:
             index = np.random.choice(latent_mu.shape[0], 5000, replace=False)
@@ -345,13 +342,29 @@ class AEBase(pl.LightningModule):
             latent_logvar = latent_logvar[choices < 2.0]
             data_y = data_y[choices < 2.0]
 
-        for i in range(0, ax.shape[0]):
-            for j in range(n_cols):
-                self.plot_latent_axis(fig, ax[i][j], latent_mu, latent_logvar, labels[:,j] if labels is not None else None, i, j, label_list[j] if label_list is not None else None)
+        n_fig = 10
+        k = 0
+        n_hidden = self.dim_latent
+        n_cols = labels.shape[1] if labels is not None else 1
+        while (n_hidden > 0):
+            n_rows = n_hidden if n_hidden > 2 else 1
+            if n_rows > n_fig:
+                n_rows = n_fig
+            fig, axes = plt.subplots(n_rows, n_cols, squeeze=False, figsize=(6 * n_cols, 6 * n_rows))
 
-        plt.tight_layout()
-        fig.savefig(f"{self.hparams.outname}{self.current_epoch}_latent_space.png", dpi=150)
-        plt.close()
+            for i in range(0, axes.shape[0]):
+                for j in range(n_cols):
+                    self.plot_latent_axis(fig, axes[i][j], latent_mu, latent_logvar, labels[:,j] if labels is not None else None, i, j, label_list[j] if label_list is not None else None)
+            n_hidden -= n_rows
+            if n_hidden == 1:
+                n_hidden = 0
+            plt.tight_layout()
+            if k == 0 and n_hidden == 0:
+                fig.savefig(f"{self.hparams.outname}{self.current_epoch}_latent_space.png", dpi=150)
+            else:
+                fig.savefig(f"{self.hparams.outname}{self.current_epoch}_latent_space_{k+1}.png", dpi=150)
+            plt.close()
+            k += 1
 
     @torch.no_grad()
     def plot_latent_axis(self, fig, ax, latent_mu, latent_logvar, train_y, i, j, label):
