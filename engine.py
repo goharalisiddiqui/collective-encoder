@@ -14,6 +14,8 @@ from pytorch_lightning.loggers import WandbLogger
 
 torch.manual_seed(0)
 np.random.seed(0)
+import warnings
+warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
 
 ##################################
@@ -45,10 +47,12 @@ def parse_args():
     parser.add_argument('--overwrite', action="store_true", help='Overwrite output folder')
     parser.add_argument('--normalize', action="store_true", help='Normalize input or not')
     parser.add_argument('--output_to_file', action="store_true", help='Also store output in a file')
+    parser.add_argument('--plot_every', type=int, default=0, help='Number of epochs to run')
 
     parser.add_argument('--beta', type=float, default=1.0, help='beta for the beta-VAE')
     parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
     parser.add_argument('--l2norm', type=float, default=1e-3, help='Weights regularization for the training')
+    parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
 
 
     parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
@@ -66,7 +70,6 @@ def parse_args():
 
 args = parse_args()
 
-start = timer()
 
 overwrite = args.overwrite
 export_latent = args.export_latent
@@ -88,6 +91,7 @@ state_file = args.modelfile
 # Train model
 hidden_nodes = args.network # NN hidden layers
 num_epochs = args.nepochs
+plot_every = args.plot_every
 train = True if num_epochs > 0 else False
 # Optimization
 lrate = args.lrate  # Learning rate
@@ -202,9 +206,13 @@ if nntype == "AE":
 elif nntype == "VAE_mse" or nntype == "VAEGAN_mse":
     netargs['l'] = nodes
     netargs['beta'] = beta
+    netargs['batch_norm'] = args.nobatchnorm
+    netargs['plot_every'] = args.plot_every
 elif nntype == "VAE" or nntype == "VAEGAN":
     netargs['l'] = nodes
     netargs['beta'] = beta
+    netargs['batch_norm'] = args.nobatchnorm
+    netargs['plot_every'] = args.plot_every
 elif nntype == "VAECGAN" or nntype == "VAEC":
     netargs['l'] = nodes
     netargs['lw'] = solv
@@ -222,6 +230,7 @@ else:
     raise ValueError("Unknown network type")
 
 if load_state:
+    print(f"Loading model from {state_file}")
     model = main_nn.load_from_checkpoint(state_file, **netargs)
 else:
     model = main_nn(**netargs)
@@ -251,7 +260,7 @@ if train:
 
     end = timer()
     elapsed = end - start
-    print(f"\nTook {elapsed} s; {colvardata.num_inputs - len(label_list)} CVs, {len(colvardata.all_dataset)} frames")
+    print(f"\nTook {elapsed} s; {colvardata.num_inputs - len(label_list)} input_dim, {len(colvardata.all_dataset)} frames")
 
 if not train and not load_state:
     print("WARNING! Model neither loaded nor trained!")

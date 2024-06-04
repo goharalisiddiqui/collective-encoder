@@ -31,10 +31,11 @@ class VAE(AEBase):
                  lr : float = 0.01,
                  l2_reg : float = 1e-7,
                  beta : float = 1.0,
-                 n_samples : int = 1,
-                 lr_scheduler : bool = False,
+                 batch_norm : bool = True,
+                 lr_scheduler : bool = True,
+                 plot_every : int = 0,
                  outname : str = './LITcollVAE_untitled/LITcollVAE_'):
-        super().__init__(l[0], l[-1], lr, l2_reg, lr_scheduler, outname)
+        super().__init__(l[0], l[-1], lr, l2_reg, lr_scheduler, outname, plot_every)
         assert len(l) >= 3
 
         #### Setting up the layers of the netwrok ####
@@ -48,8 +49,9 @@ class VAE(AEBase):
             encoder_layers.append(nn.Linear(l[i], l[i + 1]))
             encoder_layers.append(nn.ReLU(True))
             print("(relu)")
-            encoder_layers.append(nn.BatchNorm1d(l[i + 1]))
-            print("(batch_normalization layer)")
+            if batch_norm:
+                encoder_layers.append(nn.BatchNorm1d(l[i + 1]))
+                print("(batch_normalization layer)")
         self.encoder_hidden = nn.Sequential(*encoder_layers)
         self.encoder_mu = nn.Linear(l[-2], l[-1])
         print(l[-2], " --> ", l[-1], end=" ")
@@ -67,8 +69,9 @@ class VAE(AEBase):
             decoder_layers.append(nn.Linear(l[a- i], l[a - i - 1]))
             decoder_layers.append(nn.ReLU(True))
             print("(relu)")
-            decoder_layers.append(nn.BatchNorm1d(l[a - i - 1]))
-            print("(batch_normalization layer)")
+            if batch_norm:
+                decoder_layers.append(nn.BatchNorm1d(l[a - i - 1]))
+                print("(batch_normalization layer)")
         self.decoder_hidden = nn.Sequential(*decoder_layers)
 
         if type(self).__name__ == "VAE":
@@ -106,13 +109,13 @@ class VAE(AEBase):
         if self.metaD:
             return mu_latent, logvar_latent
 
-        z = self.reparametrize(mu_latent, logvar_latent)
+        z = self.reparametrize_multivariate(mu_latent, logvar_latent)
 
         mu_x, logvar_x = self.decode(z) # q(x|z)
         if mu_x.isnan().any() or logvar_x.isnan().any():
             print("Nan in decoder network (Gradient diminished or exploded). Can't continue")
             exit()
-        x_out = self.reparametrize(mu_x, logvar_x)
+        x_out = self.reparametrize_multivariate(mu_x, logvar_x)
 
         return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent,
                     "mu_x" : mu_x, "logvar_x" : logvar_x, "z_sample" : z}
@@ -135,16 +138,30 @@ class VAE(AEBase):
         return loss_rec
 
     def reg_loss(self, z_sample, mu_latent, logvar_latent):
-
         loss_kld = self.kld(mu_latent, logvar_latent)
+        loss_kld = torch.mean(loss_kld, dim = 0)
 
-        cov = torch.cov(z_sample.T)
-        loss_cov = (cov * (1 - torch.eye(z_sample.shape[1]))).flatten().mean() * 0.5
-        loss_cov = torch.abs(loss_cov)
+        # cov = torch.cov(z_sample.T)
+        # loss_cov = (cov * (1 - torch.eye(z_sample.shape[1], device=z_sample.device)))
+        # loss_cov = loss_cov.flatten().mean()
+        # loss_cov = torch.abs(loss_cov)
+        # print("\n", loss_cov.item())
+        C = 0.0 #if self.current_epoch <= 500 else 0.1
+        # loss_reg = loss_kld #+ loss_cov
+        loss_reg = torch.abs(loss_kld - C)
 
-        loss_reg = loss_kld + torch.abs(loss_cov)
 
         return loss_reg
+
+    def mae_loss(self, recon_x, tru_x):
+        tru_x = self.denormalize(tru_x)
+        recon_x = self.denormalize(recon_x)
+
+        loss_mae = F.l1_loss(recon_x, tru_x, reduction='none')
+        loss_mae = torch.mean(loss_mae, dim = 1)
+        loss_mae = torch.mean(loss_mae, dim = 0)
+
+        return loss_mae
 
 
 
@@ -166,7 +183,9 @@ class VAE(AEBase):
             print("loss contains nan. Can't continue")
             exit()
 
-        return {'loss' : loss, 'rec_loss' : loss_rec, 'reg_loss' : loss_reg}
+        loss_mae = self.mae_loss(recon_x, tru_x)
+
+        return {'loss' : loss, 'mae_loss' : loss_mae, 'rec_loss' : loss_rec, 'reg_loss' : loss_reg}
 
 
 

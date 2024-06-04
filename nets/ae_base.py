@@ -14,6 +14,7 @@ TORCH_PI = torch.acos(torch.zeros(1))*2
 
 import pandas as pd
 pd.set_option('display.max_columns', None)
+pd.set_option('display.width', None)
 
 import matplotlib.pyplot as plt
 import matplotlib
@@ -32,6 +33,7 @@ class AEBase(pl.LightningModule):
                  l2_reg : float = 1e-7,
                  lr_scheduler : bool = False,
                  outname : str = './untitled/untitled_',
+                 plot_every : int = 0,
                  plot_points_limit : int = 5000):
         super().__init__()
 
@@ -53,6 +55,7 @@ class AEBase(pl.LightningModule):
 
     def set_norm(self, Mean: torch.Tensor, Range: torch.Tensor):
         Range[Range == 0.0] = 1.0
+        print(f"[{type(self).__name__}] Setting normalization for inputs.")
         self.normIn = True
         self.Mean = Mean
         self.Range = Range
@@ -83,6 +86,12 @@ class AEBase(pl.LightningModule):
         std = torch.exp(0.5*logvar)
         eps = torch.randn_like(std)
         return mu + eps*std
+
+    def reparametrize_multivariate(self, mu, logvar):
+        std = torch.exp(0.5*logvar)
+        dist = torch.distributions.MultivariateNormal(torch.zeros(mu.shape[1]), torch.eye(mu.shape[1]))
+        samples = dist.rsample(mu.shape[:-1]).to(mu.device)
+        return mu + samples*std
 
 
 
@@ -125,6 +134,7 @@ class AEBase(pl.LightningModule):
         result, meta = self(data)
         losses = self.loss(result, data, **meta)
 
+
         for key in losses.keys():
             if key not in self.losses.keys():
                 self.losses[key] = []
@@ -138,6 +148,10 @@ class AEBase(pl.LightningModule):
         return losses['loss']
 
     def on_train_epoch_end(self):
+        if self.current_epoch > 0 and \
+                self.hparams.plot_every > 0 and \
+                    self.current_epoch % self.hparams.plot_every == 0:
+            self.plot_test()
         return
 
     def validation_step(self, val_batch, batch_idx):
@@ -161,10 +175,21 @@ class AEBase(pl.LightningModule):
                 self.log(key, self.losses[key][-1], prog_bar=True)
         return losses['loss']
 
+    def plot_test(self):
+        dataloader = self.trainer.datamodule.test_dataloader()
+        data_batch = [t.to(self.device) for t in next(iter(dataloader))]
+        self.test_step(data_batch, 0)
+
     def test_step(self, test_batch, batch_idx):
+        # for param in self.encoder_hidden.parameters():
+        #     print(param.data)
         data, labels = self.normalize(test_batch[0].float()), test_batch[1].float()
         self.plot_training()
         latent_mu, latent_logvar = self.encode(data)
+        # print("\ndata", data)
+        # print("\nmu_latent", latent_mu)
+        # print("\nlogvar_latent", latent_logvar)
+        # exit()
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         labels = labels.cpu().detach().numpy()
         self.print_labels_latent_correlations(latent_mu, labels)
@@ -214,6 +239,8 @@ class AEBase(pl.LightningModule):
         print("=======================================\n\n")
 
     def plot_training(self):
+        if len(self.losses["loss"]) == 0:
+            return
         if len(self.losses.keys()) == 0 or "loss" not in self.losses.keys():
             raise Exception("No losses to plot.")
         non_val_losses = {key: self.losses[key] for key in self.losses.keys() if "val_" not in key}
@@ -227,35 +254,39 @@ class AEBase(pl.LightningModule):
             c="tab:red",
         )
         if "val_loss" in self.losses.keys():
-            ax[0].twinx().plot(
+            ax2 = ax[0].twinx()
+            ax2.set_yscale("log")
+            ax2.plot(
                 np.asarray(self.losses["val_loss"]),
                 "o-",
                 c="tab:red",
                 alpha=0.3,
             )
         ax[0].set_xlabel("Epoch")
-        ax[0].set_ylabel("Loss")
+        # ax[0].set_ylabel("Loss")
 
         colors = ['tab:blue','tab:orange','tab:green','tab:purple','tab:brown','tab:pink','tab:gray','tab:olive','tab:cyan']
 
         for ind, key in enumerate([key for key in non_val_losses.keys() if key != "loss"]):
             i = ind + 1
             ax[i].set_title(f"{key} minimization")
-            # ax[i].set_yscale("log")
+            ax[i].set_yscale("log")
             ax[i].plot(
                 np.asarray(non_val_losses[key]),
                 ".-",
                 c=colors[i % len(colors)],
             )
             if "val_" + key in self.losses.keys():
-                ax[i].twinx().plot(
+                ax2 = ax[i].twinx()
+                ax2.set_yscale("log")
+                ax2.plot(
                     np.asarray(self.losses["val_" + key]),
                     "o-",
                     c=colors[i % len(colors)],
                     alpha=0.3,
                 )
             ax[i].set_xlabel("Epoch")
-            ax[i].set_ylabel(key)
+            # ax[i].set_ylabel(key)
         plt.tight_layout()
         fig.savefig(f"{self.hparams.outname}{self.current_epoch}_training.png", dpi=150)
         plt.close()
@@ -274,7 +305,7 @@ class AEBase(pl.LightningModule):
 
         self.metaD = True
         torch.jit.save(self.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{model_path}/encoder.pt")
-
+        self.metaD = False
         print(f"[{type(self).__name__} model serialized at: {model_path}/encoder.pt]")
 
     @torch.no_grad()

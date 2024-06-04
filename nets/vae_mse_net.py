@@ -31,11 +31,11 @@ class VAE_mse(VAE):
                  lr : float = 0.01,
                  l2_reg : float = 1e-7,
                  beta : float = 1.0,
-                 loss_type : str = 'mse',
-                 n_samples : int = 1,
+                 batch_norm : bool = True,
                  lr_scheduler : bool = False,
+                 plot_every : int = 0,
                  outname : str = './VAE_mse_untitled/VAE_mse_'):
-        super().__init__(l, lr, l2_reg, beta, n_samples, lr_scheduler, outname)
+        super().__init__(l, lr, l2_reg, beta, batch_norm, lr_scheduler, plot_every, outname)
 
         self.decoder_output = nn.Linear(l[1], l[0])
         print(l[1], " --> ", l[0], end=" ")
@@ -52,10 +52,11 @@ class VAE_mse(VAE):
         if mu_latent.isnan().any() or logvar_latent.isnan().any():
             print("Nan in encoder network (Gradient diminished or exploded). Can't continue")
             exit()
+
         if self.metaD:
             return mu_latent, logvar_latent
 
-        z = self.reparametrize(mu_latent, logvar_latent)
+        z = self.reparametrize_multivariate(mu_latent, logvar_latent)
 
         x_out = self.decode(z)
 
@@ -75,6 +76,7 @@ class VAE_mse(VAE):
         loss_rec = self.recon_loss(tru_x, recon_x)
         loss_reg = self.reg_loss(z_sample, mu_latent, logvar_latent)
 
+
         loss_rec = torch.mean(loss_rec) # Mean of batch
         loss_reg = torch.mean(loss_reg) # Mean of batch
         loss = loss_rec + self.hparams.beta * loss_reg
@@ -83,10 +85,9 @@ class VAE_mse(VAE):
             print("loss contains nan. Can't continue")
             exit()
 
-        return {'loss' : loss, 'rec_loss' : loss_rec, 'reg_loss' : loss_reg}
+        loss_mae = self.mae_loss(recon_x, tru_x)
 
-
-
+        return {'loss' : loss, 'mae_loss' : loss_mae, 'rec_loss' : loss_rec, 'reg_loss' : loss_reg}
 
 
 
