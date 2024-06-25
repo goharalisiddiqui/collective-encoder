@@ -10,7 +10,7 @@ import argparse
 
 from timeit import default_timer as timer
 import pytorch_lightning as pl
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -32,6 +32,7 @@ def parse_args():
     parser.add_argument('--outfolder', type=str, default='ce_training', help='Stem of the folder name to save the output')
     parser.add_argument('--nexp', required=False, default=1, type=int, help='Experiment number for output names')
     parser.add_argument('--wand', action="store_true", help='Log to WandB logger')
+    parser.add_argument('--tblogger', action="store_true", help='Log to Tensorboard logger')
 
     parser.add_argument('--modelpath', type=str, help='Output folder for saving the model')
     parser.add_argument('--save_model', action="store_true", help='Save Model')
@@ -55,6 +56,7 @@ def parse_args():
     parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
 
 
+
     parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
     parser.add_argument('--solvation', type=str, default= '0', help='Grid size of the solvation grid')
     parser.add_argument('--networktype', type=str, default='VAE_mse', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
@@ -63,12 +65,13 @@ def parse_args():
     parser.add_argument('--export_latent', action="store_true", help='Export latent space values on the data')
 
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     return args
 
 
 args = parse_args()
+
 
 
 overwrite = args.overwrite
@@ -117,6 +120,7 @@ elif nntype == "VAE_mse":
     from ce_nets import VAE_mse as main_nn
 elif nntype == "VAE":
     from ce_nets import VAE as main_nn
+    from ce_nets import VAE_args as nested_args
 elif nntype == "GMVAE":
     from ce_nets import GMVAE as main_nn
 elif nntype == "VAEGAN" or nntype == "VAEGAN_mse":
@@ -133,7 +137,6 @@ elif nntype == "VAEC":
 else:
     raise ValueError("Unknown network type")
 from ce_dataloaders import LITColvarData as main_dl
-
 
 
 
@@ -191,8 +194,6 @@ colvardata = main_dl(infile, train_prop=0.8, batch_prop=0.1,
 colvardata.setup(stage="")
 
 
-
-
 ##################################
 # Setting up the NN
 ##################################
@@ -216,6 +217,7 @@ elif nntype == "VAE" or nntype == "VAEGAN":
     netargs['beta'] = beta
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
+    netargs = netargs | vars(nested_args)
 elif nntype == "VAECGAN" or nntype == "VAEC":
     netargs['l'] = nodes
     netargs['lw'] = solv
@@ -255,6 +257,9 @@ if args.gpu and torch.cuda.is_available():
 if args.wand:
     wandb_logger = WandbLogger(log_model="all")
     trainargs["logger"] = wandb_logger
+if args.tblogger:
+    tblogger = TensorBoardLogger(version=odir_name, save_dir=args.outpath)
+    trainargs["logger"] = tblogger
 
 
 trainer = pl.Trainer(**trainargs)

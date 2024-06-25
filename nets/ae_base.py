@@ -10,6 +10,7 @@ from torch.autograd import Variable
 from torch.distributions.normal import Normal
 torch.manual_seed(0)
 TORCH_PI = torch.acos(torch.zeros(1))*2
+import pytorch_lightning.loggers as pl_loggers
 
 
 import pandas as pd
@@ -134,15 +135,15 @@ class AEBase(pl.LightningModule):
         result, meta = self(data)
         losses = self.loss(result, data, **meta)
 
-
         for key in losses.keys():
+            loss_value = losses[key].item() if isinstance(losses[key], torch.Tensor) else losses[key]
             if key not in self.losses.keys():
                 self.losses[key] = []
             if batch_idx == 0:
-                self.losses[key].append(losses[key].item())
+                self.losses[key].append(loss_value)
             else:
                 self.losses[key][-1] *= batch_idx
-                self.losses[key][-1] += losses[key].item()
+                self.losses[key][-1] += loss_value
                 self.losses[key][-1] /= batch_idx + 1
 
         return losses['loss']
@@ -160,14 +161,15 @@ class AEBase(pl.LightningModule):
         losses = self.loss(result, data, **meta)
 
         for key in losses.keys():
+            loss_value = losses[key].item() if isinstance(losses[key], torch.Tensor) else losses[key]
             mkey = "val_" + key
             if mkey not in self.losses.keys():
                 self.losses[mkey] = []
             if batch_idx == 0:
-                self.losses[mkey].append(losses[key].item())
+                self.losses[mkey].append(loss_value)
             else:
                 self.losses[mkey][-1] *= batch_idx
-                self.losses[mkey][-1] += losses[key].item()
+                self.losses[mkey][-1] += loss_value
                 self.losses[mkey][-1] /= batch_idx + 1
 
         for key in self.losses.keys():
@@ -181,19 +183,14 @@ class AEBase(pl.LightningModule):
         self.test_step(data_batch, 0)
 
     def test_step(self, test_batch, batch_idx):
-        # for param in self.encoder_hidden.parameters():
-        #     print(param.data)
         data, labels = self.normalize(test_batch[0].float()), test_batch[1].float()
         self.plot_training()
         latent_mu, latent_logvar = self.encode(data)
-        # print("\ndata", data)
-        # print("\nmu_latent", latent_mu)
-        # print("\nlogvar_latent", latent_logvar)
-        # exit()
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         labels = labels.cpu().detach().numpy()
         self.print_labels_latent_correlations(latent_mu, labels)
         self.plot_latent(test_batch, label_list = self.trainer.datamodule.hparams.label_list)
+        self.plot_latent(test_batch, label_list = self.trainer.datamodule.hparams.label_list, plotsd=True)
         self.plot_extra(data, labels, latent_mu, latent_logvar)
 
     def plot_extra(self, data_x, data_y, latent_mu, latent_logvar):
@@ -238,6 +235,14 @@ class AEBase(pl.LightningModule):
         print(data_df.corr())
         print("=======================================\n\n")
 
+        fig = plt.figure(figsize=(19, 15))
+        plt.matshow(data_df.corr(), fignum=fig.number)
+        plt.xticks(range(data_df.columns.shape[0]), data_df.columns.tolist(), fontsize=14, rotation=45)
+        plt.yticks(range(data_df.columns.shape[0]), data_df.columns.tolist(), fontsize=14)
+        cb = plt.colorbar()
+        cb.ax.tick_params(labelsize=14)
+        self.log_tbimage("Correlation", fig)
+
     def plot_training(self):
         if len(self.losses["loss"]) == 0:
             return
@@ -270,7 +275,8 @@ class AEBase(pl.LightningModule):
         for ind, key in enumerate([key for key in non_val_losses.keys() if key != "loss"]):
             i = ind + 1
             ax[i].set_title(f"{key} minimization")
-            ax[i].set_yscale("log")
+            if key not in ["current_C","kld"]:
+                ax[i].set_yscale("log")
             ax[i].plot(
                 np.asarray(non_val_losses[key]),
                 ".-",
@@ -278,7 +284,8 @@ class AEBase(pl.LightningModule):
             )
             if "val_" + key in self.losses.keys():
                 ax2 = ax[i].twinx()
-                ax2.set_yscale("log")
+                if key not in ["current_C", "kld"]:
+                    ax2.set_yscale("log")
                 ax2.plot(
                     np.asarray(self.losses["val_" + key]),
                     "o-",
@@ -289,6 +296,10 @@ class AEBase(pl.LightningModule):
             # ax[i].set_ylabel(key)
         plt.tight_layout()
         fig.savefig(f"{self.hparams.outname}{self.current_epoch}_training.png", dpi=150)
+        logger = self.logger
+        if isinstance(logger, pl_loggers.TensorBoardLogger):
+            logger = logger.experiment
+            logger.add_figure(f"Training", fig, self.current_epoch)
         plt.close()
 
     @torch.no_grad()
@@ -317,7 +328,7 @@ class AEBase(pl.LightningModule):
         data_lat.to_csv(f"{self.hparams.outname}{self.current_epoch}_latent_space.csv", index=False)
 
     @torch.no_grad()
-    def plot_latent(self, data, label_list = None):
+    def plot_latent(self, data, label_list = None, plotsd = False):
         data_x = self.normalize(data[0].float())
         latent_mu, latent_logvar = self.encode(data_x)
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
@@ -354,20 +365,24 @@ class AEBase(pl.LightningModule):
 
             for i in range(0, axes.shape[0]):
                 for j in range(n_cols):
-                    self.plot_latent_axis(fig, axes[i][j], latent_mu, latent_logvar, labels[:,j] if labels is not None else None, i, j, label_list[j] if label_list is not None else None)
+                    self.plot_latent_axis(fig, axes[i][j], latent_mu, latent_logvar, labels[:,j] if labels is not None else None, i, j, label_list[j] if label_list is not None else None, plotsd)
             n_hidden -= n_rows
             if n_hidden == 1:
                 n_hidden = 0
             plt.tight_layout()
+            tag = "latent_pdf" if plotsd else "latent_space"
             if k == 0 and n_hidden == 0:
-                fig.savefig(f"{self.hparams.outname}{self.current_epoch}_latent_space.png", dpi=150)
+                figoname = f"{self.hparams.outname}{self.current_epoch}_{tag}.png"
+
             else:
-                fig.savefig(f"{self.hparams.outname}{self.current_epoch}_latent_space_{k+1}.png", dpi=150)
+                figoname = f"{self.hparams.outname}{self.current_epoch}_{tag}_{k+1}.png"
+            fig.savefig(figoname, dpi=150)
+            self.log_tbimage(f"{tag}" if k == 0 and n_hidden == 0 else f"{tag}-{k+1}", fig)
             plt.close()
             k += 1
 
     @torch.no_grad()
-    def plot_latent_axis(self, fig, ax, latent_mu, latent_logvar, train_y, i, j, label):
+    def plot_latent_axis(self, fig, ax, latent_mu, latent_logvar, train_y, i, j, label, plotsd):
         ax.set_title(f"{type(self).__name__} Latent-space-"+str(i))
 
         if train_y is not None:
@@ -376,6 +391,8 @@ class AEBase(pl.LightningModule):
             scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
 
         yaxis = (i+1) if (i+1) < latent_mu.shape[1] else 0
+        latent_sd = np.exp(latent_logvar)
+        # latent_mu = self.reparametrize_multivariate(torch.tensor(latent_mu), torch.tensor(latent_logvar)).numpy()
 
         if False: ## To remove outliers
             for ind,point in enumerate(latent_mu):
@@ -385,8 +402,8 @@ class AEBase(pl.LightningModule):
                     latent_sd = np.delete(latent_sd, [ind], axis=0)
                     train_y = np.delete(train_y, [ind], axis=0)
 
-        if False:
-            ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], fmt='none', ecolor=scalarMap.to_rgba(train_y), alpha=0.1)
+        if plotsd:
+            ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], ecolor=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.1, ls='none')
         else:
             ax.scatter(latent_mu[:, i], latent_mu[:, yaxis], c=scalarMap.to_rgba(train_y) if train_y is not None else None, label="Whole dataset", alpha=0.3)
         ax.set_xlabel(f"Latent Dimension {i}")
@@ -396,6 +413,14 @@ class AEBase(pl.LightningModule):
             scalarMap.set_array(train_y)
             cb = fig.colorbar(scalarMap, ax=ax)
             cb.set_label(label if label else "Label-"+str(j))
+
+    @torch.no_grad()
+    def log_tbimage(self, tag, image, step = None):
+
+        logger = self.logger
+        if isinstance(logger, pl_loggers.TensorBoardLogger):
+            logger = logger.experiment
+            logger.add_figure(tag, image, step if step is not None else self.current_epoch)
 
 
 

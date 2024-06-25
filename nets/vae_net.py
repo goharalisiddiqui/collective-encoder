@@ -8,6 +8,7 @@ from torch.autograd import Variable
 from torch.distributions.normal import Normal
 torch.manual_seed(0)
 TORCH_PI = torch.acos(torch.zeros(1))*2
+import argparse
 
 
 import pandas as pd
@@ -25,6 +26,25 @@ from scipy.stats import multivariate_normal
 from nets.ae_base import AEBase
 
 
+def parse_args():
+    desc = "VAE NN for enhanced sampling MD"
+    parser = argparse.ArgumentParser(description=desc)
+
+
+    parser.add_argument('--cmax', type=float, default = 0.0, dest='C_max', help='Maximum C for information control in Beta-VAE')
+    parser.add_argument('--cstart', type=int, default = 0, dest='C_start', help='Epoch where C start to increase for information control in Beta-VAE')
+    parser.add_argument('--cend', type=int, default = 0, dest='C_end', help='Epoch where C stops to increase for information control in Beta-VAE')
+
+
+    args, _ = parser.parse_known_args()
+
+    return args
+
+
+VAE_args = parse_args()
+
+
+
 class VAE(AEBase):
     def __init__(self,
                  l: list,
@@ -34,6 +54,9 @@ class VAE(AEBase):
                  batch_norm : bool = True,
                  lr_scheduler : bool = True,
                  plot_every : int = 0,
+                 C_max : float = 0.0,
+                 C_start : int = 0,
+                 C_end : int = 0,
                  outname : str = './LITcollVAE_untitled/LITcollVAE_'):
         super().__init__(l[0], l[-1], lr, l2_reg, lr_scheduler, outname, plot_every)
         assert len(l) >= 3
@@ -164,17 +187,16 @@ class VAE(AEBase):
         loss_kld = self.kld(mu_latent, logvar_latent)
         loss_kld = torch.mean(loss_kld, dim = 0)
 
-        # cov = torch.cov(z_sample.T)
-        # loss_cov = (cov * (1 - torch.eye(z_sample.shape[1], device=z_sample.device)))
-        # loss_cov = loss_cov.flatten().mean()
-        # loss_cov = torch.abs(loss_cov)
-        # print("\n", loss_cov.item())
-        C = 0.0 #if self.current_epoch <= 500 else 0.1
-        # loss_reg = loss_kld #+ loss_cov
+        C = 0.0
+        if self.hparams.C_max != 0.0:
+            c_start, c_end, cmax = self.hparams.C_start, self.hparams.C_end, self.hparams.C_max
+            if self.current_epoch >= c_start and self.current_epoch <= c_end:
+                C = cmax * (self.current_epoch - c_start) / (c_end - c_start)
+            elif self.current_epoch > c_end:
+                C = cmax
         loss_reg = torch.abs(loss_kld - C)
 
-
-        return loss_reg
+        return loss_reg, {"current_C" : C, "kld" : loss_kld}
 
     def mae_loss(self, recon_x, tru_x):
         tru_x = self.denormalize(tru_x)
@@ -196,7 +218,7 @@ class VAE(AEBase):
         z_sample = kwargs["z_sample"]
 
         loss_rec = self.recon_loss(tru_x, mu_x, logvar_x)
-        loss_reg = self.reg_loss(z_sample, mu_latent, logvar_latent)
+        loss_reg, meta_reg = self.reg_loss(z_sample, mu_latent, logvar_latent)
 
         loss_rec = torch.mean(loss_rec) # Mean of batch
         loss_reg = torch.mean(loss_reg) # Mean of batch
@@ -208,7 +230,12 @@ class VAE(AEBase):
 
         loss_mae = self.mae_loss(recon_x, tru_x)
 
-        return {'loss' : loss, 'mae_loss' : loss_mae, 'rec_loss' : loss_rec, 'reg_loss' : loss_reg}
+        return {'loss' : loss,
+                    'mae_loss' : loss_mae,
+                    'rec_loss' : loss_rec,
+                    'reg_loss' : loss_reg,
+                    "current_C" : meta_reg["current_C"],
+                    "kld" : meta_reg["kld"]}
 
 
 

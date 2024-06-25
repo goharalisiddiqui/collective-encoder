@@ -8,3 +8,6 @@ run.sh
 run_slurm.sh
 saved_runs/
 wandb/
+.venv/
+.env
+lightning_logs/
