@@ -14,29 +14,24 @@
 #SBATCH -o /home/ge45daw/slurm_logs/slurm-%J.out
 #SBATCH -e /home/ge45daw/slurm_logs/slurm-%J.err
 
-
-
-
 ####### CLEANING THE ENV #######
 module purge
-spack env deactivate
-spack unload --all
 ################################
 
 ####### LOADING REQUIRED MODULES #######
 if [ "$SLURM_JOB_PARTITION" == "gpucloud" ] ; then
     ## GPUCLOUD
-    watch -n 1 "nvidia-smi -q -d UTILIZATION >> /home/ge45daw/slurm_logs/slurm-$SLURM_JOB_ID.gpu" &> /dev/null &
+    # watch -n 1 "nvidia-smi -q -d UTILIZATION >> /home/ge45daw/slurm_logs/slurm-$SLURM_JOB_ID.gpu" &> /dev/null &
     module load spack_x86_64_v3
     module load python/3.9-torch2-cuda12
 elif [ "$SLURM_JOB_PARTITION" == "wom" ] ; then
     ## WOM
-    watch -n 1 "nvidia-smi -q -d UTILIZATION >> /home/ge45daw/slurm_logs/slurm-$SLURM_JOB_ID.gpu" &> /dev/null &
+    # watch -n 1 "nvidia-smi -q -d UTILIZATION >> /home/ge45daw/slurm_logs/slurm-$SLURM_JOB_ID.gpu" &> /dev/null &
     module load spack_x86_64_v3
     module load python/3.9-torch2-cuda12
 elif [ "$SLURM_JOB_PARTITION" == "carlos" ] ; then
     ## CARLOS
-    watch -n 1 "nvidia-smi -q -d UTILIZATION >> /home/ge45daw/slurm_logs/slurm-$SLURM_JOB_ID.gpu" &> /dev/null &
+    # watch -n 1 "nvidia-smi -q -d UTILIZATION >> /home/ge45daw/slurm_logs/slurm-$SLURM_JOB_ID.gpu" &> /dev/null &
     module load spack_x86_64_v3
     module load python/3.9-torch2-cuda12
 elif [ "$SLURM_JOB_PARTITION" == "microcloud" ] ; then
@@ -50,23 +45,26 @@ elif [ "$SLURM_JOB_PARTITION" == "zencloud" ] ; then
 fi
 ########################################
 
-
-
+####### LOADING REQUIRED ENVIRONMENTS #######
+if test -d .venv; then
+  source .venv/bin/activate
+fi
+#############################################
 
 srun python engine.py    \
                     --inputfile $PWD/../enhanced_md/INPUTS \
                     --outpath . \
                     --modelpath . \
                     --save_model \
+                    --tblogger \
                     --save_checkpoint \
                     --nepochs 10 \
                     --labels "" \
+                    --network "" \
                     --output_to_file \
-                    --networktype 'VAESimple' \
+                    --networktype 'VAE' \
+                    --outfolder 'CKIT_VAEGAN' \
                     --normalize \
                     --beta=1.0 \
                     --lrate=0.01 \
-                    --gpu \
-                    # --outfolder 'VAESimple_Short_l9_5000' \
-                    # --network "200,9" \
 

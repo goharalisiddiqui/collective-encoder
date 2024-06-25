@@ -56,6 +56,7 @@ class LITColvarData(pl.LightningDataModule):
             print("[WARNING: Using only VV from data file. Ignoring distances]")
             self.num_inputs = len(header_solv)
             col_range = range(first_col + len(header_dist), first_col + len(header_dist) + self.num_inputs)
+            print(f"col_range: {col_range}")
 
         self.alldata = np.loadtxt(colvar_file, usecols=col_range)
         self.alllabel = np.loadtxt(colvar_file, usecols=[a for a in range(1,len(label_list) + 1)], ndmin = 2)

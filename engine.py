@@ -44,7 +44,7 @@ def parse_args():
 
 
     parser.add_argument('--labels', nargs='+', help='Labels to ignore in the input files. Used for visualisation')
-    parser.add_argument('--gpu', action="store_true", help='Use gpu acceleration')
+    parser.add_argument('--nogpu', action="store_true", help='Do not use gpu acceleration')
     parser.add_argument('--overwrite', action="store_true", help='Overwrite output folder')
     parser.add_argument('--normalize', action="store_true", help='Normalize input or not')
     parser.add_argument('--output_to_file', action="store_true", help='Also store output in a file')
@@ -251,9 +251,9 @@ if standardize_inputs:
 trainargs = {"max_epochs" : num_epochs,
              "log_every_n_steps" : 1,
              "default_root_dir" : odir_name}
-if args.gpu and torch.cuda.is_available():
-    trainargs["accelerator"] = 'gpu'
-    trainargs["devices"] = 1
+if not args.nogpu:
+    trainargs["accelerator"] = 'auto'
+    trainargs["devices"] = 'auto'
 if args.wand:
     wandb_logger = WandbLogger(log_model="all")
     trainargs["logger"] = wandb_logger
