@@ -236,7 +236,7 @@ class AEBase(pl.LightningModule):
         print("=======================================\n\n")
 
         fig = plt.figure(figsize=(19, 15))
-        plt.matshow(data_df.corr(), fignum=fig.number)
+        plt.matshow(data_df.corr().abs(), fignum=fig.number)
         plt.xticks(range(data_df.columns.shape[0]), data_df.columns.tolist(), fontsize=14, rotation=45)
         plt.yticks(range(data_df.columns.shape[0]), data_df.columns.tolist(), fontsize=14)
         cb = plt.colorbar()
