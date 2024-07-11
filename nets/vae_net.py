@@ -25,6 +25,9 @@ from scipy.stats import multivariate_normal
 
 from nets.ae_base import AEBase
 
+EPSILON = 1e-9
+
+torch.set_printoptions(threshold=10_000)
 
 def parse_args():
     desc = "VAE NN for enhanced sampling MD"
@@ -58,7 +61,13 @@ class VAE(AEBase):
                  C_start : int = 0,
                  C_end : int = 0,
                  outname : str = './LITcollVAE_untitled/LITcollVAE_'):
-        super().__init__(l[0], l[-1], lr, l2_reg, lr_scheduler, outname, plot_every)
+        super().__init__(dim_data = l[0],
+                         dim_latent = l[-1],
+                         lr = lr,
+                         l2_reg = l2_reg,
+                         lr_scheduler = lr_scheduler,
+                         outname = outname,
+                         plot_every = plot_every)
         assert len(l) >= 3
         self.save_hyperparameters()
 
@@ -119,7 +128,7 @@ class VAE(AEBase):
         print(l[-2], " --> ", l[-1], end=" ")
         print("(mu for latent space)")
         self.encoder_logvar = nn.Linear(l[-2], l[-1])
-        print( "  ", " \--> ", l[-1], end=" ")
+        print( "  ", " \--> ", l[-1]," (relu) ", end=" ")
         print("(logvar for latent space)\n\n")
 
     def init_decoder_output(self):
@@ -128,7 +137,7 @@ class VAE(AEBase):
         print(l[1], " --> ", l[0], end=" ")
         print("(mu for feature space)")
         self.decoder_logvar = nn.Linear(l[1], l[0])
-        print( "  ", " \--> ", l[0], end=" ")
+        print( "  ", " \--> ", l[0]," (relu) ", end=" ")
         print("(logvar for feature space)\n\n")
         print("======================")
 
@@ -148,12 +157,13 @@ class VAE(AEBase):
         return mu_x, logvar_x
 
     def forward(self, x):
+        x = self.normalize(x)
         mu_latent, logvar_latent = self.encode(x)
+        if self.metaD:
+            return mu_latent, logvar_latent
         if mu_latent.isnan().any() or logvar_latent.isnan().any():
             print("Nan in encoder network (Gradient diminished or exploded). Can't continue")
             exit()
-        if self.metaD:
-            return mu_latent, logvar_latent
 
         z = self.reparametrize_multivariate(mu_latent, logvar_latent)
 
@@ -178,8 +188,18 @@ class VAE(AEBase):
 
     def recon_loss(self, tru_x, mu_x, logvar_x):
 
-        p_x = Normal(mu_x, torch.exp(logvar_x))
+        sd = torch.exp(0.5 * logvar_x) + EPSILON
+        p_x = Normal(mu_x, sd)
         loss_rec = -torch.mean(p_x.log_prob(tru_x), axis=1)
+
+
+        # if (loss_rec < 0.0).any().detach().cpu().numpy():
+        #     var = 0.5 * torch.exp(logvar_x)
+        #     print("\n loss_rec= ", loss_rec)
+        #     print("\n var= ", var)
+        #     print("\n tru_x= ", tru_x)
+        #     print("\n log_prob= ", p_x.log_prob(tru_x))
+        #     exit()
 
         return loss_rec
 

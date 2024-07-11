@@ -261,6 +261,10 @@ if args.tblogger:
     tblogger = TensorBoardLogger(version=odir_name, save_dir=args.outpath)
     trainargs["logger"] = tblogger
 
+trainargs["gradient_clip_val"] = 0.5
+# trainargs["gradient_clip_algorithm"] = "norm"
+
+
 
 trainer = pl.Trainer(**trainargs)
 if train:

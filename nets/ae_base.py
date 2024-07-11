@@ -100,11 +100,10 @@ class AEBase(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
         if self.hparams.lr_scheduler == False:
             return optimizer
-
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                                       factor=0.8, patience=10,
+                                                       factor=0.8, patience=3,
                                                        min_lr=1e-10,
-                                                       cooldown = 30,
+                                                       cooldown = 10,
                                                        verbose =True)
         return {
             "optimizer": optimizer,
@@ -132,7 +131,7 @@ class AEBase(pl.LightningModule):
 
     def training_step(self, train_batch, batch_idx):
         data = self.normalize(train_batch[0].float())
-        result, meta = self(data)
+        result, meta = self(train_batch[0].float())
         losses = self.loss(result, data, **meta)
 
         for key in losses.keys():
@@ -157,7 +156,7 @@ class AEBase(pl.LightningModule):
 
     def validation_step(self, val_batch, batch_idx):
         data = self.normalize(val_batch[0].float())
-        result, meta = self(data)
+        result, meta = self(val_batch[0].float())
         losses = self.loss(result, data, **meta)
 
         for key in losses.keys():
@@ -252,7 +251,7 @@ class AEBase(pl.LightningModule):
         n_plots = len(non_val_losses.keys())
         fig, ax = plt.subplots(1, n_plots, squeeze=True, figsize=(6 * n_plots, 6))
         ax[0].set_title("Network Loss minimization")
-        ax[0].set_yscale("log")
+        # ax[0].set_yscale("log")
         ax[0].plot(
             np.asarray(non_val_losses["loss"]),
             ".-",
@@ -260,7 +259,7 @@ class AEBase(pl.LightningModule):
         )
         if "val_loss" in self.losses.keys():
             ax2 = ax[0].twinx()
-            ax2.set_yscale("log")
+            # ax2.set_yscale("log")
             ax2.plot(
                 np.asarray(self.losses["val_loss"]),
                 "o-",
@@ -275,8 +274,8 @@ class AEBase(pl.LightningModule):
         for ind, key in enumerate([key for key in non_val_losses.keys() if key != "loss"]):
             i = ind + 1
             ax[i].set_title(f"{key} minimization")
-            if key not in ["current_C","kld"]:
-                ax[i].set_yscale("log")
+            # if key not in ["current_C","kld"]:
+                # ax[i].set_yscale("log")
             ax[i].plot(
                 np.asarray(non_val_losses[key]),
                 ".-",
@@ -284,8 +283,8 @@ class AEBase(pl.LightningModule):
             )
             if "val_" + key in self.losses.keys():
                 ax2 = ax[i].twinx()
-                if key not in ["current_C", "kld"]:
-                    ax2.set_yscale("log")
+                # if key not in ["current_C", "kld"]:
+                    # ax2.set_yscale("log")
                 ax2.plot(
                     np.asarray(self.losses["val_" + key]),
                     "o-",
