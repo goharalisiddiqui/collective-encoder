@@ -133,6 +133,7 @@ elif nntype == "VAEC_mse":
     from ce_nets import VAEC_mse as main_nn
 elif nntype == "VAEC":
     assert solvation != '0', "Solvation grid size not provided"
+    from ce_nets import VAEC_args as nested_args
     from ce_nets import VAEC as main_nn
 else:
     raise ValueError("Unknown network type")

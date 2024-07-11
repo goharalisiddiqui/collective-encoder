@@ -23,6 +23,7 @@ from statistics import mean as list_mean
 from scipy.stats import multivariate_normal
 
 from nets.vae_net import VAE
+from nets.vae_net import VAE_args as VAEC_args
 
 
 class VAEC(VAE):
@@ -35,6 +36,9 @@ class VAEC(VAE):
                  batch_norm : bool = True,
                  lr_scheduler : bool = False,
                  plot_every : int = 0,
+                 C_max : float = 0.0,
+                 C_start : int = 0,
+                 C_end : int = 0,
                  outname : str = './VAEC_untitled/VAEC_'):
         self.save_hyperparameters()
         assert len(lw) == 3
@@ -44,7 +48,18 @@ class VAEC(VAE):
         self.n_hin = l[1] - l[1]//2
         if self.n_lin == 0:
             self.n_hin = l[1]
-        super().__init__(l, lr, l2_reg, beta, batch_norm, lr_scheduler, plot_every, outname)
+        super().__init__(
+            l = l,
+            lr = lr,
+            l2_reg = l2_reg,
+            beta = beta,
+            batch_norm = batch_norm,
+            lr_scheduler = lr_scheduler,
+            plot_every = plot_every,
+            C_max = C_max,
+            C_start = C_start,
+            C_end = C_end,
+            outname = outname)
 
     def init_network(self):
         l = self.hparams.l

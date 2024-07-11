@@ -3,12 +3,12 @@
 ### number of cores
 #SBATCH -N 1
 #SBATCH --ntasks 8
-#SBATCH --cpus-per-task 8
+#SBATCH --cpus-per-task 2
 #SBATCH -p wom
 ##SBATCH -B 1:8:2
-#SBATCH --mem=64G
-#SBATCH --gpus=3
-##SBATCH --gres=shard:4
+#SBATCH --mem=20G
+##SBATCH --gpus=3
+#SBATCH --gres=shard:8
 #SBATCH --time=100:00:00
 #SBATCH --export=ALL
 #SBATCH -o /home/ge45daw/slurm_logs/slurm-%J.out
@@ -47,41 +47,35 @@ elif [ "$SLURM_JOB_PARTITION" == "zencloud" ] ; then
     module load python/3.9-torch2-cuda12
 fi
 ########################################
-# iter=1
-# beta=115.0
-# while getopts i:b: flag
-# do
-#     case "${flag}" in
-#         i) iter=${OPTARG};;
-#         b) beta=${OPTARG};;
-#     esac
-# done
 
-source .venv/bin/activate
+
+if test -d .venv; then
+  source .venv/bin/activate
+fi
 
 
 
 i=1
-for beta in `seq 0.0 5.0 5.0`; do
+for beta in `seq 0.0 5.0 500.0`; do
 
-    (srun --ntasks 1 --overlap --cpus-per-task 8 --mem=7G python engine.py \
-                    --inputfile ../datasets/INPUTS_heavy \
-                    --outpath ./ \
-                    --nepochs 5 \
+    (srun --ntasks 1 --exact --cpus-per-task 2 --mem=2G --gres=shard:1 python engine.py      \
+                    --inputfile $DATA_DIR/20221201_COLLECTIVE_ENCODER_TRAINING_DATA_CKIT/INPUTS \
+                    --outpath ./beta-sweep_VAE_1000 \
+                    --modelpath . \
                     --tblogger \
+                    --nepochs 1000 \
                     --nexp $i \
-                    --labels phi psi \
+                    --labels "dist_Au-K1" \
                     --output_to_file \
-                    --network "200,2" \
                     --networktype 'VAE' \
-                    --beta=$beta \
-                    --lrate=0.001 \
+                    --network "1500,1000,2" \
                     --normalize \
-                    --plot_every 100 \
-                    --gpu \
+                    --beta=$beta \
                     --save_checkpoint \
-                    --overwrite) &
+                    --plot_every 100 \
+                    --lrate=0.0001) &
 
+                    # --outfolder 'CKIT_VAE' \
                     # --modelfile "./beta_search_500_norm/ce_training_10/VAE_mse_checkpoint" \
                     # --load_model \
                     # --outfolder 'ce_training' \
