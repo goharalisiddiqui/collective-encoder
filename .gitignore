@@ -12,3 +12,4 @@ wandb/
 .env
 lightning_logs/
 *.log
+*test*
