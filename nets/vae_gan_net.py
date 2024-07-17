@@ -33,6 +33,7 @@ class VAEGAN(pl.LightningModule):
                  n_samples : int = 1,
                  outname : str = './VAEGAN_untitled/LITcollVAE_'):
         super().__init__()
+        self.automatic_optimization = False # This turns off pytorch lightning's automatic optimization
         assert len(l) >= 3
 
         #### Setting up the layers of the netwrok ####
@@ -171,9 +172,9 @@ class VAEGAN(pl.LightningModule):
 
         real_loss = self.gan_loss(self.discriminator(x), valid)
         fake_loss = self.gan_loss(self.discriminator(x_out.detach()), fake) # Detach to avoid backpropagation twice through the autoencoder
-        gan_des_loss = (real_loss + fake_loss) / 2
+        gan_dis_loss = (real_loss + fake_loss) / 2
 
-        return gan_gen_loss + gan_des_loss
+        return gan_gen_loss + gan_dis_loss
 
 
 
@@ -291,19 +292,41 @@ class VAEGAN(pl.LightningModule):
 
 
     def training_step(self, train_batch, batch_idx):
+        # Gettting optimizers and schedulers for manual optimization
+        optimizer_g, optimizer_d = self.optimizers()
+        # sch_g, sch_d = self.lr_schedulers()
+
+        # Forward pass
         data = train_batch[0].float()
         result, meta = self(data)
         target = self.normalize(data)
-        loss, rec_loss, reg_loss = self.vae_loss(result, target, **meta)
-        gan_loss = meta["gan_loss"]
-        loss = loss + gan_loss
 
-        self.step_loss_list.append(loss.item())
+        # train generator
+        self.toggle_optimizer(optimizer_g)
+
+        g_loss, rec_loss, reg_loss = self.vae_loss(result, target, **meta)
+        g_loss = g_loss + meta["gan_gen_loss"]
+        self.manual_backward(g_loss)
+        optimizer_g.step()
+        optimizer_g.zero_grad()
+        # sch_g.step()
+        self.untoggle_optimizer(optimizer_g)
+
+        # train discriminator
+        self.toggle_optimizer(optimizer_d)
+
+        d_loss = meta["gan_dis_loss"]
+        self.manual_backward(d_loss)
+        optimizer_d.step()
+        optimizer_d.zero_grad()
+        # sch_d.step()
+        self.untoggle_optimizer(optimizer_d)
+
+
+        self.step_loss_list.append(g_loss.item())
         self.step_rec_loss_list.append(rec_loss.item())
         self.step_reg_loss_list.append(reg_loss.item())
-        self.step_gan_loss_list.append(gan_loss.item())
-
-        return loss
+        self.step_gan_loss_list.append(d_loss.item())
 
     def on_train_epoch_end(self):
         self.train_loss_list.append(list_mean(self.step_loss_list))
@@ -530,7 +553,7 @@ class VAEGAN(pl.LightningModule):
         scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
         yaxis = (i+1) if (i+1) < latent_mu.shape[1] else 0
 
-        if True: ## To remove outliers
+        if False: ## To remove outliers
             for ind,point in enumerate(latent_mu):
                 if (point[0] < -1.0) or (point[1] < -1.0):
                     print(f"\nOutlier point: {point[0]}.{point[1]} ind:{ind}, will not be plotted")
