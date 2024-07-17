@@ -228,8 +228,6 @@ class VAE(AEBase):
 
         return loss_mae
 
-
-
     def loss(self, recon_x, tru_x, **kwargs):
         mu_latent = kwargs["mu_latent"]
         logvar_latent = kwargs["logvar_latent"]
@@ -257,6 +255,16 @@ class VAE(AEBase):
                     "current_C" : meta_reg["current_C"],
                     "kld" : meta_reg["kld"]}
 
+    def plot_avg_sigma(self, latent_logvar):
+        # This implements any extra printing or plotting in child class
+        ld_mean = np.mean(np.exp(0.5 * latent_logvar), axis = 0)
+        print("========= Avg. Sigma per LD =========")
+        for i in range(len(ld_mean)):
+            print(f"LD {i} : {ld_mean[i]}")
+        print("=====================================")
+
+    def plot_extra(self, data_x, data_y, latent_mu, latent_logvar):
+        self.plot_avg_sigma(latent_logvar)
 
 
 
