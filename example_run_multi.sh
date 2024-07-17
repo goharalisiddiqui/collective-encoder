@@ -56,48 +56,27 @@ fi
 
 
 i=1
-<<<<<<< HEAD
-for beta in `seq 0.0 5.0 500.0`; do
+for beta in 0.0001 0.001 0.01 0.02 0.03 0.05 0.07 0.1 0.15 0.2 0.3 0.5 0.7 1.0 1.2 1.3 1.5 1.7 2.0 ; do
 
-    (srun --ntasks 1 --exact --cpus-per-task 2 --mem=2G --gres=shard:1 python engine.py      \
+    (srun --ntasks 1 --cpus-per-task 8 --mem=7G --gpus 1 python engine.py      \
                     --inputfile $DATA_DIR/20221201_COLLECTIVE_ENCODER_TRAINING_DATA_CKIT/INPUTS \
                     --outpath ./beta-sweep_VAE_1000 \
                     --modelpath . \
-                    --tblogger \
-                    --nepochs 1000 \
-=======
-# for beta in `seq 0.0 5.0 5.0`; do
-for beta in 0.0001 0.001 0.01 0.02 0.03 0.05 0.07 0.1 0.15 0.2 0.3 0.5 0.7 1.0 1.2 1.3 1.5 1.7 2.0 ; do
-
-    (srun --ntasks 1 --cpus-per-task 8 --mem=7G --gpus 1 python engine.py \
-                    --inputfile ../datasets/INPUTS_heavy \
-                    --outpath ./beta_search_ld6_lr0p001_long \
                     --nepochs 100 \
->>>>>>> c8b56d7 (Add avg.sigma printout in vae_net)
                     --nexp $i \
-                    --labels "dist_Au-K1" \
+                    --labels phi psi \
                     --output_to_file \
-<<<<<<< HEAD
-=======
-                    --network "200,100,50,6" \
->>>>>>> c8b56d7 (Add avg.sigma printout in vae_net)
                     --networktype 'VAE' \
-                    --network "1500,1000,2" \
+                    --network "200,100,50,6" \
                     --normalize \
-<<<<<<< HEAD
                     --beta=$beta \
-=======
-                    --plot_every 50 \
->>>>>>> c8b56d7 (Add avg.sigma printout in vae_net)
                     --save_checkpoint \
-                    --plot_every 100 \
-                    --lrate=0.0001) &
+                    --plot_every 50 \
+                    --lrate=0.001 \
+                    --overwrite) &
 
-<<<<<<< HEAD
-                    # --outfolder 'CKIT_VAE' \
-=======
                     # --tblogger \
->>>>>>> c8b56d7 (Add avg.sigma printout in vae_net)
+                    # --outfolder 'CKIT_VAE' \
                     # --modelfile "./beta_search_500_norm/ce_training_10/VAE_mse_checkpoint" \
                     # --load_model \
                     # --outfolder 'ce_training' \

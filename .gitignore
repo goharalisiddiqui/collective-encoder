@@ -6,6 +6,7 @@ run*/
 ce_training*/
 run.sh
 run_slurm.sh
+run_multi.sh
 saved_runs/
 wandb/
 .venv/
