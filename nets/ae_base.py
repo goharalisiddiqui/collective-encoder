@@ -35,6 +35,7 @@ class AEBase(pl.LightningModule):
                  lr_scheduler : bool = False,
                  outname : str = './untitled/untitled_',
                  plot_every : int = 0,
+                 saveplotdata : bool = False,
                  plot_points_limit : int = 5000):
         super().__init__()
 
@@ -188,7 +189,7 @@ class AEBase(pl.LightningModule):
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         labels = labels.cpu().detach().numpy()
         self.print_labels_latent_correlations(latent_mu, labels)
-        self.plot_latent(test_batch, label_list = self.trainer.datamodule.hparams.label_list)
+        self.plot_latent(test_batch, label_list = self.trainer.datamodule.hparams.label_list, savedata=self.hparams.saveplotdata)
         self.plot_latent(test_batch, label_list = self.trainer.datamodule.hparams.label_list, plotsd=True)
         self.plot_extra(data, labels, latent_mu, latent_logvar)
 
@@ -327,7 +328,7 @@ class AEBase(pl.LightningModule):
         data_lat.to_csv(f"{self.hparams.outname}{self.current_epoch}_latent_space.csv", index=False)
 
     @torch.no_grad()
-    def plot_latent(self, data, label_list = None, plotsd = False):
+    def plot_latent(self, data, label_list = None, plotsd = False, savedata = False):
         data_x = self.normalize(data[0].float())
         latent_mu, latent_logvar = self.encode(data_x)
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
@@ -351,6 +352,13 @@ class AEBase(pl.LightningModule):
             latent_mu = latent_mu[choices < 2.0]
             latent_logvar = latent_logvar[choices < 2.0]
             data_y = data_y[choices < 2.0]
+
+        if savedata:
+            filename_stem = f"{self.hparams.outname}{self.current_epoch}_"
+            np.save(filename_stem + f"latent_mu.npy", latent_mu)
+            np.save(filename_stem + f"latent_logvar.npy", latent_logvar)
+            if labels is not None:
+                np.save(filename_stem + f"labels.npy", labels)
 
         n_fig = 10
         k = 0
@@ -400,6 +408,8 @@ class AEBase(pl.LightningModule):
                     latent_mu = np.delete(latent_mu, [ind], axis=0)
                     latent_sd = np.delete(latent_sd, [ind], axis=0)
                     train_y = np.delete(train_y, [ind], axis=0)
+
+
 
         if plotsd:
             ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], ecolor=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.1, ls='none')

@@ -60,6 +60,7 @@ class VAE(AEBase):
                  C_max : float = 0.0,
                  C_start : int = 0,
                  C_end : int = 0,
+                 saveplotdata : bool = False,
                  outname : str = './LITcollVAE_untitled/LITcollVAE_'):
         super().__init__(dim_data = l[0],
                          dim_latent = l[-1],
@@ -67,10 +68,10 @@ class VAE(AEBase):
                          l2_reg = l2_reg,
                          lr_scheduler = lr_scheduler,
                          outname = outname,
-                         plot_every = plot_every)
+                         plot_every = plot_every,
+                         saveplotdata = saveplotdata)
         assert len(l) >= 3
         self.save_hyperparameters()
-
         #### Setting up the layers of the netwrok ####
         self.init_network()
 

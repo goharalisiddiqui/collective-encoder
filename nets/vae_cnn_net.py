@@ -39,6 +39,7 @@ class VAEC(VAE):
                  C_max : float = 0.0,
                  C_start : int = 0,
                  C_end : int = 0,
+                 saveplotdata : bool = False,
                  outname : str = './VAEC_untitled/VAEC_'):
         self.save_hyperparameters()
         assert len(lw) == 3
@@ -59,6 +60,7 @@ class VAEC(VAE):
             C_max = C_max,
             C_start = C_start,
             C_end = C_end,
+            saveplotdata = saveplotdata,
             outname = outname)
 
     def init_network(self):

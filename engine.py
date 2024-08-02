@@ -63,6 +63,7 @@ def parse_args():
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
 
     parser.add_argument('--export_latent', action="store_true", help='Export latent space values on the data')
+    parser.add_argument('--save_plotdata', action="store_true", help='Export plot data as numpy objects')
 
 
     args, _ = parser.parse_known_args()
@@ -218,6 +219,7 @@ elif nntype == "VAE" or nntype == "VAEGAN":
     netargs['beta'] = beta
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
+    netargs['saveplotdata'] = args.save_plotdata
     netargs = netargs | vars(nested_args)
 elif nntype == "VAECGAN" or nntype == "VAEC":
     netargs['l'] = nodes
@@ -225,12 +227,14 @@ elif nntype == "VAECGAN" or nntype == "VAEC":
     netargs['beta'] = beta
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
+    netargs['saveplotdata'] = args.save_plotdata
 elif nntype == "VAECGAN_mse" or nntype == "VAEC_mse":
     netargs['l'] = nodes
     netargs['lw'] = solv
     netargs['beta'] = beta
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
+    netargs['saveplotdata'] = args.save_plotdata
 elif nntype == "GMVAE":
     netargs['n_x'] = nodes[0]
     netargs['n_z'] = nodes[-1]
