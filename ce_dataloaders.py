@@ -26,6 +26,7 @@ class LITColvarData(pl.LightningDataModule):
     def __init__(self, colvar_file, train_prop : int = 0.6, batch_size : int = -1,
                  batch_prop : float = 0.1,
                  label_list : list = [],
+                 column_match : str = None,
                  standardize_inputs : bool = True):
         super().__init__()
         print("\n\n[Initializing LITColvarData Module]")
@@ -35,35 +36,25 @@ class LITColvarData(pl.LightningDataModule):
             first_line = f.readline().split()
         assert all([x in first_line for x in label_list]) # Asserts that all the print labels are present in the data file
 
-        ignore_list = ["#!", "FIELDS", "time"]
+        colvar_garb = ["#!", "FIELDS"]
+        first_line = [x for x in first_line if x not in colvar_garb]
+
+        ignore_list = ["time"]
         header = [x for x in first_line if x not in ignore_list and x not in label_list]
-        first_col = len(ignore_list) + len(label_list) - 2  # 0-indexed
+
+        if column_match is not None:
+            print(f"[WARNING: Using only columns from data file containing \"{column_match}\"]")
+            header = [x for x in header if column_match in x]
+            if len(header) == 0:
+                raise ValueError(f"No columns in data file contain \"{column_match}\"")
+
+        cols_to_read = [x for x in range(len(first_line)) if first_line[x] in header]
+
         self.header_string = ",".join(header)
         self.num_inputs = len(header)
 
-
-
-        col_range = range(first_col, first_col + self.num_inputs)
-
-        header_dist = [x for x in header if "distvec" in x]
-        header_solv = [x for x in header if "VV" in x]
-
-        if False: # Use only distance vectors
-            print("[WARNING: Using only distvec from data file. Ignoring solvation descriptors]")
-            self.num_inputs = len(header_dist)
-            col_range = range(first_col, first_col + self.num_inputs)
-        if False: # Use only solvation
-            print("[WARNING: Using only VV from data file. Ignoring distances]")
-            self.num_inputs = len(header_solv)
-            col_range = range(first_col + len(header_dist), first_col + len(header_dist) + self.num_inputs)
-            print(f"col_range: {col_range}")
-
-        self.alldata = np.loadtxt(colvar_file, usecols=col_range)
+        self.alldata = np.loadtxt(colvar_file, usecols=cols_to_read)
         self.alllabel = np.loadtxt(colvar_file, usecols=[a for a in range(1,len(label_list) + 1)], ndmin = 2)
-
-
-
-
 
         ## Dividing data into training and validation data
         FRAMES = self.alldata.shape[0]

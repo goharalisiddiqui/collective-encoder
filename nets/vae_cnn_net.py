@@ -45,10 +45,8 @@ class VAEC(VAE):
         assert len(lw) == 3
         self.n_solv = np.prod(lw)
         self.n_lin = l[0] -  self.n_solv
-        assert self.n_lin >= 0, "Number of linear input nodes must be greater than or equal to zero"
-        self.n_hin = l[1] - l[1]//2
-        if self.n_lin == 0:
-            self.n_hin = l[1]
+        assert l[0] == self.n_solv, f"[{type(self).__name__} Module]: Number of grid points and NN input does not match"
+        self.n_hin = l[1]
         super().__init__(
             l = l,
             lr = lr,
@@ -75,27 +73,21 @@ class VAEC(VAE):
         self.init_input_conv()
         print("=============================")
         print("")
-        print("========= Input Linear NN =========")
-        self.init_input_lin()
-        print("=============================")
-        print("")
         print("========= Encoder-Decoder NN =========")
         self.init_encoder()
         print("(Reparameterization Sampler)\n\n")
         self.init_decoder_layers()
         print("======================")
-        print("========= Output Linear NN =========")
-        self.init_output_lin()
-        print("=============================")
+        print("")
         print("========= Output Conv NN =========")
         self.init_output_conv()
         print("=============================")
+        print("")
         print("========= Output  NN =========")
         self.init_decoder_output()
         print("=============================")
 
     def init_input_conv(self):
-        l = self.hparams.l
         lw = self.hparams.lw
         n_hin = self.n_hin
         batch_norm = self.hparams.batch_norm
@@ -130,23 +122,6 @@ class VAEC(VAE):
         conv_input_layers.append(nn.ReLU(True))
         self.conv_input = nn.Sequential(*conv_input_layers)
 
-    def init_input_lin(self):
-        batch_norm = self.hparams.batch_norm
-        l = self.hparams.l
-        if self.n_lin == 0:
-            print("No linear input layer")
-            self.lin_input = nn.Identity()
-        else:
-            lin_input_layers = []
-            print(l[0] -  self.n_solv, " --> ", l[1]//2, end=" ")
-            lin_input_layers.append(nn.Linear(l[0] -  self.n_solv, l[1]//2))
-            print("(relu)")
-            lin_input_layers.append(nn.ReLU(True))
-            if batch_norm:
-                print("(batch_normalization layer)")
-                lin_input_layers.append(nn.BatchNorm1d(l[1]//2))
-            self.lin_input = nn.Sequential(*lin_input_layers)
-
     def init_encoder_layers(self):
         l = self.hparams.l
         batch_norm = self.hparams.batch_norm
@@ -161,25 +136,10 @@ class VAEC(VAE):
                 print("(batch_normalization layer)")
         self.encoder_hidden = nn.Sequential(*encoder_layers)
 
-    def init_output_lin(self):
-        l = self.hparams.l
-        if self.n_lin == 0:
-            print("No linear output layer")
-            self.lin_output = nn.Identity()
-        else:
-            lin_output_layers = []
-            lin_output_layers.append(nn.Linear(l[1], self.n_lin))
-            print(l[1], " --> ", self.n_lin, end=" ")
-            lin_output_layers.append(nn.ReLU(True))
-            print("(relu)")
-            self.lin_output = nn.Sequential(*lin_output_layers)
-            print("\n\n")
-
     def init_output_conv(self):
         batch_norm = self.hparams.batch_norm
         l = self.hparams.l
         lw = self.hparams.lw
-        n_hin = self.n_hin
         conv_output_layers = []
         print(l[1], " --> ", self.n_solv)
         conv_output_layers.append(nn.Linear(l[1], self.n_solv))
@@ -222,12 +182,7 @@ class VAEC(VAE):
         print("======================")
 
     def encode(self, x):
-        if self.n_lin == 0:
-            x = self.conv_input(x)
-        else:
-            x_lin = self.lin_input(x[:,:x.size()[1] - self.n_solv])
-            x_conv = self.conv_input(x[:,0:self.n_solv])
-            x = torch.cat((x_lin, x_conv), dim=1)
+        x = self.conv_input(x)
         x = self.encoder_hidden(x)
         mu = self.encoder_mu(x)
         logvar = self.encoder_logvar(x)
@@ -235,12 +190,7 @@ class VAEC(VAE):
 
     def decode(self, z):
         z = self.decoder_hidden(z)
-        if self.n_lin == 0:
-            x_h =  self.conv_output(z)
-        else:
-            z_lin = self.lin_output(z)
-            z_conv = self.conv_output(z)
-            x_h = torch.cat((z_lin, z_conv), dim=1)
+        x_h =  self.conv_output(z)
         x_mu = self.decoder_mu(x_h)
         x_logvar = self.decoder_mu(x_h)
         return x_mu, x_logvar

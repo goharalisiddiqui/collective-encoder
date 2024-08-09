@@ -25,9 +25,11 @@ def parse_args():
     desc = "Autoencoder neural network for enhanced sampling MD"
     parser = argparse.ArgumentParser(description=desc)
 
-
-
+    ## Input Data
     parser.add_argument('--inputfile', type=str, help='Input file for training')
+    parser.add_argument('--column_match', type=str, default=None, help='Only columns containing this string will be used')
+
+    # Output Settings
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
     parser.add_argument('--outfolder', type=str, default='ce_training', help='Stem of the folder name to save the output')
     parser.add_argument('--nexp', required=False, default=1, type=int, help='Experiment number for output names')
@@ -42,7 +44,6 @@ def parse_args():
     parser.add_argument('--load_model', action="store_true", help='Load Model')
     parser.add_argument('--modelfile', type=str, help='From where to load the model')
 
-
     parser.add_argument('--labels', nargs='+', help='Labels to ignore in the input files. Used for visualisation')
     parser.add_argument('--nogpu', action="store_true", help='Do not use gpu acceleration')
     parser.add_argument('--overwrite', action="store_true", help='Overwrite output folder')
@@ -55,15 +56,13 @@ def parse_args():
     parser.add_argument('--l2norm', type=float, default=1e-3, help='Weights regularization for the training')
     parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
 
-
-
     parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
-    parser.add_argument('--solvation', type=str, default= '0', help='Grid size of the solvation grid')
+    parser.add_argument('--solvation', type=str, default= None, help='Grid size of the solvation grid')
     parser.add_argument('--networktype', type=str, default='VAE_mse', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
 
     parser.add_argument('--export_latent', action="store_true", help='Export latent space values on the data')
-    parser.add_argument('--save_plotdata', action="store_true", help='Export plot data as numpy objects')
+    parser.add_argument('--no_plotdata', action="store_true", help='Do not export plot data as numpy objects')
 
 
     args, _ = parser.parse_known_args()
@@ -127,13 +126,13 @@ elif nntype == "GMVAE":
 elif nntype == "VAEGAN" or nntype == "VAEGAN_mse":
     from ce_nets import VAEGAN as main_nn
 elif nntype == "VAECGAN" or nntype == "VAECGAN_mse":
-    assert solvation != '0', "Solvation grid size not provided"
+    assert solvation != None, "Solvation grid size not provided"
     from ce_nets import VAECGAN as main_nn
 elif nntype == "VAEC_mse":
-    assert solvation != '0', "Solvation grid size not provided"
+    assert solvation != None, "Solvation grid size not provided"
     from ce_nets import VAEC_mse as main_nn
 elif nntype == "VAEC":
-    assert solvation != '0', "Solvation grid size not provided"
+    assert solvation != None, "Solvation grid size not provided"
     from ce_nets import VAEC_args as nested_args
     from ce_nets import VAEC as main_nn
 else:
@@ -189,9 +188,15 @@ infile = args.inputfile
 
 outname = odir_name+"/"+nntype+"_"
 
+datamodargs = {}
+datamodargs['train_prop'] = 0.8
+datamodargs['batch_prop'] = 0.1
+datamodargs['label_list'] = label_list
+datamodargs['standardize_inputs'] = False # We dont standardize the inputs here, we do it in the model otherwise it does not work with plumed
+datamodargs['column_match'] = args.column_match
 
-colvardata = main_dl(infile, train_prop=0.8, batch_prop=0.1,
-                     label_list=label_list, standardize_inputs=False) # We dont standardize the inputs here, we do it in the model otherwise it does not work with plumed
+
+colvardata = main_dl(infile, **datamodargs)
 
 colvardata.setup(stage="")
 
@@ -203,7 +208,6 @@ colvardata.setup(stage="")
 nodes = [int(x) for x in hidden_nodes.split(",")]
 nodes.insert(0, colvardata.num_inputs)
 
-solv = [int(x) for x in solvation.split(",")]
 
 netargs = {'lr': lrate, 'l2_reg' :l2_reg, 'outname': outname}
 
@@ -219,22 +223,22 @@ elif nntype == "VAE" or nntype == "VAEGAN":
     netargs['beta'] = beta
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
-    netargs['saveplotdata'] = args.save_plotdata
+    netargs['saveplotdata'] = not args.no_plotdata
     netargs = netargs | vars(nested_args)
 elif nntype == "VAECGAN" or nntype == "VAEC":
     netargs['l'] = nodes
-    netargs['lw'] = solv
+    netargs['lw'] = [int(x) for x in solvation.split(",")]
     netargs['beta'] = beta
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
-    netargs['saveplotdata'] = args.save_plotdata
+    netargs['saveplotdata'] = not args.no_plotdata
 elif nntype == "VAECGAN_mse" or nntype == "VAEC_mse":
     netargs['l'] = nodes
-    netargs['lw'] = solv
+    netargs['lw'] = [int(x) for x in solvation.split(",")]
     netargs['beta'] = beta
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
-    netargs['saveplotdata'] = args.save_plotdata
+    netargs['saveplotdata'] = not args.no_plotdata
 elif nntype == "GMVAE":
     netargs['n_x'] = nodes[0]
     netargs['n_z'] = nodes[-1]

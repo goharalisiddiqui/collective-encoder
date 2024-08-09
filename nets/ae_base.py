@@ -36,7 +36,7 @@ class AEBase(pl.LightningModule):
                  outname : str = './untitled/untitled_',
                  plot_every : int = 0,
                  saveplotdata : bool = False,
-                 plot_points_limit : int = 5000):
+                 plot_points_limit : int = 20000):
         super().__init__()
 
 
