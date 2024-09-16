@@ -29,7 +29,7 @@ EPSILON = 1e-9
 
 torch.set_printoptions(threshold=10_000)
 
-def parse_args():
+def vae_parse_args():
     desc = "VAE NN for enhanced sampling MD"
     parser = argparse.ArgumentParser(description=desc)
 
@@ -44,9 +44,7 @@ def parse_args():
     return args
 
 
-VAE_args = parse_args()
-
-
+VAE_args = vae_parse_args()
 
 class VAE(AEBase):
     def __init__(self,

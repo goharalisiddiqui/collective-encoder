@@ -23,7 +23,23 @@ from statistics import mean as list_mean
 from scipy.stats import multivariate_normal
 
 from nets.vae_net import VAE
-from nets.vae_net import VAE_args as VAEC_args
+from nets.vae_net import VAE_args
+import argparse
+
+def vaec_parse_args():
+    desc = "VAE NN for enhanced sampling MD"
+    parser = argparse.ArgumentParser(description=desc)
+
+
+    parser.add_argument('--solvation', required=True, dest='lw', nargs='+', type=str, default= None, help='Grid size of the solvation grid')
+
+    args, _ = parser.parse_known_args()
+
+    return args
+
+
+VAEC_args = vaec_parse_args()
+VAEC_args = argparse.Namespace(**vars(VAE_args), **vars(VAEC_args))
 
 
 class VAEC(VAE):
@@ -42,7 +58,9 @@ class VAEC(VAE):
                  saveplotdata : bool = False,
                  outname : str = './VAEC_untitled/VAEC_'):
         self.save_hyperparameters()
-        assert len(lw) == 3
+        lw = [int(i) for i in lw]
+        assert len(lw) == 2 or len(lw) == 3, f"[{type(self).__name__} Module]: Number of solvation grid dimensions must be 2 or 3"
+        self.solvation_dimensions = len(lw)
         self.n_solv = np.prod(lw)
         self.n_lin = l[0] -  self.n_solv
         assert l[0] == self.n_solv, f"[{type(self).__name__} Module]: Number of grid points and NN input does not match"
@@ -60,6 +78,17 @@ class VAEC(VAE):
             C_end = C_end,
             saveplotdata = saveplotdata,
             outname = outname)
+
+    def get_lw_shape(self):
+        if self.solvation_dimensions == 2:
+            return (self.hparams.lw[0], self.hparams.lw[1])
+        elif self.solvation_dimensions == 3:
+            return (self.hparams.lw[0], self.hparams.lw[1], self.hparams.lw[2])
+    def get_conv_mod(self):
+        if self.solvation_dimensions == 2:
+            return nn.Conv2d
+        elif self.solvation_dimensions == 3:
+            return nn.Conv3d
 
     def init_network(self):
         l = self.hparams.l
@@ -89,26 +118,28 @@ class VAEC(VAE):
 
     def init_input_conv(self):
         lw = self.hparams.lw
+        lw_shape = self.get_lw_shape()
+        conv_mod = self.get_conv_mod()
         n_hin = self.n_hin
         batch_norm = self.hparams.batch_norm
         conv_input_layers = []
         print(self.n_solv, " -unflatten-> ", lw)
         conv_input_layers.append(nn.Unflatten(1, (1,-1)))
-        conv_input_layers.append(nn.Unflatten(2, (lw[0], lw[1], lw[2])))
+        conv_input_layers.append(nn.Unflatten(2, lw_shape))
         print(lw, " -conv (1-10)-> ", lw, end=" ")
-        conv_input_layers.append(nn.Conv3d(1, 10, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+        conv_input_layers.append(conv_mod(1, 10, lw_shape, stride = 1, padding = 'same'))
         print("(relu)")
         conv_input_layers.append(nn.ReLU(True))
         print(lw, " -conv (10-20)-> ", lw, end=" ")
-        conv_input_layers.append(nn.Conv3d(10, 20, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+        conv_input_layers.append(conv_mod(10, 20, lw_shape, stride = 1, padding = 'same'))
         print("(relu)")
         conv_input_layers.append(nn.ReLU(True))
         print(lw, " -conv (20-10)-> ", lw, end=" ")
-        conv_input_layers.append(nn.Conv3d(20, 10, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+        conv_input_layers.append(conv_mod(20, 10, lw_shape, stride = 1, padding = 'same'))
         print("(relu)")
         conv_input_layers.append(nn.ReLU(True))
         print(lw, " -conv (10-1)-> ", lw, end=" ")
-        conv_input_layers.append(nn.Conv3d(10, 1, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+        conv_input_layers.append(conv_mod(10, 1, lw_shape, stride = 1, padding = 'same'))
         print("(relu)")
         conv_input_layers.append(nn.ReLU(True))
         print(lw, " -flatten-> ", self.n_solv)
@@ -138,6 +169,8 @@ class VAEC(VAE):
 
     def init_output_conv(self):
         batch_norm = self.hparams.batch_norm
+        lw_shape = self.get_lw_shape()
+        conv_mod = self.get_conv_mod()
         l = self.hparams.l
         lw = self.hparams.lw
         conv_output_layers = []
@@ -150,21 +183,21 @@ class VAEC(VAE):
             print("(batch_normalization layer)")
         print(self.n_solv, " -unflatten-> ", lw)
         conv_output_layers.append(nn.Unflatten(1, (1,-1)))
-        conv_output_layers.append(nn.Unflatten(2, (lw[0], lw[1], lw[2])))
+        conv_output_layers.append(nn.Unflatten(2, lw_shape))
         print(lw, " -conv (1 - 10)-> ", lw)
-        conv_output_layers.append(nn.Conv3d(1, 10, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+        conv_output_layers.append(conv_mod(1, 10, lw_shape, stride = 1, padding = 'same'))
         print("(relu)")
         conv_output_layers.append(nn.ReLU(True))
         print(lw, " -conv (10 - 20)-> ", lw)
-        conv_output_layers.append(nn.Conv3d(10, 20, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+        conv_output_layers.append(conv_mod(10, 20, lw_shape, stride = 1, padding = 'same'))
         print("(relu)")
         conv_output_layers.append(nn.ReLU(True))
         print(lw, " -conv (20 - 10)-> ", lw)
-        conv_output_layers.append(nn.Conv3d(20, 10, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+        conv_output_layers.append(conv_mod(20, 10, lw_shape, stride = 1, padding = 'same'))
         print("(relu)")
         conv_output_layers.append(nn.ReLU(True))
         print(lw, " -conv (10 - 1)-> ", lw)
-        conv_output_layers.append(nn.Conv3d(10, 1, (lw[0], lw[1], lw[2]), stride = 1, padding = 'same'))
+        conv_output_layers.append(conv_mod(10, 1, lw_shape, stride = 1, padding = 'same'))
         print("(relu)")
         conv_output_layers.append(nn.ReLU(True))
         print(lw, " -flatten-> ", self.n_solv, end=" ")

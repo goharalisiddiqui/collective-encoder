@@ -25,9 +25,8 @@ def parse_args():
     desc = "Autoencoder neural network for enhanced sampling MD"
     parser = argparse.ArgumentParser(description=desc)
 
-    ## Input Data
-    parser.add_argument('--inputfile', type=str, help='Input file for training')
-    parser.add_argument('--column_match', type=str, default=None, help='Only columns containing this string will be used')
+    ## Type of Data
+    parser.add_argument('--runtype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC'])
 
     # Output Settings
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
@@ -35,20 +34,18 @@ def parse_args():
     parser.add_argument('--nexp', required=False, default=1, type=int, help='Experiment number for output names')
     parser.add_argument('--wand', action="store_true", help='Log to WandB logger')
     parser.add_argument('--tblogger', action="store_true", help='Log to Tensorboard logger')
-
-    parser.add_argument('--modelpath', type=str, help='Output folder for saving the model')
-    parser.add_argument('--save_model', action="store_true", help='Save Model')
-
-    parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
-
-    parser.add_argument('--load_model', action="store_true", help='Load Model')
-    parser.add_argument('--modelfile', type=str, help='From where to load the model')
-
-    parser.add_argument('--labels', nargs='+', help='Labels to ignore in the input files. Used for visualisation')
-    parser.add_argument('--nogpu', action="store_true", help='Do not use gpu acceleration')
     parser.add_argument('--overwrite', action="store_true", help='Overwrite output folder')
-    parser.add_argument('--normalize', action="store_true", help='Normalize input or not')
     parser.add_argument('--output_to_file', action="store_true", help='Also store output in a file')
+
+    # Save and/or Load Model
+    parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
+    parser.add_argument('--save_serial_model', action="store_true", help='Save Model')
+    parser.add_argument('--save_serial_model_path', default=None, type=str, help='Output folder for saving the model')
+    parser.add_argument('--load_model', default=None, type=str, help='Load model from checkpoint')
+
+    # Run parameters
+    parser.add_argument('--nogpu', action="store_true", help='Do not use gpu acceleration')
+    parser.add_argument('--normalize', action="store_true", help='Normalize input or not')
     parser.add_argument('--plot_every', type=int, default=0, help='Number of epochs to run')
 
     parser.add_argument('--beta', type=float, default=1.0, help='beta for the beta-VAE')
@@ -57,7 +54,6 @@ def parse_args():
     parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
 
     parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
-    parser.add_argument('--solvation', type=str, default= None, help='Grid size of the solvation grid')
     parser.add_argument('--networktype', type=str, default='VAE_mse', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
 
@@ -79,18 +75,14 @@ export_latent = args.export_latent
 odir = args.outpath + "/" + args.outfolder + "_"
 nntype = args.networktype
 nexp = args.nexp
-solvation = args.solvation
 # Input directory and columns
 ignore_list = ["#!", "FIELDS", "time"]
-label_list = args.labels
 # Input standarization
 standardize_inputs = args.normalize # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
 # Output file
 output_to_file = args.output_to_file
 output_to_terminal = True
 # Load pre-trained model
-load_state = args.load_model
-state_file = args.modelfile
 # Train model
 hidden_nodes = args.network # NN hidden layers
 num_epochs = args.nepochs
@@ -101,9 +93,6 @@ lrate = args.lrate  # Learning rate
 l2_reg = args.l2norm  # Regularization of network weights
 # Hyperparameters
 beta = args.beta
-# Save model
-save_model = args.save_model
-save_checkpoint = args.save_checkpoint
 
 
 
@@ -120,24 +109,27 @@ elif nntype == "VAE_mse":
     from ce_nets import VAE_mse as main_nn
 elif nntype == "VAE":
     from ce_nets import VAE as main_nn
-    from ce_nets import VAE_args as nested_args
+    from ce_nets import VAE_args as nn_nested_args
 elif nntype == "GMVAE":
     from ce_nets import GMVAE as main_nn
 elif nntype == "VAEGAN" or nntype == "VAEGAN_mse":
     from ce_nets import VAEGAN as main_nn
 elif nntype == "VAECGAN" or nntype == "VAECGAN_mse":
-    assert solvation != None, "Solvation grid size not provided"
     from ce_nets import VAECGAN as main_nn
 elif nntype == "VAEC_mse":
-    assert solvation != None, "Solvation grid size not provided"
     from ce_nets import VAEC_mse as main_nn
 elif nntype == "VAEC":
-    assert solvation != None, "Solvation grid size not provided"
-    from ce_nets import VAEC_args as nested_args
-    from ce_nets import VAEC as main_nn
+    from nets.vae_cnn_net import VAEC as main_nn
+    from nets.vae_cnn_net import VAEC_args as nn_nested_args
 else:
     raise ValueError("Unknown network type")
-from ce_dataloaders import LITColvarData as main_dl
+
+if args.runtype == 'KMC':
+    from ce_dataloaders import KmcDataset as main_dl
+    from ce_dataloaders import KMC_args as data_nested_args
+elif args.runtype == 'COLVAR':
+    from ce_dataloaders import LITColvarData as main_dl
+    from ce_dataloaders import COLVAR_args as data_nested_args
 
 
 
@@ -145,7 +137,7 @@ from ce_dataloaders import LITColvarData as main_dl
 # Output directory
 ##################################
 odir_name = odir+str(nexp)
-modelpath = args.modelpath if args.modelpath != None else odir_name
+
 
 if not overwrite:
     while True:
@@ -184,19 +176,17 @@ print("Using Pytorch", torch.__version__)
 ##################################
 # Creating Dataset
 ##################################
-infile = args.inputfile
-
 outname = odir_name+"/"+nntype+"_"
 
 datamodargs = {}
 datamodargs['train_prop'] = 0.8
 datamodargs['batch_prop'] = 0.1
-datamodargs['label_list'] = label_list
 datamodargs['standardize_inputs'] = False # We dont standardize the inputs here, we do it in the model otherwise it does not work with plumed
-datamodargs['column_match'] = args.column_match
+
+datamodargs = datamodargs | vars(data_nested_args)
 
 
-colvardata = main_dl(infile, **datamodargs)
+colvardata = main_dl(**datamodargs)
 
 colvardata.setup(stage="")
 
@@ -224,17 +214,16 @@ elif nntype == "VAE" or nntype == "VAEGAN":
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
     netargs['saveplotdata'] = not args.no_plotdata
-    netargs = netargs | vars(nested_args)
+    netargs = netargs | vars(nn_nested_args)
 elif nntype == "VAECGAN" or nntype == "VAEC":
     netargs['l'] = nodes
-    netargs['lw'] = [int(x) for x in solvation.split(",")]
     netargs['beta'] = beta
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
     netargs['saveplotdata'] = not args.no_plotdata
+    netargs = netargs | vars(nn_nested_args)
 elif nntype == "VAECGAN_mse" or nntype == "VAEC_mse":
     netargs['l'] = nodes
-    netargs['lw'] = [int(x) for x in solvation.split(",")]
     netargs['beta'] = beta
     netargs['batch_norm'] = args.nobatchnorm
     netargs['plot_every'] = args.plot_every
@@ -245,9 +234,11 @@ elif nntype == "GMVAE":
 else:
     raise ValueError("Unknown network type")
 
-if load_state:
-    print(f"Loading model from {state_file}")
-    model = main_nn.load_from_checkpoint(state_file, **netargs)
+
+if args.load_model != None:
+    checkpoint_file = args.load_model
+    print(f"Loading model from {checkpoint_file}")
+    model = main_nn.load_from_checkpoint(checkpoint_file, **netargs)
 else:
     model = main_nn(**netargs)
 if standardize_inputs:
@@ -277,15 +268,10 @@ trainargs["gradient_clip_val"] = 0.5
 
 trainer = pl.Trainer(**trainargs)
 if train:
-    start = timer()
     # trainer.tune(model, datamodule=colvardata) # To auto find the lr
     trainer.fit(model, datamodule=colvardata)
 
-    end = timer()
-    elapsed = end - start
-    print(f"\nTook {elapsed} s; {colvardata.num_inputs - len(label_list)} input_dim, {len(colvardata.all_dataset)} frames")
-
-if not train and not load_state:
+if not train and args.load_model == None:
     print("WARNING! Model neither loaded nor trained!")
 
 
@@ -310,10 +296,11 @@ if export_latent:
 ##################################
 # Serializing and checkpointing the model
 ##################################
-if save_model:
+if args.save_serial_model:
+    modelpath = args.modelpath if args.save_serial_model_path != None else odir_name
     model.export_serial_model(f'{odir_name}/{modelpath}')
 
-if save_checkpoint:
+if args.save_checkpoint:
     trainer.save_checkpoint(f"{outname}checkpoint")
     print(f"@@ checkpoint saved as: {outname}checkpoint")
 

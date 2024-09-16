@@ -189,8 +189,8 @@ class AEBase(pl.LightningModule):
         latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
         labels = labels.cpu().detach().numpy()
         self.print_labels_latent_correlations(latent_mu, labels)
-        self.plot_latent(test_batch, label_list = self.trainer.datamodule.hparams.label_list, savedata=self.hparams.saveplotdata)
-        self.plot_latent(test_batch, label_list = self.trainer.datamodule.hparams.label_list, plotsd=True)
+        self.plot_latent(test_batch, label_list = self.trainer.datamodule.label_list, savedata=self.hparams.saveplotdata)
+        self.plot_latent(test_batch, label_list = self.trainer.datamodule.label_list, plotsd=True)
         self.plot_extra(data, labels, latent_mu, latent_logvar)
 
     def plot_extra(self, data_x, data_y, latent_mu, latent_logvar):
@@ -228,7 +228,7 @@ class AEBase(pl.LightningModule):
     def print_labels_latent_correlations(self, latent_mu, labels):
         # Calculates and prints correlation between labels+latent_space
 
-        data_df = pd.DataFrame(np.concatenate((latent_mu, labels), axis=1), columns=["Latent Dimension %d"%i for i in range(latent_mu.shape[1])] + self.trainer.datamodule.hparams.label_list)
+        data_df = pd.DataFrame(np.concatenate((latent_mu, labels), axis=1), columns=["Latent Dimension %d"%i for i in range(latent_mu.shape[1])] + self.trainer.datamodule.label_list)
         print("\n\n=======================================")
         print("Correlation of latent space and labels")
         print("=======================================")
