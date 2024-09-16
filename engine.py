@@ -125,11 +125,11 @@ else:
     raise ValueError("Unknown network type")
 
 if args.runtype == 'KMC':
-    from ce_dataloaders import KmcDataset as main_dl
-    from ce_dataloaders import KMC_args as data_nested_args
+    from dataloaders.colvar_dataloader import KmcDataset as main_dl
+    from dataloaders.colvar_dataloader import KMC_args as data_nested_args
 elif args.runtype == 'COLVAR':
-    from ce_dataloaders import LITColvarData as main_dl
-    from ce_dataloaders import COLVAR_args as data_nested_args
+    from dataloaders.colvar_dataloader import LITColvarData as main_dl
+    from dataloaders.colvar_dataloader import COLVAR_args as data_nested_args
 
 
 
@@ -148,7 +148,7 @@ if not overwrite:
         nexp = nexp + 1
 else:
     if not os.path.isdir(odir_name):
-        os.mkdir(odir_name)
+        os.makedirs(odir_name)
 
 if len(os. listdir(odir_name)) != 0:
     import shutil
