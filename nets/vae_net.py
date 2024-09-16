@@ -127,7 +127,7 @@ class VAE(AEBase):
         print(l[-2], " --> ", l[-1], end=" ")
         print("(mu for latent space)")
         self.encoder_logvar = nn.Linear(l[-2], l[-1])
-        print( "  ", " \--> ", l[-1]," (relu) ", end=" ")
+        print( "  ", " \--> ", l[-1], end=" ")
         print("(logvar for latent space)\n\n")
 
     def init_decoder_output(self):
@@ -136,7 +136,7 @@ class VAE(AEBase):
         print(l[1], " --> ", l[0], end=" ")
         print("(mu for feature space)")
         self.decoder_logvar = nn.Linear(l[1], l[0])
-        print( "  ", " \--> ", l[0]," (relu) ", end=" ")
+        print( "  ", " \--> ", l[0], end=" ")
         print("(logvar for feature space)\n\n")
         print("======================")
 
