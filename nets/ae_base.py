@@ -183,19 +183,26 @@ class AEBase(pl.LightningModule):
         self.test_step(data_batch, 0)
 
     def test_step(self, test_batch, batch_idx):
-        data, labels = self.normalize(test_batch[0].float()), test_batch[1].float()
         self.plot_training()
-        latent_mu, latent_logvar = self.encode(data)
-        latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
+        data, labels = self.normalize(test_batch[0].float()), test_batch[1].float()
         labels = labels.cpu().detach().numpy()
-        self.print_labels_latent_correlations(latent_mu, labels)
-        self.plot_latent(test_batch, label_list = self.trainer.datamodule.label_list, savedata=self.hparams.saveplotdata)
-        self.plot_latent(test_batch, label_list = self.trainer.datamodule.label_list, plotsd=True)
-        self.plot_extra(data, labels, latent_mu, latent_logvar)
+        latents = self.get_latent(data)
+        if isinstance(latents, tuple):
+            latent = latents[0]
+        else:
+            latent = latents
+        self.print_labels_latent_correlations(latent, labels)
+        if self.hparams.saveplotdata:
+            self.export_latent(latents, labels)
+        self.plot_latent(latents, labels=labels)
+        self.plot_extra(data, labels, latents)
 
-    def plot_extra(self, data_x, data_y, latent_mu, latent_logvar):
+    def plot_extra(self, data_x, data_y, latents):
         # This implements any extra printing or plotting in child class
        return
+
+    def get_latent(self, data_x):
+        raise NotImplementedError("This function must be implemented in child class")
 
     def print_fve(self, datamodule):
         dl = datamodule.test_dataloader()
@@ -225,10 +232,9 @@ class AEBase(pl.LightningModule):
         self.training = flag
         return fve_mean
 
-    def print_labels_latent_correlations(self, latent_mu, labels):
+    def print_labels_latent_correlations(self, latent, labels):
         # Calculates and prints correlation between labels+latent_space
-
-        data_df = pd.DataFrame(np.concatenate((latent_mu, labels), axis=1), columns=["Latent Dimension %d"%i for i in range(latent_mu.shape[1])] + self.trainer.datamodule.label_list)
+        data_df = pd.DataFrame(np.concatenate((latent, labels), axis=1), columns=["Latent Dimension %d"%i for i in range(latent.shape[1])] + self.trainer.datamodule.label_list)
         print("\n\n=======================================")
         print("Correlation of latent space and labels")
         print("=======================================")
@@ -319,46 +325,35 @@ class AEBase(pl.LightningModule):
         self.metaD = False
         print(f"[{type(self).__name__} model serialized at: {model_path}/encoder.pt]")
 
-    @torch.no_grad()
-    def export_latent(self, data):
-        data = self.normalize(data[0].float())
-
-        latent_mu, latent_logvar = self.encode(data)
-        data_lat = pd.DataFrame(data=latent_mu, columns=['latent space dimension %d'%i for i in range(latent_mu.shape[1])])
-        data_lat.to_csv(f"{self.hparams.outname}{self.current_epoch}_latent_space.csv", index=False)
 
     @torch.no_grad()
-    def plot_latent(self, data, label_list = None, plotsd = False, savedata = False):
-        data_x = self.normalize(data[0].float())
-        latent_mu, latent_logvar = self.encode(data_x)
-        latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
-        labels = data[1].float().cpu().detach().numpy() if len(data) > 1 else None
+    def export_latent(self, latents, labels = None):
+        filename_stem = f"{self.hparams.outname}{self.current_epoch}_"
 
+        if isinstance(latents, tuple):
+            latent_names = self.get_latent_names()
+            assert len(latents) == len(latent_names)
+            for i in range(len(latents)):
+                np.save(filename_stem + f"{latent_names[i]}.npy", latents[i])
+        if labels is not None:
+            np.save(filename_stem + f"labels.npy", labels)
 
-        if latent_mu.shape[0] > self.plot_points_limit:
-            index = np.random.choice(latent_mu.shape[0], 5000, replace=False)
-            latent_mu = latent_mu[index]
-            latent_logvar = latent_logvar[index]
+    @torch.no_grad()
+    def plot_latent(self, latents, labels = None, plot_func : callable = None, tag = None):
+        if labels is not None:
+            label_list = self.trainer.datamodule.label_list
+        latent_len = len(latents) if isinstance(latents, tuple) else 1
+        plot_len = latents[0].shape[0] if isinstance(latents, tuple) else latents.shape[0]
+
+        if plot_len > self.plot_points_limit:
+            index = np.random.choice(plot_len, 5000, replace=False)
+            if latent_len > 1:
+                latents = [latent[index] for latent in latents]
+            else:
+                latents = latents[index]
             if labels is not None:
                 labels = labels[index]
 
-        if False: # Ignore points outside a label range
-            choices = data_y
-            latent_mu = latent_mu[choices > 0]
-            latent_logvar = latent_logvar[choices > 0]
-            data_y = data_y[choices > 0]
-
-            choices = data_y
-            latent_mu = latent_mu[choices < 2.0]
-            latent_logvar = latent_logvar[choices < 2.0]
-            data_y = data_y[choices < 2.0]
-
-        if savedata:
-            filename_stem = f"{self.hparams.outname}{self.current_epoch}_"
-            np.save(filename_stem + f"latent_mu.npy", latent_mu)
-            np.save(filename_stem + f"latent_logvar.npy", latent_logvar)
-            if labels is not None:
-                np.save(filename_stem + f"labels.npy", labels)
 
         n_fig = 10
         k = 0
@@ -372,12 +367,13 @@ class AEBase(pl.LightningModule):
 
             for i in range(0, axes.shape[0]):
                 for j in range(n_cols):
-                    self.plot_latent_axis(fig, axes[i][j], latent_mu, latent_logvar, labels[:,j] if labels is not None else None, i, j, label_list[j] if label_list is not None else None, plotsd)
+                    self.plot_latent_axis(fig, axes[i][j], latents, labels[:,j] if labels is not None else None, i, j, label_list[j] if labels is not None else None, plot_func)
             n_hidden -= n_rows
             if n_hidden == 1:
                 n_hidden = 0
             plt.tight_layout()
-            tag = "latent_pdf" if plotsd else "latent_space"
+            if tag is None:
+                tag = "latent_space"
             if k == 0 and n_hidden == 0:
                 figoname = f"{self.hparams.outname}{self.current_epoch}_{tag}.png"
 
@@ -389,7 +385,7 @@ class AEBase(pl.LightningModule):
             k += 1
 
     @torch.no_grad()
-    def plot_latent_axis(self, fig, ax, latent_mu, latent_logvar, train_y, i, j, label, plotsd):
+    def plot_latent_axis(self, fig, ax, latents, train_y, i, j, label, plot_func):
         ax.set_title(f"{type(self).__name__} Latent-space-"+str(i))
 
         if train_y is not None:
@@ -397,24 +393,14 @@ class AEBase(pl.LightningModule):
             cNorm = matplotlib.colors.Normalize(vmin=min(train_y), vmax=max(train_y))
             scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
 
-        yaxis = (i+1) if (i+1) < latent_mu.shape[1] else 0
-        latent_sd = np.exp(latent_logvar)
-        # latent_mu = self.reparametrize_multivariate(torch.tensor(latent_mu), torch.tensor(latent_logvar)).numpy()
+        latent = latents[0] if isinstance(latents, tuple) else latents
 
-        if False: ## To remove outliers
-            for ind,point in enumerate(latent_mu):
-                if (point[0] < -20) or (point[1] < -20):
-                    print(f"\nOutlier point: {point[0]}.{point[1]} ind:{ind}, will not be plotted")
-                    latent_mu = np.delete(latent_mu, [ind], axis=0)
-                    latent_sd = np.delete(latent_sd, [ind], axis=0)
-                    train_y = np.delete(train_y, [ind], axis=0)
+        yaxis = (i+1) if (i+1) < latent.shape[1] else 0
 
-
-
-        if plotsd:
-            ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], ecolor=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.1, ls='none')
+        if plot_func is not None:
+            plot_func(fig, ax, latents, train_y, i, yaxis, label, scalarMap)
         else:
-            ax.scatter(latent_mu[:, i], latent_mu[:, yaxis], c=scalarMap.to_rgba(train_y) if train_y is not None else None, label="Whole dataset", alpha=0.3)
+            ax.scatter(latent[:, i], latent[:, yaxis], c=scalarMap.to_rgba(train_y) if train_y is not None else None, label="Whole dataset", alpha=0.3)
         ax.set_xlabel(f"Latent Dimension {i}")
         ax.set_ylabel(f"Latent Dimension {yaxis}")
 
@@ -431,27 +417,3 @@ class AEBase(pl.LightningModule):
             logger = logger.experiment
             logger.add_figure(tag, image, step if step is not None else self.current_epoch)
 
-
-
-    # def plot_latent_surface(self, fig, ax, train_x, train_y, i):
-    #     ax.set_title("LITcollVAE Latent-population-"+str(i))
-
-    #     latent_mu, latent_logvar = self.encode(train_x)
-    #     latent_mu, latent_logvar = latent_mu.cpu().detach().numpy(), latent_logvar.cpu().detach().numpy()
-
-    #     latent_sd = np.sqrt(np.exp(latent_logvar))
-
-    #     yaxis = (i+1) if (i+1) < latent_mu.shape[1] else 0
-
-    #     x, y = np.mgrid[-3:3:.01, -3:3:.01]
-    #     pos = np.dstack((x, y))
-
-    #     res = np.zeros((len(x),len(y)))
-    #     for l in range(latent_mu.shape[0]):
-    #         res += multivariate_normal(mean=latent_mu[l,:], cov=[[latent_sd[l,0], 0.0],[0.0, latent_sd[l,1]]]).pdf(pos)
-
-    #     cs = ax.contourf(x,y, res, 20)
-    #     ax.set_xlabel("h_{}".format(i))
-    #     ax.set_ylabel("h_{}".format(yaxis))
-    #     cbar = fig.colorbar(cs)
-    #     fig.savefig(f"{self.hparams.outname}LatentShape.png", dpi=150)

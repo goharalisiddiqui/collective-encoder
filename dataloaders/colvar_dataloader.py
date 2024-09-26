@@ -6,7 +6,7 @@ import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader
 import argparse
 
-class ColvarDataset(Dataset):
+class ColvarData(Dataset):
     """COLVAR dataset"""
 
     def __init__(self, colvar_list):
@@ -27,7 +27,7 @@ def colvardatset_args():
     parser = argparse.ArgumentParser(description=desc)
 
 
-    parser.add_argument('--colvarfile', required = True, type=str, help='Input file for training')
+    parser.add_argument('--colvarfile', required=True, type=str, help='Input file for training')
     parser.add_argument('--column_match', type=str, default=None, help='Only columns containing this string will be used')
     parser.add_argument('--labels',dest = 'label_list', nargs='+', help='Label columns in the data file')
 
@@ -38,7 +38,7 @@ def colvardatset_args():
 
 COLVAR_args = colvardatset_args()
 
-class LITColvarData(pl.LightningDataModule):
+class ColvarDataset(pl.LightningDataModule):
     def __init__(self,
                  colvarfile : str,
                  train_prop : int = 0.6,
@@ -46,7 +46,7 @@ class LITColvarData(pl.LightningDataModule):
                  batch_prop : float = 0.1,
                  label_list : list = [],
                  column_match : str = None,
-                 standardize_inputs : bool = True):
+                 standardize_inputs : bool = False):
         super().__init__()
         print("\n\n[Initializing LITColvarData Module]")
         print("==========================================")
@@ -99,7 +99,7 @@ class LITColvarData(pl.LightningDataModule):
         self.label_list = label_list
         self.save_hyperparameters()
         p = np.random.permutation(len(self.alldata))
-        self.all_dataset = ColvarDataset([self.alldata[p], self.alllabel[p]])
+        self.all_dataset = ColvarData([self.alldata[p], self.alllabel[p]])
 
 
 
@@ -123,7 +123,7 @@ class LITColvarData(pl.LightningDataModule):
         return DataLoader(valid_data, batch_size=len(self.validation_data), shuffle=False, drop_last=True, num_workers=1)
 
     def test_dataloader(self):
-        all_dataset = ColvarDataset([self.alldata, self.alllabel])
+        all_dataset = ColvarData([self.alldata, self.alllabel])
         return DataLoader(all_dataset, batch_size=len(all_dataset), shuffle=False, drop_last=False)
 
     def target_scaler(self, X):

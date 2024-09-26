@@ -15,15 +15,7 @@ import pandas as pd
 pd.set_option('display.max_columns', None)
 
 
-
-import matplotlib.pyplot as plt
-import matplotlib
-from matplotlib import rc
-from statistics import mean as list_mean
-
-from scipy.stats import multivariate_normal
-
-from nets.ae_base import AEBase
+from ae_base import AEBase
 
 EPSILON = 1e-9
 
@@ -37,7 +29,7 @@ def vae_parse_args():
     parser.add_argument('--cmax', type=float, default = 0.0, dest='C_max', help='Maximum C for information control in Beta-VAE')
     parser.add_argument('--cstart', type=int, default = 0, dest='C_start', help='Epoch where C start to increase for information control in Beta-VAE')
     parser.add_argument('--cend', type=int, default = 0, dest='C_end', help='Epoch where C stops to increase for information control in Beta-VAE')
-
+    parser.add_argument('--beta', required=True, type=float, help='beta for the beta-VAE')
 
     args, _ = parser.parse_known_args()
 
@@ -262,8 +254,21 @@ class VAE(AEBase):
             print(f"LD {i} : {ld_mean[i]}")
         print("=====================================")
 
-    def plot_extra(self, data_x, data_y, latent_mu, latent_logvar):
+    def plot_extra(self, data_x, data_y, latents):
+        latent_logvar = latents[1]
+        self.plot_latent(latents, data_y, self.plot_sd, "latent_pdf")
         self.plot_avg_sigma(latent_logvar)
+
+    def get_latent(self, data_x):
+        latent_mu, latent_logvar = self.encode(data_x)
+        return latent_mu.detach().cpu().numpy(), latent_logvar.detach().cpu().numpy()
+
+    def get_latent_names(self):
+        return "mu_latent", "logvar_latent"
+
+    def plot_sd(fig, ax, latents, train_y, i, yaxis, label, scalarMap):
+        latent_mu, latent_sd = latents
+        ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], ecolor=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.1, ls='none')
 
 
 

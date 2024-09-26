@@ -3,234 +3,128 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pytorch_lightning as pl
-from torch.autograd import Variable
-torch.manual_seed(0)
+
+from ae_base import AEBase
+
 TORCH_PI = torch.acos(torch.zeros(1))*2
+EPSILON = 1e-9
+
+torch.manual_seed(0)
+torch.set_printoptions(threshold=10_000)
 
 
+class AE(AEBase):
+    def __init__(self,
+                 l: list,
+                 lr : float = 0.01,
+                 l2_reg : float = 1e-7,
+                 batch_norm : bool = True,
+                 lr_scheduler : bool = True,
+                 plot_every : int = 0,
+                 saveplotdata : bool = False,
+                 outname : str = './AE_untitled/AE_'):
+        super().__init__(dim_data = l[0],
+                         dim_latent = l[-1],
+                         lr = lr,
+                         l2_reg = l2_reg,
+                         lr_scheduler = lr_scheduler,
+                         outname = outname,
+                         plot_every = plot_every,
+                         saveplotdata = saveplotdata)
+        assert len(l) >= 3
+        self.save_hyperparameters()
+        #### Setting up the layers of the netwrok ####
+        self.init_network()
 
 
-import matplotlib.pyplot as plt
-import matplotlib
-from matplotlib import rc
-from statistics import mean as list_mean
-
-from scipy.stats import multivariate_normal
-
-
-
-class LITcollAE(pl.LightningModule):
-    def __init__(self, l:list, lr : float = 0.01, l2_reg : float = 1e-7, 
-                 outname : str = './LITcollAE_untitled/LITcollAE_'):
-        super().__init__()
-        assert len(l) >= 2
-        print("[Initializing LITcollAE Module]")
-        print("- hidden layers:", l)
+    def init_network(self):
+        print(f"[Initializing {type(self).__name__} Module]")
+        print("- hidden layers:", self.hparams.l)
         print("")
         print("========= NN =========")
-        modules = []
-        for i in range(len(l) - 1):
-            print(l[i], " --> ", l[i + 1], end=" ")
-            if i < len(l) - 2:
-                modules.append(nn.Linear(l[i], l[i + 1]))
-                modules.append(nn.ReLU(True))
-                modules.append(nn.BatchNorm1d(l[i + 1]))
-                print("(relu)")
-            else:
-                modules.append(nn.Linear(l[i], l[i + 1]))
-                print("")
-        modules.append(nn.Sigmoid())
-        print("(sigmoid)")
-        self.encoder = nn.Sequential(*modules)
-        modules = []
-        a = len(l) - 1
-        for i in range(len(l) - 1):
-            print(l[a - i], " --> ", l[a - i - 1], end=" ")
-            if i < len(l) - 2:
-                modules.append(nn.Linear(l[a - i], l[a - i - 1]))
-                modules.append(nn.ReLU(True))
-                modules.append(nn.BatchNorm1d(l[a - i - 1]))
-                print("(relu)")
-            else:
-                modules.append(nn.Linear(l[a - i], l[a - i - 1]))
-                print("")
-        self.decoder = nn.Sequential(*modules)
+        self.init_encoder()
+        print("")
+        self.init_decoder()
         print("======================")
-        
-        # Model meta info
-        self.normIn = False
-        self.metaD = False
-        self.save_hyperparameters()
-        
-        self.train_loss_list = []
-        self.val_loss_list = []
-        self.print_loss = 1
-        
-        self.register_buffer('Mean', torch.zeros(l[0]))
-        self.register_buffer('Range', torch.ones(l[0]))
-        
-    def set_norm(self, Mean: torch.Tensor, Range: torch.Tensor):
-        self.normIn = True
-        self.Mean = Mean
-        self.Range = Range
-        
-    def normalize(self, x: Variable):
-        batch_size = x.size(0)
-        x_size = x.size(1)
 
-        # print(f"\n\nmean shape={self.Mean.shape}\n\n")
-        # print(f"\n\nmean shape={x.shape}\n\n")
-        
-        Mean = self.Mean.unsqueeze(0).expand(batch_size, x_size)
-        Range = self.Range.unsqueeze(0).expand(batch_size, x_size)
+    def init_encoder(self):
+        l = self.hparams.l
+        batch_norm = self.hparams.batch_norm
+        encoder_layers = []
+        for i in range(len(l) - 2):
+            print(l[i], " --> ", l[i + 1], end=" ")
+            encoder_layers.append(nn.Linear(l[i], l[i + 1]))
+            encoder_layers.append(nn.ReLU(True))
+            print("(relu)")
+            if batch_norm:
+                encoder_layers.append(nn.BatchNorm1d(l[i + 1]))
+                print("(batch_normalization layer)")
+        print(l[-2], " --> ", l[-1], end=" ")
+        encoder_layers.append(nn.Linear(l[-2], l[-1]))
+        self.encoder = nn.Sequential(*encoder_layers)
 
-        return x.sub(Mean).div(Range)
-    
-    def denormalize(self, x: Variable):
-        batch_size = x.size(0)
-        x_size = x.size(1)
+    def init_decoder(self):
+        l = self.hparams.l
+        batch_norm = self.hparams.batch_norm
+        decoder_layers = []
+        a = len(l) - 1
+        for i in range(len(l) - 2):
+            print(l[a - i], " --> ", l[a - i - 1], end=" ")
+            decoder_layers.append(nn.Linear(l[a- i], l[a - i - 1]))
+            decoder_layers.append(nn.ReLU(True))
+            print("(relu)")
+            if batch_norm:
+                decoder_layers.append(nn.BatchNorm1d(l[a - i - 1]))
+                print("(batch_normalization layer)")
+        print(l[1], " --> ", l[0], end=" ")
+        decoder_layers.append(nn.Linear(l[1], l[0]))
+        self.decoder = nn.Sequential(*decoder_layers)
 
-        Mean = self.Mean.unsqueeze(0).expand(batch_size, x_size)
-        Range = self.Range.unsqueeze(0).expand(batch_size, x_size)
-
-        return x.mul(Range).add(Mean)
-
-    def encode(self, x: Variable) -> (Variable):
-        if self.normIn:
-            x = self.normalize(x)
+    def encode(self, x):
         z = self.encoder(x)
         return z
 
-    def decode(self, x: Variable) -> (Variable):
-        z = self.decoder(x)
-        return z
+    def decode(self, z):
+        x = self.decoder(z)
+        return x
 
-    def forward(self, x: Variable) -> (Variable):
+    def forward(self, x):
         z = self.encode(x)
         if self.metaD:
-            return z
-        y = self.decode(z)
-        
-        return y
+            return z, z # Because our plumed module expects a tuple
+        x_out = self.decode(z)
 
-    def loss_fn(self, output, target):
-        return F.mse_loss(output, target)
-    
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
-        if False:
-            return optimizer
-        
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                                       factor=0.8, patience=10,
-                                                       min_lr=1e-10,
-                                                       cooldown = 30,
-                                                       verbose =True)
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "monitor": "val_loss",
-                "frequency": 1,
-            }
-        }
-    
-    def on_train_start(self):
-        print("\n\n==================================")
-        print("Starting training LITcollAE module")
-        print("==================================")
-        print("[Optimization Settings]")
-        print("- Learning rate \t=", self.hparams.lr)
-        print("- l2 regularization \t=", self.hparams.l2_reg)
-        print("==================================\n\n")
-        
-        
+        return x_out, {"z" : z}
 
-        # print("[{:>3}/{:>3}] {:>10}".format("ep", "tot", "train_loss",  "val_loss"))
-    
-    
-    def training_step(self, train_batch, batch_idx):
-        data = train_batch[0].float()
-        result = self(data)
-        target = self.normalize(data)
-        
-        loss = self.loss_fn(result, target)
-        self.train_loss_list.append(loss.item())
-        # print(f"\nbatch_id={batch_idx}, loss_list_size={len(self.train_loss_list)}")
-        # self.log('train_loss', loss.item(), prog_bar=True)
-        return loss
-    
-    def validation_step(self, val_batch, batch_idx):
-        data = val_batch[0].float()
-        result = self(data)
-        target = self.normalize(data)
-        loss = self.loss_fn(result, target)
-        self.val_loss_list.append(loss)
-        self.log('val_loss', loss.item(), prog_bar=True)
-        return loss
+    def mae_loss(self, recon_x, tru_x):
+        tru_x = self.denormalize(tru_x)
+        recon_x = self.denormalize(recon_x)
 
-    # def on_validation_epoch_end(self):
-    #     if (len(train_loss_list)) % self.print_loss == 0:
-    #         print("[{:3d}/{:3d}] {:10.3f} {:10.3f}".format(len(self.train_loss_list),self.max_epochs, train_loss_list[-1], val_loss_list[-1]))
-        
+        loss_mae = F.l1_loss(recon_x, tru_x, reduction='none')
+        loss_mae = torch.mean(loss_mae, dim = 1)
+        loss_mae = torch.mean(loss_mae, dim = 0)
 
-    def test_step(self, test_batch, batch_idx):
-        epoch = self.current_epoch
-        n_hidden = self.hparams.l[-1]
+        return loss_mae
 
-        
-        train_x, train_y = test_batch[0].float(), test_batch[1].float()
-        n_labels = train_y.shape[-1]
-        
-        
-        
-        fig, axes = plt.subplots(n_hidden if n_hidden > 2 else 1, n_labels + 1, squeeze=False,figsize=(13, 5))
-        
-        self.plot_training(axes[0][0])
-        for i in range(0, axes.shape[0]):
-            for j in range(n_labels):
-                self.plot_latent(fig, axes[i][j+1], train_x, train_y[:,j], i, j)
-        
-        plt.tight_layout()
-        fig.savefig(f"{self.hparams.outname}{epoch}_training.png", dpi=150)
-        plt.close()
-    
-        return None
+    def loss(self, recon_x, tru_x, **kwargs):
+
+        loss = F.mse_loss(recon_x, tru_x)
+
+        if loss.isnan().any().detach().cpu().numpy():
+            print("loss contains nan. Can't continue")
+            exit()
+
+        loss_mae = self.mae_loss(recon_x, tru_x)
+
+        return {'loss' : loss,
+                    'mae_loss' : loss_mae}
+
+    def get_latent(self, data_x):
+        latent = self.encode(data_x)
+        return latent.detach().cpu().numpy()
 
 
-    def plot_training(self, ax):
-        ax.set_title("Network Loss minimization")
-        ax.set_yscale("log")
-        ax.plot(
-            np.asarray(self.train_loss_list),
-            ".-",
-            c="tab:green",
-            label="loss",
-        )
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("loss")
-        ax.legend()
 
-    def plot_latent(self, fig, ax, train_x, train_y, i, j):
-        ax.set_title("LITcollAE Latent-space-"+str(i))
-        
-        latent_train = self.encode(train_x).cpu().detach().numpy()
-        
-        cm = plt.get_cmap('jet')
-        cNorm = matplotlib.colors.Normalize(vmin=min(train_y), vmax=max(train_y))
-        
-        # print(f"min={min(train_y)}, max={max(train_y)}\n")
-        
-        scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
-        yaxis = (i+1) if (i+1) < latent_train.shape[1] else 0
-        ax.scatter(latent_train[:, i], latent_train[:, yaxis], c=scalarMap.to_rgba(train_y), label="Whole dataset", alpha=0.3)
-        
-        ax.set_xlabel("h_{}".format(i))
-        ax.set_ylabel("h_{}".format(yaxis))
 
-        scalarMap.set_array(train_y)
-        cb = fig.colorbar(scalarMap, ax=ax)
-        cb.set_label(self.trainer.datamodule.hparams.label_list[j])
-        ax.legend()
-        
+
+

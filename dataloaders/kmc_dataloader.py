@@ -6,7 +6,7 @@ import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader
 import argparse
 
-class KmcDataset(Dataset):
+class KmcData(Dataset):
     """KMC dataset"""
 
     def __init__(self, colvar_list):
@@ -99,7 +99,7 @@ class KmcDataset(pl.LightningDataModule):
         print("==========================================")
         self.save_hyperparameters()
         p = np.random.permutation(len(self.alldata))
-        self.all_dataset = KmcDataset([self.alldata[p], self.alllabel[p]])
+        self.all_dataset = KmcData([self.alldata[p], self.alllabel[p]])
 
 
 
@@ -123,7 +123,7 @@ class KmcDataset(pl.LightningDataModule):
         return DataLoader(valid_data, batch_size=len(self.validation_data), shuffle=False, drop_last=True, num_workers=1)
 
     def test_dataloader(self):
-        all_dataset = KmcDataset([self.alldata, self.alllabel])
+        all_dataset = KmcData([self.alldata, self.alllabel])
         return DataLoader(all_dataset, batch_size=len(all_dataset), shuffle=False, drop_last=False)
 
     def target_scaler(self, X):

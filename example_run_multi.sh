@@ -2,7 +2,7 @@
 #SBATCH -J CE_Training
 ### number of cores
 #SBATCH -N 1
-#SBATCH --ntasks 6
+#SBATCH --ntasks 2
 #SBATCH --cpus-per-task 8
 #SBATCH -p wom
 ##SBATCH -B 1:8:2
@@ -58,11 +58,12 @@ fi
 i=1
 for beta in 0.0001 0.001 0.01 0.02 0.03 0.05 0.07 0.1 0.15 0.2 0.3 0.5 0.7 1.0 1.2 1.3 1.5 1.7 2.0 ; do
 
-    (srun --ntasks 1 --cpus-per-task 8 --mem=7G --gpus 1 python engine.py      \
-                    --inputfile $DATA_DIR/20221201_COLLECTIVE_ENCODER_TRAINING_DATA_CKIT/INPUTS \
-                    --outpath ./beta-sweep_VAE_1000 \
+    (srun --ntasks 1 --cpus-per-task 8 --mem=9G --gres shard:4 python engine.py      \
+                    --runtype COLVAR \
+                    --colvarfile ../enhanced_md/run14/iter29/INPUTS_COMM \
+                    --outpath ./beta-sweep_VAE_ld6_1000 \
                     --modelpath . \
-                    --nepochs 100 \
+                    --nepochs 500 \
                     --nexp $i \
                     --labels phi psi \
                     --output_to_file \

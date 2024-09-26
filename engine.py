@@ -17,6 +17,9 @@ np.random.seed(0)
 import warnings
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
+sys.path.append(os.path.dirname(os.getcwd() + '/nets/'))
+sys.path.append(os.path.dirname(os.getcwd() + '/dataloaders/'))
+
 
 ##################################
 # Arguments
@@ -48,7 +51,6 @@ def parse_args():
     parser.add_argument('--normalize', action="store_true", help='Normalize input or not')
     parser.add_argument('--plot_every', type=int, default=0, help='Number of epochs to run')
 
-    parser.add_argument('--beta', type=float, default=1.0, help='beta for the beta-VAE')
     parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
     parser.add_argument('--l2norm', type=float, default=1e-3, help='Weights regularization for the training')
     parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
@@ -91,8 +93,6 @@ train = True if num_epochs > 0 else False
 # Optimization
 lrate = args.lrate  # Learning rate
 l2_reg = args.l2norm  # Regularization of network weights
-# Hyperparameters
-beta = args.beta
 
 
 
@@ -104,20 +104,26 @@ beta = args.beta
 ##################################
 #import AE_nn
 if nntype == "AE":
-    from ce_nets import LITcollAE as main_nn
+    from nets.ae_net import AE as main_nn
+    nn_nested_args = argparse.Namespace()
 elif nntype == "VAE_mse":
     from ce_nets import VAE_mse as main_nn
+    nn_nested_args = {}
 elif nntype == "VAE":
     from ce_nets import VAE as main_nn
     from ce_nets import VAE_args as nn_nested_args
 elif nntype == "GMVAE":
     from ce_nets import GMVAE as main_nn
+    nn_nested_args = {}
 elif nntype == "VAEGAN" or nntype == "VAEGAN_mse":
     from ce_nets import VAEGAN as main_nn
+    nn_nested_args = {}
 elif nntype == "VAECGAN" or nntype == "VAECGAN_mse":
     from ce_nets import VAECGAN as main_nn
+    nn_nested_args = {}
 elif nntype == "VAEC_mse":
     from ce_nets import VAEC_mse as main_nn
+    nn_nested_args = {}
 elif nntype == "VAEC":
     from nets.vae_cnn_net import VAEC as main_nn
     from nets.vae_cnn_net import VAEC_args as nn_nested_args
@@ -125,10 +131,10 @@ else:
     raise ValueError("Unknown network type")
 
 if args.runtype == 'KMC':
-    from dataloaders.colvar_dataloader import KmcDataset as main_dl
-    from dataloaders.colvar_dataloader import KMC_args as data_nested_args
+    from dataloaders.kmc_dataloader import KmcDataset as main_dl
+    from dataloaders.kmc_dataloader import KMC_args as data_nested_args
 elif args.runtype == 'COLVAR':
-    from dataloaders.colvar_dataloader import LITColvarData as main_dl
+    from dataloaders.colvar_dataloader import ColvarDataset as main_dl
     from dataloaders.colvar_dataloader import COLVAR_args as data_nested_args
 
 
@@ -150,7 +156,7 @@ else:
     if not os.path.isdir(odir_name):
         os.makedirs(odir_name)
 
-if len(os. listdir(odir_name)) != 0:
+if len(os.listdir(odir_name)) != 0:
     import shutil
     shutil.rmtree(odir_name, ignore_errors=True)
     os.mkdir(odir_name)
@@ -199,40 +205,21 @@ nodes = [int(x) for x in hidden_nodes.split(",")]
 nodes.insert(0, colvardata.num_inputs)
 
 
-netargs = {'lr': lrate, 'l2_reg' :l2_reg, 'outname': outname}
+netargs = {}
+netargs['lr'] = lrate
+netargs['l2_reg'] = l2_reg
+netargs['outname'] = outname
+netargs['batch_norm'] = args.nobatchnorm
+netargs['plot_every'] = args.plot_every
+netargs['saveplotdata'] = not args.no_plotdata
 
-if nntype == "AE":
+if nntype != "GMVAE":
     netargs['l'] = nodes
-elif nntype == "VAE_mse" or nntype == "VAEGAN_mse":
-    netargs['l'] = nodes
-    netargs['beta'] = beta
-    netargs['batch_norm'] = args.nobatchnorm
-    netargs['plot_every'] = args.plot_every
-elif nntype == "VAE" or nntype == "VAEGAN":
-    netargs['l'] = nodes
-    netargs['beta'] = beta
-    netargs['batch_norm'] = args.nobatchnorm
-    netargs['plot_every'] = args.plot_every
-    netargs['saveplotdata'] = not args.no_plotdata
-    netargs = netargs | vars(nn_nested_args)
-elif nntype == "VAECGAN" or nntype == "VAEC":
-    netargs['l'] = nodes
-    netargs['beta'] = beta
-    netargs['batch_norm'] = args.nobatchnorm
-    netargs['plot_every'] = args.plot_every
-    netargs['saveplotdata'] = not args.no_plotdata
-    netargs = netargs | vars(nn_nested_args)
-elif nntype == "VAECGAN_mse" or nntype == "VAEC_mse":
-    netargs['l'] = nodes
-    netargs['beta'] = beta
-    netargs['batch_norm'] = args.nobatchnorm
-    netargs['plot_every'] = args.plot_every
-    netargs['saveplotdata'] = not args.no_plotdata
-elif nntype == "GMVAE":
+else:
     netargs['n_x'] = nodes[0]
     netargs['n_z'] = nodes[-1]
-else:
-    raise ValueError("Unknown network type")
+
+netargs = netargs | vars(nn_nested_args)
 
 
 if args.load_model != None:
