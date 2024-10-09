@@ -286,7 +286,7 @@ if export_latent:
 # Serializing and checkpointing the model
 ##################################
 if args.save_serial_model:
-    modelpath = args.modelpath if args.save_serial_model_path != None else odir_name
+    modelpath = args.modelpath if args.save_serial_model_path != None else '.'
     model.export_serial_model(f'{odir_name}/{modelpath}')
 
 if args.save_checkpoint:

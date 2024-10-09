@@ -15,7 +15,7 @@ import pandas as pd
 pd.set_option('display.max_columns', None)
 
 
-from ae_base import AEBase
+from nets.ae_base import AEBase
 
 EPSILON = 1e-9
 
@@ -266,8 +266,9 @@ class VAE(AEBase):
     def get_latent_names(self):
         return "mu_latent", "logvar_latent"
 
-    def plot_sd(fig, ax, latents, train_y, i, yaxis, label, scalarMap):
-        latent_mu, latent_sd = latents
+    def plot_sd(self, fig, ax, latents, train_y, i, yaxis, label, scalarMap):
+        latent_mu, latent_logvar = latents
+        latent_sd = np.exp(0.5 * latent_logvar)
         ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], ecolor=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.1, ls='none')
 
 
