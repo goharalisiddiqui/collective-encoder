@@ -108,10 +108,10 @@ if nntype == "AE":
     nn_nested_args = argparse.Namespace()
 elif nntype == "VAE_mse":
     from ce_nets import VAE_mse as main_nn
-    nn_nested_args = {}
+    nn_nested_args = argparse.Namespace()
 elif nntype == "VAE":
-    from ce_nets import VAE as main_nn
-    from ce_nets import VAE_args as nn_nested_args
+    from nets.vae_net import VAE as main_nn
+    from nets.vae_net import VAE_args as nn_nested_args
 elif nntype == "GMVAE":
     from ce_nets import GMVAE as main_nn
     nn_nested_args = {}
@@ -189,6 +189,7 @@ datamodargs['train_prop'] = 0.8
 datamodargs['batch_prop'] = 0.1
 datamodargs['standardize_inputs'] = False # We dont standardize the inputs here, we do it in the model otherwise it does not work with plumed
 
+data_nested_args = data_nested_args()
 datamodargs = datamodargs | vars(data_nested_args)
 
 
@@ -219,6 +220,7 @@ else:
     netargs['n_x'] = nodes[0]
     netargs['n_z'] = nodes[-1]
 
+nn_nested_args = nn_nested_args()
 netargs = netargs | vars(nn_nested_args)
 
 

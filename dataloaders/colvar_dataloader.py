@@ -36,7 +36,7 @@ def colvardatset_args():
     return args
 
 
-COLVAR_args = colvardatset_args()
+COLVAR_args = colvardatset_args
 
 class ColvarDataset(pl.LightningDataModule):
     def __init__(self,

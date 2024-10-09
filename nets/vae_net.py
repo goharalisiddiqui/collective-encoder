@@ -36,7 +36,7 @@ def vae_parse_args():
     return args
 
 
-VAE_args = vae_parse_args()
+VAE_args = vae_parse_args
 
 class VAE(AEBase):
     def __init__(self,
