@@ -29,7 +29,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=desc)
 
     ## Type of Data
-    parser.add_argument('--runtype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC'])
+    parser.add_argument('--runtype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC','MD17'])
 
     # Output Settings
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
@@ -136,6 +136,10 @@ if args.runtype == 'KMC':
 elif args.runtype == 'COLVAR':
     from dataloaders.colvar_dataloader import ColvarDataset as main_dl
     from dataloaders.colvar_dataloader import COLVAR_args as data_nested_args
+elif args.runtype == 'MD17':
+    from dataloaders.md17_dataloader import MD17Data as main_dl
+    from dataloaders.md17_dataloader import MD17_args as data_nested_args
+
 
 
 
@@ -185,17 +189,20 @@ print("Using Pytorch", torch.__version__)
 outname = odir_name+"/"+nntype+"_"
 
 datamodargs = {}
-datamodargs['train_prop'] = 0.8
-datamodargs['batch_prop'] = 0.1
-datamodargs['standardize_inputs'] = False # We dont standardize the inputs here, we do it in the model otherwise it does not work with plumed
+if args.runtype in ["COLVAR", "KMC"]:
+    datamodargs['train_prop'] = 0.8
+    datamodargs['batch_prop'] = 0.1
+    datamodargs['standardize_inputs'] = False # We dont standardize the inputs here, we do it in the model otherwise it does not work with plumed
 
 data_nested_args = data_nested_args()
 datamodargs = datamodargs | vars(data_nested_args)
 
 
 colvardata = main_dl(**datamodargs)
+if args.runtype == 'MD17':
+    colvardata.prepare_data()
 
-colvardata.setup(stage="")
+colvardata.setup(stage="fit")
 
 
 ##################################
@@ -204,7 +211,6 @@ colvardata.setup(stage="")
 
 nodes = [int(x) for x in hidden_nodes.split(",")]
 nodes.insert(0, colvardata.num_inputs)
-
 
 netargs = {}
 netargs['lr'] = lrate

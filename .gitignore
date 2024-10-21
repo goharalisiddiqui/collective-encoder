@@ -14,3 +14,4 @@ wandb/
 lightning_logs/
 *.log
 *test*
+md17_data/
