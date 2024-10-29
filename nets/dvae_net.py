@@ -23,19 +23,36 @@ from statistics import mean as list_mean
 from scipy.stats import multivariate_normal
 
 from nets.vae_net import VAE
+from nets.vae_net import VAE_args as DVAE_args
 
 
-class VAE_mse(VAE):
+
+class DVAE(VAE):
     def __init__(self,
-                 l:list,
+                 l: list,
                  lr : float = 0.01,
                  l2_reg : float = 1e-7,
                  beta : float = 1.0,
                  batch_norm : bool = True,
-                 lr_scheduler : bool = False,
+                 lr_scheduler : bool = True,
                  plot_every : int = 0,
-                 outname : str = './VAE_mse_untitled/VAE_mse_'):
-        super().__init__(l, lr, l2_reg, beta, batch_norm, lr_scheduler, plot_every, outname)
+                 C_max : float = 0.0,
+                 C_start : int = 0,
+                 C_end : int = 0,
+                 saveplotdata : bool = False,
+                 outname : str = './DVAE_untitled/DVAE_'):
+        super().__init__(l,
+                         lr,
+                         l2_reg,
+                         beta,
+                         batch_norm,
+                         lr_scheduler,
+                         plot_every,
+                         C_max,
+                         C_start,
+                         C_end,
+                         saveplotdata,
+                         outname)
 
     def init_decoder_output(self):
         l = self.hparams.l
@@ -75,7 +92,7 @@ class VAE_mse(VAE):
         z_sample = kwargs["z_sample"]
 
         loss_rec = self.recon_loss(tru_x, recon_x)
-        loss_reg = self.reg_loss(z_sample, mu_latent, logvar_latent)
+        loss_reg, meta_reg = self.reg_loss(z_sample, mu_latent, logvar_latent)
 
 
         loss_rec = torch.mean(loss_rec) # Mean of batch
@@ -87,8 +104,14 @@ class VAE_mse(VAE):
             exit()
 
         loss_mae = self.mae_loss(recon_x, tru_x)
+        loss_mae = torch.mean(loss_mae)
 
-        return {'loss' : loss, 'mae_loss' : loss_mae, 'rec_loss' : loss_rec, 'reg_loss' : loss_reg}
+        return {'loss' : loss,
+                'mae_loss' : loss_mae,
+                'rec_loss' : loss_rec,
+                'reg_loss' : loss_reg,
+                'current_C' : meta_reg["current_C"],
+                'kld' : meta_reg["kld"]}
 
 
 

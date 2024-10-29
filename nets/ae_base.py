@@ -184,8 +184,12 @@ class AEBase(pl.LightningModule):
 
     def test_step(self, test_batch, batch_idx):
         self.plot_training()
-        data, labels = self.normalize(test_batch[0].float()), test_batch[1].float()
-        labels = labels.cpu().detach().numpy()
+        data = self.normalize(test_batch[0].float())
+        if len(test_batch) > 1:
+            labels = test_batch[1].float()
+            labels = labels.cpu().detach().numpy()
+        else:
+            labels = None
         latents = self.get_latent(data)
         if isinstance(latents, tuple):
             latent = latents[0]
@@ -232,11 +236,14 @@ class AEBase(pl.LightningModule):
         self.training = flag
         return fve_mean
 
-    def print_labels_latent_correlations(self, latent, labels):
+    def print_labels_latent_correlations(self, latent, labels = None):
         # Calculates and prints correlation between labels+latent_space
-        data_df = pd.DataFrame(np.concatenate((latent, labels), axis=1), columns=["Latent Dimension %d"%i for i in range(latent.shape[1])] + self.trainer.datamodule.label_list)
+        if labels is None:
+            data_df = pd.DataFrame(latent, columns=["Latent Dimension %d"%i for i in range(latent.shape[1])])
+        else:
+            data_df = pd.DataFrame(np.concatenate((latent, labels), axis=1), columns=["Latent Dimension %d"%i for i in range(latent.shape[1])] + self.trainer.datamodule.label_list)
         print("\n\n=======================================")
-        print("Correlation of latent space and labels")
+        print("Correlation of latent space and labels (if present)")
         print("=======================================")
         print(data_df.corr())
         print("=======================================\n\n")
@@ -258,22 +265,28 @@ class AEBase(pl.LightningModule):
         n_plots = len(non_val_losses.keys())
         fig, ax = plt.subplots(1, n_plots, squeeze=True, figsize=(6 * n_plots, 6))
         ax[0].set_title("Network Loss minimization")
-        # ax[0].set_yscale("log")
-        ax[0].plot(
+        if all(np.asarray(non_val_losses["loss"]) > 0.0):
+            ax[0].set_yscale("log")
+        lns = ax[0].plot(
             np.asarray(non_val_losses["loss"]),
-            ".-",
+            "o-",
+            label="Test (left)",
             c="tab:red",
+            alpha=0.3,
         )
         if "val_loss" in self.losses.keys():
             ax2 = ax[0].twinx()
-            # ax2.set_yscale("log")
-            ax2.plot(
+            if all(np.asarray(self.losses["val_loss"]) > 0.0):
+                ax2.set_yscale("log")
+            lns += ax2.plot(
                 np.asarray(self.losses["val_loss"]),
-                "o-",
+                ".-",
+                label="Validation (right)",
                 c="tab:red",
-                alpha=0.3,
             )
         ax[0].set_xlabel("Epoch")
+        labs = [l.get_label() for l in lns]
+        ax[0].legend(lns, labs, loc=0)
         # ax[0].set_ylabel("Loss")
 
         colors = ['tab:blue','tab:orange','tab:green','tab:purple','tab:brown','tab:pink','tab:gray','tab:olive','tab:cyan']
@@ -281,25 +294,28 @@ class AEBase(pl.LightningModule):
         for ind, key in enumerate([key for key in non_val_losses.keys() if key != "loss"]):
             i = ind + 1
             ax[i].set_title(f"{key} minimization")
-            # if key not in ["current_C","kld"]:
-                # ax[i].set_yscale("log")
-            ax[i].plot(
+            if all(np.asarray(non_val_losses[key]) > 0.0):
+                ax[i].set_yscale("log")
+            lns = ax[i].plot(
                 np.asarray(non_val_losses[key]),
-                ".-",
+                "o-",
+                label="Test (left)",
                 c=colors[i % len(colors)],
+                alpha=0.3,
             )
             if "val_" + key in self.losses.keys():
                 ax2 = ax[i].twinx()
-                # if key not in ["current_C", "kld"]:
-                    # ax2.set_yscale("log")
-                ax2.plot(
+                if all(np.asarray(non_val_losses[key]) > 0.0):
+                    ax2.set_yscale("log")
+                lns += ax2.plot(
                     np.asarray(self.losses["val_" + key]),
-                    "o-",
+                    ".-",
+                    label="Validation (right)",
                     c=colors[i % len(colors)],
-                    alpha=0.3,
                 )
             ax[i].set_xlabel("Epoch")
-            # ax[i].set_ylabel(key)
+            labs = [l.get_label() for l in lns]
+            ax[i].legend(lns, labs, loc=0)
         plt.tight_layout()
         fig.savefig(f"{self.hparams.outname}{self.current_epoch}_training.png", dpi=150)
         logger = self.logger
@@ -346,9 +362,10 @@ class AEBase(pl.LightningModule):
         plot_len = latents[0].shape[0] if isinstance(latents, tuple) else latents.shape[0]
 
         if plot_len > self.plot_points_limit:
-            index = np.random.choice(plot_len, 5000, replace=False)
+            print(f"[WARNING] Limiting plot to {self.plot_points_limit} points")
+            index = np.random.choice(plot_len, self.plot_points_limit, replace=False)
             if latent_len > 1:
-                latents = [latent[index] for latent in latents]
+                latents = tuple([latent[index] for latent in latents])
             else:
                 latents = latents[index]
             if labels is not None:
@@ -392,6 +409,8 @@ class AEBase(pl.LightningModule):
             cm = plt.get_cmap('jet')
             cNorm = matplotlib.colors.Normalize(vmin=min(train_y), vmax=max(train_y))
             scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
+        else:
+            scalarMap = None
 
         latent = latents[0] if isinstance(latents, tuple) else latents
 

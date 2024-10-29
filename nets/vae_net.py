@@ -51,7 +51,7 @@ class VAE(AEBase):
                  C_start : int = 0,
                  C_end : int = 0,
                  saveplotdata : bool = False,
-                 outname : str = './LITcollVAE_untitled/LITcollVAE_'):
+                 outname : str = './VAE_untitled/VAE_'):
         super().__init__(dim_data = l[0],
                          dim_latent = l[-1],
                          lr = lr,
@@ -266,7 +266,7 @@ class VAE(AEBase):
     def get_latent_names(self):
         return "mu_latent", "logvar_latent"
 
-    def plot_sd(self, fig, ax, latents, train_y, i, yaxis, label, scalarMap):
+    def plot_sd(self, fig, ax, latents, train_y, i, yaxis, label, scalarMap = None):
         latent_mu, latent_logvar = latents
         latent_sd = np.exp(0.5 * latent_logvar)
         ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis],xerr=latent_sd[:,i],yerr=latent_sd[:,yaxis], ecolor=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.1, ls='none')

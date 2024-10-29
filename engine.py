@@ -29,7 +29,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=desc)
 
     ## Type of Data
-    parser.add_argument('--runtype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC','MD17'])
+    parser.add_argument('--runtype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC', 'MD17', 'XTC'])
 
     # Output Settings
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
@@ -52,11 +52,12 @@ def parse_args():
     parser.add_argument('--plot_every', type=int, default=0, help='Number of epochs to run')
 
     parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
+    parser.add_argument('--scheduler', action="store_true", help='Use learning rate scheduler')
     parser.add_argument('--l2norm', type=float, default=1e-3, help='Weights regularization for the training')
     parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
 
-    parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
     parser.add_argument('--networktype', type=str, default='VAE_mse', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
+    parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
 
     parser.add_argument('--export_latent', action="store_true", help='Export latent space values on the data')
@@ -102,16 +103,18 @@ l2_reg = args.l2norm  # Regularization of network weights
 ##################################
 # Importing Lightning Modules
 ##################################
-#import AE_nn
 if nntype == "AE":
     from nets.ae_net import AE as main_nn
-    nn_nested_args = argparse.Namespace()
-elif nntype == "VAE_mse":
-    from ce_nets import VAE_mse as main_nn
-    nn_nested_args = argparse.Namespace()
+    nn_nested_args = argparse.Namespace
 elif nntype == "VAE":
     from nets.vae_net import VAE as main_nn
     from nets.vae_net import VAE_args as nn_nested_args
+elif nntype == "DVAE":
+    from nets.dvae_net import DVAE as main_nn
+    from nets.dvae_net import DVAE_args as nn_nested_args
+elif nntype == "EDVAE":
+    from nets.edvae_net import EDVAE as main_nn
+    from nets.edvae_net import EDVAE_args as nn_nested_args
 elif nntype == "GMVAE":
     from ce_nets import GMVAE as main_nn
     nn_nested_args = {}
@@ -139,6 +142,9 @@ elif args.runtype == 'COLVAR':
 elif args.runtype == 'MD17':
     from dataloaders.md17_dataloader import MD17Data as main_dl
     from dataloaders.md17_dataloader import MD17_args as data_nested_args
+elif args.runtype == 'XTC':
+    from dataloaders.xtc_dataloader import XtcDataset as main_dl
+    from dataloaders.xtc_dataloader import XTC_args as data_nested_args
 
 
 
@@ -219,12 +225,16 @@ netargs['outname'] = outname
 netargs['batch_norm'] = args.nobatchnorm
 netargs['plot_every'] = args.plot_every
 netargs['saveplotdata'] = not args.no_plotdata
+netargs['lr_scheduler'] = args.scheduler
 
 if nntype != "GMVAE":
     netargs['l'] = nodes
 else:
     netargs['n_x'] = nodes[0]
     netargs['n_z'] = nodes[-1]
+
+if nntype == "EDVAE":
+    netargs['datapoint_shape'] = colvardata.get_datapoint_shape()
 
 nn_nested_args = nn_nested_args()
 netargs = netargs | vars(nn_nested_args)
