@@ -41,7 +41,7 @@ class XtcData(Dataset):
         structures: List[ase.Atoms],
         dtype=torch.float32,
     ):
-        self.positions = [torch.tensor(s.positions) for s in structures]
+        self.positions = [torch.tensor(s.positions, dtype=dtype) for s in structures]
         self.num_inputs = len(self.positions[0])
 
     def __len__(self):
@@ -82,11 +82,13 @@ class XtcDataset(pl.LightningDataModule):
                  val_batch_size : int = None,
                  test_batch_size : int = None,
                  num_workers : int = 1,
+                 sequential : bool = False,
+                 verbose : bool = False,
                  standardize_inputs : bool = False):
         super().__init__()
-        print(f"\n\n[Initializing XtcDataset Module]")
-        print("==========================================")
-        print(f"Loading coordinates from file {xtcfile} and topology from file {tprfile}")
+        print(f"\n\n[Initializing XtcDataset Module]") if verbose else None
+        print("==========================================") if verbose else None
+        print(f"Loading coordinates from file {xtcfile} and topology from file {tprfile}") if verbose else None
         if not os.path.exists(xtcfile):
             raise FileNotFoundError(f"File {xtcfile} not found")
         if not os.path.exists(tprfile):
@@ -97,22 +99,25 @@ class XtcDataset(pl.LightningDataModule):
               trans.center_in_box(mol, wrap=True)]
         u.trajectory.add_transformations(*transforms)
 
-        print(f"Reading trajectory of {len(u.trajectory)} frames...")
         mol_traj = []
         # for ind,ts in enumerate(tqdm(u.trajectory[:1000])):
-        for ind,ts in enumerate(tqdm(u.trajectory)):
+        s, e = 0, len(u.trajectory)
+        if dataset_size is not None and sequential:
+            s = random.randint(0, len(u.trajectory) - dataset_size - 1)
+            e = dataset_size + s
+        print(f"Reading trajectory of {e-s} frames...") if verbose else None
+        for ind,ts in enumerate(tqdm(u.trajectory[s:e])):
             mol_pos = mol.positions
             ch = [at.name[0] for at in mol]
             for at in ch:
                 if at not in atomic_numbers:
-                    raise ValueError(f"Atom {at} not found in atomic numbers")
+                    raise ValueError(f"Atom {at} not found in atomic numbers dictionary")
             ch = [atomic_numbers[at] for at in ch]
-
             structure = ase.Atoms(numbers=ch, positions=mol_pos)
             mol_traj.append(structure)
-        print(f"Finished reading trajectory.")
-        if dataset_size is not None:
-            print(f"Subsampling dataset to {dataset_size} frames.")
+        print(f"Finished reading trajectory.") if verbose else None
+        if dataset_size is not None and not sequential:
+            print(f"Subsampling dataset to {dataset_size} frames.") if verbose else None
             assert dataset_size <= len(mol_traj), f"Dataset size {dataset_size} must be less than the number of frames {len(mol_traj)}."
             mol_traj = random.choices(mol_traj, k=dataset_size)
 
@@ -141,8 +146,8 @@ class XtcDataset(pl.LightningDataModule):
         assert self.hparams.batch_size < self.train_size, "Batch size must be less than the training size"
         assert self.hparams.val_batch_size < self.validation_size, "Validation batch size must be less than the validation size"
 
-        print(f"Total frames: {FRAMES}, Train size: {self.train_size}, Batch size: {self.hparams.batch_size}, Validation size: {self.validation_size}")
-        print("==========================================")
+        print(f"Total frames: {FRAMES}, Train size: {self.train_size}, Batch size: {self.hparams.batch_size}, Validation size: {self.validation_size}") if verbose else None
+        print("==========================================") if verbose else None
 
 
     # def prepare_data(self): # only called on 1 GPU/TPU in distributed
@@ -160,6 +165,15 @@ class XtcDataset(pl.LightningDataModule):
                     len(self.xtcData_full) - self.train_size - self.validation_size - self.test_size
                 ])
 
+    def get_full_batch(self):
+        mddata = self.xtcData_full
+        dl = DataLoader(
+            mddata,
+            batch_size=len(mddata),
+            shuffle=False,
+            num_workers=self.hparams.num_workers,
+            pin_memory=True)
+        return next(iter(dl))
 
         # called on every process in DDP
     def train_dataloader(self):

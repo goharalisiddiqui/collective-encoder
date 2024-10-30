@@ -74,6 +74,9 @@ class EDVAE(DVAE):
                          saveplotdata,
                          outname = outname)
 
+        self.Mean = torch.zeros(self.hparams.l[0])
+        self.Range = torch.ones(self.hparams.l[0])
+
     def init_network(self):
         print(f"[Initializing {type(self).__name__} Module]")
         print("- Hidden layers:", self.hparams.l)
