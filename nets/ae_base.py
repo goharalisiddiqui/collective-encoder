@@ -190,7 +190,7 @@ class AEBase(pl.LightningModule):
             labels = labels.cpu().detach().numpy()
         else:
             labels = None
-        latents = self.get_latent(data)
+        latents = self.get_latent(test_batch[0].float())
         if isinstance(latents, tuple):
             latent = latents[0]
         else:

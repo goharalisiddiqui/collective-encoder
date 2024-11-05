@@ -112,9 +112,6 @@ class EDVAE(DVAE):
             print("(Unflatten layer)")
             print(l[0], " --> ", datapoint_shape," (deembedding)")
 
-
-
-
     def forward(self, x):
         x = self.embedding(x)
         x_out = super().forward(x)
@@ -128,7 +125,15 @@ class EDVAE(DVAE):
         return x_out, meta
 
     def get_latent(self, data_x):
-        latent_mu, latent_logvar = self.encode(self.embedding(data_x))
+        data_x = self.normalize(data_x)
+        data_x = self.embedding(data_x)
+        latent_mu, latent_logvar = self.encode(data_x)
         return latent_mu.detach().cpu().numpy(), latent_logvar.detach().cpu().numpy()
+
+    def decode_latent(self, latent):
+        latent = self.decode(latent)
+        latent = self.deembedding(latent)
+        x_out = self.denormalize(latent)
+        return x_out.detach().cpu().numpy()
 
 

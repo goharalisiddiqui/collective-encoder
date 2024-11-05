@@ -260,6 +260,7 @@ class VAE(AEBase):
         self.plot_avg_sigma(latent_logvar)
 
     def get_latent(self, data_x):
+        data_x = self.normalize(data_x)
         latent_mu, latent_logvar = self.encode(data_x)
         return latent_mu.detach().cpu().numpy(), latent_logvar.detach().cpu().numpy()
 

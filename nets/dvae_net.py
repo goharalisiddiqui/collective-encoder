@@ -66,13 +66,15 @@ class DVAE(VAE):
         return x_out
 
     def forward(self, x):
+        x = self.normalize(x)
         mu_latent, logvar_latent = self.encode(x)
+        if self.metaD:
+            return mu_latent, logvar_latent
         if mu_latent.isnan().any() or logvar_latent.isnan().any():
             print("Nan in encoder network (Gradient diminished or exploded). Can't continue")
             exit()
 
-        if self.metaD:
-            return mu_latent, logvar_latent
+
 
         z = self.reparametrize_multivariate(mu_latent, logvar_latent)
 

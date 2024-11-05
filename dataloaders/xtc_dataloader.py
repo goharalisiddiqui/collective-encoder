@@ -59,7 +59,7 @@ def xtcdatset_args():
 
     parser.add_argument('--xtcfile', required=True, type=str, help='Input compressed coordinate file')
     parser.add_argument('--tprfile', required=True, type=str, help='Input binary file containing the topology')
-    parser.add_argument('--resname', required=True, type=str, help='Residue name to get the coordinates')
+    parser.add_argument('--resnames', required=True, nargs='+', help='Residue names to get the coordinates')
     parser.add_argument('--datasize', dest="dataset_size", type=int, default = None, help='Size of the dataset to use')
     # parser.add_argument('--labels',dest = 'label_list', nargs='+', help='Label columns in the data file')
 
@@ -74,7 +74,7 @@ class XtcDataset(pl.LightningDataModule):
     def __init__(self,
                  xtcfile : str,
                  tprfile : str,
-                 resname : str = None,
+                 resnames : List[str] = None,
                  dataset_size : int = None,
                  train_prop : float = 0.6,
                  validation_prop : float = 0.2,
@@ -94,10 +94,18 @@ class XtcDataset(pl.LightningDataModule):
         if not os.path.exists(tprfile):
             raise FileNotFoundError(f"File {tprfile} not found")
         u = mda.Universe(tprfile, xtcfile)
-        mol = u.select_atoms(f"resname {resname}")
+        for res in resnames:
+            assert res in list(set(u.residues.resnames)), f"Residue \"{res}\" not found in the topology file. Available residues: {list(set(u.residues.resnames))}"
+        mol = u.select_atoms(f"resname " + " ".join(resnames))
         transforms = [trans.unwrap(mol),
               trans.center_in_box(mol, wrap=True)]
         u.trajectory.add_transformations(*transforms)
+
+        ch = [at.element for at in mol]
+        for at in ch:
+            if at not in atomic_numbers:
+                raise ValueError(f"Atom {at} not found in atomic numbers dictionary")
+        ch = [atomic_numbers[at] for at in ch]
 
         mol_traj = []
         # for ind,ts in enumerate(tqdm(u.trajectory[:1000])):
@@ -106,14 +114,8 @@ class XtcDataset(pl.LightningDataModule):
             s = random.randint(0, len(u.trajectory) - dataset_size - 1)
             e = dataset_size + s
         print(f"Reading trajectory of {e-s} frames...") if verbose else None
-        for ind,ts in enumerate(tqdm(u.trajectory[s:e])):
-            mol_pos = mol.positions
-            ch = [at.name[0] for at in mol]
-            for at in ch:
-                if at not in atomic_numbers:
-                    raise ValueError(f"Atom {at} not found in atomic numbers dictionary")
-            ch = [atomic_numbers[at] for at in ch]
-            structure = ase.Atoms(numbers=ch, positions=mol_pos)
+        for ts in tqdm(u.trajectory[s:e], disable=not verbose):
+            structure = ase.Atoms(numbers=ch, positions=mol.positions)
             mol_traj.append(structure)
         print(f"Finished reading trajectory.") if verbose else None
         if dataset_size is not None and not sequential:
