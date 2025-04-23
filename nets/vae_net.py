@@ -3,8 +3,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pytorch_lightning as pl
-from torch.autograd import Variable
 from torch.distributions.normal import Normal
 torch.manual_seed(0)
 TORCH_PI = torch.acos(torch.zeros(1))*2
@@ -119,7 +117,7 @@ class VAE(AEBase):
         print(l[-2], " --> ", l[-1], end=" ")
         print("(mu for latent space)")
         self.encoder_logvar = nn.Linear(l[-2], l[-1])
-        print( "  ", " \--> ", l[-1], end=" ")
+        print( "  ", " \\--> ", l[-1], end=" ")
         print("(logvar for latent space)\n\n")
 
     def init_decoder_output(self):
@@ -128,7 +126,7 @@ class VAE(AEBase):
         print(l[1], " --> ", l[0], end=" ")
         print("(mu for feature space)")
         self.decoder_logvar = nn.Linear(l[1], l[0])
-        print( "  ", " \--> ", l[0], end=" ")
+        print( "  ", " \\--> ", l[0], end=" ")
         print("(logvar for feature space)\n\n")
         print("======================")
 
@@ -163,6 +161,8 @@ class VAE(AEBase):
             print("Nan in decoder network (Gradient diminished or exploded). Can't continue")
             exit()
         x_out = self.reparametrize_multivariate(mu_x, logvar_x)
+        x_out = self.denormalize(x_out)
+        mu_x = self.denormalize(mu_x)
 
         return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent,
                     "mu_x" : mu_x, "logvar_x" : logvar_x, "z_sample" : z}
@@ -210,9 +210,6 @@ class VAE(AEBase):
         return loss_reg, {"current_C" : C, "kld" : loss_kld}
 
     def mae_loss(self, recon_x, tru_x):
-        tru_x = self.denormalize(tru_x)
-        recon_x = self.denormalize(recon_x)
-
         loss_mae = F.l1_loss(recon_x, tru_x, reduction='none')
         loss_mae = torch.mean(loss_mae, dim = 1)
         loss_mae = torch.mean(loss_mae, dim = 0)

@@ -1,28 +1,14 @@
+import argparse
+
 import numpy as np
 
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import pytorch_lightning as pl
-from torch.autograd import Variable
-from torch.distributions.normal import Normal
-torch.manual_seed(0)
-TORCH_PI = torch.acos(torch.zeros(1))*2
-
-
-import argparse
 import pandas as pd
 pd.set_option('display.max_columns', None)
 
-
-
-import matplotlib.pyplot as plt
-import matplotlib
-from matplotlib import rc
-from statistics import mean as list_mean
-
-from scipy.stats import multivariate_normal
+import torch
+import torch.nn as nn
+torch.manual_seed(0)
+TORCH_PI = torch.acos(torch.zeros(1))*2
 
 from nets.dvae_net import DVAE
 from nets.dvae_net import DVAE_args
@@ -90,6 +76,14 @@ class EDVAE(DVAE):
         self.init_deembedding()
         print("======================")
 
+    def set_norm(self, Mean: torch.Tensor, Range: torch.Tensor):
+        Range[Range == 0.0] = 1.0
+        print(f"[{type(self).__name__}] Setting normalization for inputs.")
+        self.normIn = True
+        if self.hparams.embedding_type == "flatten":
+            self.Mean = Mean.flatten()
+            self.Range = Range.flatten()
+    
     def init_embedding(self):
         l = self.hparams.l
         datapoint_shape = self.hparams.datapoint_shape
@@ -97,11 +91,10 @@ class EDVAE(DVAE):
         if self.hparams.embedding_type == "flatten":
             self.embedding = nn.Flatten()
             self.embedded_length = np.prod(datapoint_shape)
-            print("(Flatten layer)")
+            # print("(Flatten layer)")
             print(datapoint_shape, " --> ", self.embedded_length," (embedding)")
 
         self.hparams.l[0] = self.embedded_length
-
 
     def init_deembedding(self):
         l = self.hparams.l
@@ -109,7 +102,7 @@ class EDVAE(DVAE):
 
         if self.hparams.embedding_type == "flatten":
             self.deembedding = nn.Unflatten(1, datapoint_shape)
-            print("(Unflatten layer)")
+            # print("(Unflatten layer)")
             print(l[0], " --> ", datapoint_shape," (deembedding)")
 
     def forward(self, x):
@@ -125,15 +118,22 @@ class EDVAE(DVAE):
         return x_out, meta
 
     def get_latent(self, data_x):
-        data_x = self.normalize(data_x)
         data_x = self.embedding(data_x)
+        data_x = self.normalize(data_x)
         latent_mu, latent_logvar = self.encode(data_x)
         return latent_mu.detach().cpu().numpy(), latent_logvar.detach().cpu().numpy()
 
     def decode_latent(self, latent):
-        latent = self.decode(latent)
-        latent = self.deembedding(latent)
-        x_out = self.denormalize(latent)
+        x_out = self.decode(latent)
+        x_out = self.denormalize(x_out)
+        x_out = self.deembedding(x_out)
         return x_out.detach().cpu().numpy()
+    
+    def print_labels_latent_correlations(self, latent, labels = None):
+        pass
+    
+    def plot_extra(self, data_x, data_y, latents):
+        latent_logvar = latents[1]
+        self.plot_latent(latents, data_y, self.plot_sd, "latent_pdf")
 
 

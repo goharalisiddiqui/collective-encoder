@@ -73,12 +73,9 @@ class DVAE(VAE):
         if mu_latent.isnan().any() or logvar_latent.isnan().any():
             print("Nan in encoder network (Gradient diminished or exploded). Can't continue")
             exit()
-
-
-
         z = self.reparametrize_multivariate(mu_latent, logvar_latent)
-
         x_out = self.decode(z)
+        x_out = self.denormalize(x_out)
 
         return x_out, {"mu_latent" : mu_latent, "logvar_latent" : logvar_latent, "z_sample" : z}
 

@@ -89,17 +89,16 @@ class AE(AEBase):
         return x
 
     def forward(self, x):
+        x = self.normalize(x)
         z = self.encode(x)
         if self.metaD:
             return z, z # Because our plumed module expects a tuple
         x_out = self.decode(z)
+        x_out = self.denormalize(x_out)
 
         return x_out, {"z" : z}
 
     def mae_loss(self, recon_x, tru_x):
-        tru_x = self.denormalize(tru_x)
-        recon_x = self.denormalize(recon_x)
-
         loss_mae = F.l1_loss(recon_x, tru_x, reduction='none')
         loss_mae = torch.mean(loss_mae, dim = 1)
         loss_mae = torch.mean(loss_mae, dim = 0)

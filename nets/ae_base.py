@@ -66,21 +66,21 @@ class AEBase(pl.LightningModule):
         if not self.normIn:
             return x
         batch_size = x.size(0)
-        x_size = x.size(1)
+        x_size = x.size()[1:]
 
-        Mean = self.Mean.unsqueeze(0).expand(batch_size, x_size)
-        Range = self.Range.unsqueeze(0).expand(batch_size, x_size)
-
+        Mean = self.Mean.unsqueeze(0).expand(batch_size, *x_size)
+        Range = self.Range.unsqueeze(0).expand(batch_size, *x_size)
+        
         return x.sub(Mean).div(Range)
 
     def denormalize(self, x: Variable):
         if not self.normIn:
             return x
         batch_size = x.size(0)
-        x_size = x.size(1)
+        x_size = x.size()[1:]
 
-        Mean = self.Mean.unsqueeze(0).expand(batch_size, x_size)
-        Range = self.Range.unsqueeze(0).expand(batch_size, x_size)
+        Mean = self.Mean.unsqueeze(0).expand(batch_size, *x_size)
+        Range = self.Range.unsqueeze(0).expand(batch_size, *x_size)
 
         return x.mul(Range).add(Mean)
 
@@ -131,8 +131,8 @@ class AEBase(pl.LightningModule):
         return
 
     def training_step(self, train_batch, batch_idx):
-        data = self.normalize(train_batch[0].float())
-        result, meta = self(train_batch[0].float())
+        data = train_batch[0].float()
+        result, meta = self(data)
         losses = self.loss(result, data, **meta)
 
         for key in losses.keys():
@@ -156,8 +156,8 @@ class AEBase(pl.LightningModule):
         return
 
     def validation_step(self, val_batch, batch_idx):
-        data = self.normalize(val_batch[0].float())
-        result, meta = self(val_batch[0].float())
+        data = val_batch[0].float()
+        result, meta = self(data)
         losses = self.loss(result, data, **meta)
 
         for key in losses.keys():
@@ -184,13 +184,13 @@ class AEBase(pl.LightningModule):
 
     def test_step(self, test_batch, batch_idx):
         self.plot_training()
-        data = self.normalize(test_batch[0].float())
+        data = test_batch[0].float()
         if len(test_batch) > 1:
             labels = test_batch[1].float()
             labels = labels.cpu().detach().numpy()
         else:
             labels = None
-        latents = self.get_latent(test_batch[0].float())
+        latents = self.get_latent(data)
         if isinstance(latents, tuple):
             latent = latents[0]
         else:
