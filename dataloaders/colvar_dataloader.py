@@ -29,7 +29,7 @@ def colvardatset_args():
 
     parser.add_argument('--colvarfile', required=True, type=str, help='Input file for training')
     parser.add_argument('--column_match', type=str, default=None, help='Only columns containing this string will be used')
-    parser.add_argument('--labels',dest = 'label_list', nargs='+', help='Label columns in the data file')
+    parser.add_argument('--labels', dest = 'label_list', nargs='+', help='Label columns in the data file')
 
     args, _ = parser.parse_known_args()
 

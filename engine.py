@@ -7,6 +7,8 @@ import torch
 import os
 import argparse
 
+from utils import parse_vars
+
 
 from timeit import default_timer as timer
 import pytorch_lightning as pl
@@ -29,7 +31,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description=desc)
 
     ## Type of Data
-    parser.add_argument('--runtype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC', 'MD17', 'XTC'])
+    parser.add_argument('--runtype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC', 'MD17', 'XTC', 'XYZ'])
+    parser.add_argument('--dataset', type=str, default='DEFAULT', help='Type of dataset to use', choices=['DEFAULT', 'DISTANCES'])
+    parser.add_argument('--dataset_args', metavar="KEY=VALUE", nargs='+', help='Key-value pairs of arguments for the dataset', default=[])  
 
     # Output Settings
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
@@ -56,7 +60,7 @@ def parse_args():
     parser.add_argument('--l2norm', type=float, default=1e-3, help='Weights regularization for the training')
     parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
 
-    parser.add_argument('--networktype', type=str, default='VAE_mse', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
+    parser.add_argument('--networktype', type=str, default='VAE', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
     parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
 
@@ -145,6 +149,9 @@ elif args.runtype == 'MD17':
 elif args.runtype == 'XTC':
     from dataloaders.xtc_dataloader import XtcDataset as main_dl
     from dataloaders.xtc_dataloader import XTC_args as data_nested_args
+elif args.runtype == 'XYZ':
+    from dataloaders.xyz_dataloader import XyzLoader as main_dl
+    from dataloaders.xyz_dataloader import XYZ_args as data_nested_args
 
 
 
@@ -201,8 +208,16 @@ if args.runtype in ["COLVAR", "KMC"]:
     datamodargs['standardize_inputs'] = False # We dont standardize the inputs here, we do it in the model otherwise it does not work with plumed
 
 data_nested_args = data_nested_args()
+
 datamodargs = datamodargs | vars(data_nested_args)
 
+if args.dataset != 'DEFAULT':
+    if args.dataset == 'DISTANCES':
+        from datasets.distances_dataset import distancesDataset as dataset
+    else:
+        raise ValueError("Unknown dataset type")
+    datamodargs['dataset_type'] = dataset
+    datamodargs['dataset_args'] = parse_vars(args.dataset_args)
 
 colvardata = main_dl(**datamodargs)
 if args.runtype == 'MD17':
@@ -217,6 +232,7 @@ colvardata.setup(stage="fit")
 
 nodes = [int(x) for x in hidden_nodes.split(",")]
 nodes.insert(0, colvardata.num_inputs)
+
 
 netargs = {}
 netargs['lr'] = lrate
@@ -302,7 +318,7 @@ if export_latent:
 # Serializing and checkpointing the model
 ##################################
 if args.save_serial_model:
-    modelpath = args.modelpath if args.save_serial_model_path != None else '.'
+    modelpath = args.save_serial_model_path if args.save_serial_model_path != None else '.'
     model.export_serial_model(f'{odir_name}/{modelpath}')
 
 if args.save_checkpoint:
