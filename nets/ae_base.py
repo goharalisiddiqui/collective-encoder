@@ -36,7 +36,9 @@ class AEBase(pl.LightningModule):
                  outname : str = './untitled/untitled_',
                  plot_every : int = 0,
                  saveplotdata : bool = False,
-                 plot_points_limit : int = 20000):
+                 plot_points_limit : int = 20000,
+                 
+                 ):
         super().__init__()
 
 
@@ -132,7 +134,9 @@ class AEBase(pl.LightningModule):
 
     def training_step(self, train_batch, batch_idx):
         data = train_batch[0].float()
+        data_extra = train_batch[1:] if len(train_batch) > 1 else None
         result, meta = self(data)
+        meta['data_extra'] = data_extra
         losses = self.loss(result, data, **meta)
 
         for key in losses.keys():
@@ -157,7 +161,9 @@ class AEBase(pl.LightningModule):
 
     def validation_step(self, val_batch, batch_idx):
         data = val_batch[0].float()
+        data_extra = val_batch[1:] if len(val_batch) > 1 else None
         result, meta = self(data)
+        meta['data_extra'] = data_extra
         losses = self.loss(result, data, **meta)
 
         for key in losses.keys():
@@ -188,6 +194,8 @@ class AEBase(pl.LightningModule):
         if len(test_batch) > 1:
             labels = test_batch[1].float()
             labels = labels.cpu().detach().numpy()
+            if len(labels.shape) == 1:
+                labels = labels.reshape(-1, 1)
         else:
             labels = None
         latents = self.get_latent(data)
@@ -241,7 +249,12 @@ class AEBase(pl.LightningModule):
         if labels is None:
             data_df = pd.DataFrame(latent, columns=["Latent Dimension %d"%i for i in range(latent.shape[1])])
         else:
-            data_df = pd.DataFrame(np.concatenate((latent, labels), axis=1), columns=["Latent Dimension %d"%i for i in range(latent.shape[1])] + self.trainer.datamodule.label_list)
+            all_data = np.concatenate((latent, labels), axis=1)
+            all_column_headers = ["Latent Dimension %d"%i for i in range(latent.shape[1])] 
+            all_column_headers = all_column_headers + self.trainer.datamodule.label_list
+            print("\n",all_data.shape)
+            print(len(all_column_headers))
+            data_df = pd.DataFrame(all_data, columns=all_column_headers)
         print("\n\n=======================================")
         print("Correlation of latent space and labels (if present)")
         print("=======================================")
@@ -346,11 +359,13 @@ class AEBase(pl.LightningModule):
     def export_latent(self, latents, labels = None):
         filename_stem = f"{self.hparams.outname}{self.current_epoch}_"
 
-        if isinstance(latents, tuple):
-            latent_names = self.get_latent_names()
-            assert len(latents) == len(latent_names)
-            for i in range(len(latents)):
-                np.save(filename_stem + f"{latent_names[i]}.npy", latents[i])
+        if not isinstance(latents, tuple):
+            latents = (latents,)
+        latent_names = self.get_latent_names()
+        assert len(latents) == len(latent_names), f"Latent names and latents do not match. {len(latents)} != {len(latent_names)}"
+        for i in range(len(latents)):
+            np.save(filename_stem + f"{latent_names[i]}.npy", latents[i])
+                
         if labels is not None:
             np.save(filename_stem + f"labels.npy", labels)
 

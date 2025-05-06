@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ae_base import AEBase
+from nets.ae_base import AEBase
 
 TORCH_PI = torch.acos(torch.zeros(1))*2
 EPSILON = 1e-9
@@ -104,6 +104,8 @@ class AE(AEBase):
         loss_mae = torch.mean(loss_mae, dim = 0)
 
         return loss_mae
+    
+    # def fisher_ratio_loss(self, latent, labels):
 
     def loss(self, recon_x, tru_x, **kwargs):
 
@@ -121,6 +123,9 @@ class AE(AEBase):
     def get_latent(self, data_x):
         latent = self.encode(data_x)
         return latent.detach().cpu().numpy()
+    
+    def get_latent_names(self):
+        return ("latent_value",)
 
 
 

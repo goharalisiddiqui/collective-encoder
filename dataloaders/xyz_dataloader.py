@@ -34,17 +34,19 @@ class XyzDataset(Dataset):
     def __init__(
         self,
         structures: List[ase.Atoms],
+        labels: List[int],
         dtype=torch.float32,
     ):
         self.positions = [torch.tensor(s.positions, dtype=dtype) for s in structures]
         self.num_inputs = len(self.positions[0])
+        self.labels = labels
 
     def __len__(self):
         return len(self.positions)
 
     def __getitem__(self, index):
         x = ()
-        x += (self.positions[index],)
+        x += (self.positions[index],self.labels[index])
         return x
 
 def xyzdatset_args():
@@ -52,8 +54,8 @@ def xyzdatset_args():
     parser = argparse.ArgumentParser(description=desc)
 
 
-    parser.add_argument('--xyzfile', required=True, type=str, help='Input coordinate file')
-    parser.add_argument('--datasize', dest="dataset_size", type=int, default = None, help='Size of the dataset to use')
+    parser.add_argument('--xyzfiles', required=True, nargs='+', help='Input coordinate file')
+    parser.add_argument('--datasize', dest="dataset_size", type=int, default = None, help='Size (per file) of the dataset to use')
     # parser.add_argument('--labels',dest = 'label_list', nargs='+', help='Label columns in the data file')
 
     args, _ = parser.parse_known_args()
@@ -65,7 +67,7 @@ XYZ_args = xyzdatset_args
 
 class XyzLoader(pl.LightningDataModule):
     def __init__(self,
-                 xyzfile : str,
+                 xyzfiles : list,
                  dataset_size : int = None,
                  train_prop : float = 0.6,
                  validation_prop : float = 0.2,
@@ -82,25 +84,36 @@ class XyzLoader(pl.LightningDataModule):
         super().__init__()
         print(f"\n\n[Initializing XyzDataloader Module]") if verbose else None
         print("==========================================") if verbose else None
-        print(f"Loading coordinates from file {xyzfile}") if verbose else None
-        if not os.path.exists(xyzfile):
-            raise FileNotFoundError(f"File {xyzfile} not found")
+        print(f"Loading coordinates from file:") if verbose else None
+        for xyzfile in xyzfiles:
+            print(f"  {xyzfile}") if verbose else None
+        mol_traj = []
+        labels = []
+        for ind, xyzfile in enumerate(xyzfiles):
+            if not os.path.exists(xyzfile):
+                raise FileNotFoundError(f"File {xyzfile} not found")
+            
+            print(f"Reading trajectory from {xyzfile}...") if verbose else None
+            full_traj = []
+            with open(xyzfile, 'r') as f:
+                for frame in read_extxyz(f, index=slice(0,-1)):
+                    full_traj.append(frame)
+            s, e = 0, len(full_traj)
+            if dataset_size is not None and sequential:
+                s = random.randint(0, len(full_traj) - dataset_size - 1)
+                e = dataset_size + s
+            mol_traj_current = full_traj[s:e]
+            print(f"Finished reading trajectory.") if verbose else None
+            if dataset_size is not None and not sequential:
+                print(f"Subsampling dataset to {dataset_size} frames.") if verbose else None
+                assert dataset_size <= len(mol_traj_current), f"Dataset size {dataset_size} must be less than the number of frames {len(mol_traj_current)} in {xyzfile}."
+                mol_traj_current = random.choices(mol_traj_current, k=dataset_size)
+            mol_traj.extend(mol_traj_current)
+            labels.extend([ind] * len(mol_traj_current))
         
-        print(f"Reading trajectory...") if verbose else None
-        full_traj = []
-        with open(xyzfile, 'r') as f:
-            for frame in read_extxyz(f, index=slice(0,-1)):
-                full_traj.append(frame)
-        s, e = 0, len(full_traj)
-        if dataset_size is not None and sequential:
-            s = random.randint(0, len(full_traj) - dataset_size - 1)
-            e = dataset_size + s
-        mol_traj = full_traj[s:e]
-        print(f"Finished reading trajectory.") if verbose else None
-        if dataset_size is not None and not sequential:
-            print(f"Subsampling dataset to {dataset_size} frames.") if verbose else None
-            assert dataset_size <= len(mol_traj), f"Dataset size {dataset_size} must be less than the number of frames {len(mol_traj)}."
-            mol_traj = random.choices(mol_traj, k=dataset_size)
+        self.label_list = ["Class Label"]
+        
+        
 
         FRAMES = len(mol_traj)
         assert train_prop + validation_prop < 1.0
@@ -112,6 +125,7 @@ class XyzLoader(pl.LightningDataModule):
 
         self.xyzData_full = dataset_type(
                 structures=mol_traj,
+                labels=labels,
                 dtype=torch.float64 if DOUBLE_PRECISION else torch.float32,
                 **dataset_args
                 )

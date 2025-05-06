@@ -21,6 +21,7 @@ class distancesDataset(Dataset):
     def __init__(
         self,
         structures: List[ase.Atoms],
+        labels: List[int],
         dtype=torch.float32,
         group1 : str = "0",
         group2 : str = "0",
@@ -50,12 +51,13 @@ class distancesDataset(Dataset):
                 distances.append(dist)
             self.distances.append(torch.tensor(distances, dtype=dtype))
         
+        self.labels = [torch.tensor(d, dtype=torch.long) for d in labels]
         self.num_inputs = len(pairs)
 
     def __len__(self):
         return len(self.distances)
 
     def __getitem__(self, index):
-        x = (self.distances[index],)
+        x = (self.distances[index],self.labels[index])
         return x
 
