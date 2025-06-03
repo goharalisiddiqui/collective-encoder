@@ -205,7 +205,6 @@ datamodargs = {}
 if args.runtype in ["COLVAR", "KMC"]:
     datamodargs['train_prop'] = 0.8
     datamodargs['batch_prop'] = 0.1
-    datamodargs['standardize_inputs'] = False # We dont standardize the inputs here, we do it in the model otherwise it does not work with plumed
 
 data_nested_args = data_nested_args()
 

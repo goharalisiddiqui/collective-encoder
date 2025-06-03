@@ -77,7 +77,6 @@ class XyzLoader(pl.LightningDataModule):
                  num_workers : int = 1,
                  sequential : bool = False,
                  verbose : bool = False,
-                 standardize_inputs : bool = False,
                  dataset_type : Dataset = XyzDataset,
                  dataset_args : Dict = None
                  ):
@@ -112,8 +111,6 @@ class XyzLoader(pl.LightningDataModule):
             labels.extend([ind] * len(mol_traj_current))
         
         self.label_list = ["Class Label"]
-        
-        
 
         FRAMES = len(mol_traj)
         assert train_prop + validation_prop < 1.0

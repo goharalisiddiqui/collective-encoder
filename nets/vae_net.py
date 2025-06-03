@@ -7,6 +7,7 @@ from torch.distributions.normal import Normal
 torch.manual_seed(0)
 TORCH_PI = torch.acos(torch.zeros(1))*2
 import argparse
+from warnings import warn
 
 
 import pandas as pd
@@ -151,15 +152,15 @@ class VAE(AEBase):
         if self.metaD:
             return mu_latent, logvar_latent
         if mu_latent.isnan().any() or logvar_latent.isnan().any():
-            print("Nan in encoder network (Gradient diminished or exploded). Can't continue")
-            exit()
+            warn("Nan in encoder network (Gradient diminished or exploded)")
+            # exit()
 
         z = self.reparametrize_multivariate(mu_latent, logvar_latent)
 
         mu_x, logvar_x = self.decode(z) # q(x|z)
         if mu_x.isnan().any() or logvar_x.isnan().any():
-            print("Nan in decoder network (Gradient diminished or exploded). Can't continue")
-            exit()
+            warn("Nan in decoder network (Gradient diminished or exploded)")
+            # exit()
         x_out = self.reparametrize_multivariate(mu_x, logvar_x)
         x_out = self.denormalize(x_out)
         mu_x = self.denormalize(mu_x)
@@ -231,8 +232,8 @@ class VAE(AEBase):
         loss = loss_rec + self.hparams.beta * loss_reg
 
         if loss.isnan().any().detach().cpu().numpy():
-            print("loss contains nan. Can't continue")
-            exit()
+            warn("loss contains nan")
+            # exit()
 
         loss_mae = self.mae_loss(recon_x, tru_x)
 

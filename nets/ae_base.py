@@ -433,11 +433,16 @@ class AEBase(pl.LightningModule):
 
         if plot_func is not None:
             plot_func(fig, ax, latents, train_y, i, yaxis, label, scalarMap)
+            ax.set_xlabel(f"Latent Dimension {i}")
         else:
-            ax.scatter(latent[:, i], latent[:, yaxis], c=scalarMap.to_rgba(train_y) if train_y is not None else None, label="Whole dataset", alpha=0.3)
-        ax.set_xlabel(f"Latent Dimension {i}")
+            if i == yaxis: # When only one latent dimension is plotted
+                ax.scatter(train_y if train_y is not None else range(len(latent[:, i])), latent[:, i], c=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.3)
+                ax.set_xlabel("Index" if train_y is None else label if label else f"Label-{j}")
+            else:
+                ax.scatter(latent[:, i], latent[:, yaxis], c=scalarMap.to_rgba(train_y) if train_y is not None else None, label="Whole dataset", alpha=0.3)
+                ax.set_xlabel(f"Latent Dimension {i}")
         ax.set_ylabel(f"Latent Dimension {yaxis}")
-
+        
         if train_y is not None:
             scalarMap.set_array(train_y)
             cb = fig.colorbar(scalarMap, ax=ax)
