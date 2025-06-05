@@ -47,7 +47,7 @@ def parse_args():
     # Save and/or Load Model
     parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
     parser.add_argument('--save_serial_model', action="store_true", help='Save Model')
-    parser.add_argument('--save_serial_model_path', default=None, type=str, help='Output folder for saving the model')
+    parser.add_argument('--save_serial_model_path', default=".", type=str, help='Output folder for saving the model')
     parser.add_argument('--load_model', default=None, type=str, help='Load model from checkpoint')
 
     # Run parameters
@@ -255,7 +255,7 @@ nn_nested_args = nn_nested_args()
 netargs = netargs | vars(nn_nested_args)
 
 
-if args.load_model != None:
+if args.load_model != None and args.load_model != "false":
     checkpoint_file = args.load_model
     print(f"Loading model from {checkpoint_file}")
     model = main_nn.load_from_checkpoint(checkpoint_file, **netargs)
