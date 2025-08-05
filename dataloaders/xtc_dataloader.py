@@ -11,6 +11,7 @@ from ase.data import atomic_numbers
 import MDAnalysis as mda
 from MDAnalysis.analysis import align
 from MDAnalysis.analysis.rms import rmsd
+from MDAnalysis.lib.distances import calc_dihedrals
 import MDAnalysis.transformations as trans
 
 from sklearn.model_selection import train_test_split
@@ -95,6 +96,11 @@ class XtcDataset(pl.LightningDataModule):
         # Load the trajectory
         u = mda.Universe(tprfile, xtcfile)
 
+        # Checks
+        if dataset_size:
+            assert dataset_size > 0, "Dataset size must be greater than 0"
+            assert dataset_size <= len(u.trajectory), f"Dataset size {dataset_size} must be less than the number of frames in the trajectory {len(u.trajectory)}"
+        
         # Select the atoms
         try:
             mol = u.select_atoms(selection)
@@ -107,7 +113,7 @@ class XtcDataset(pl.LightningDataModule):
         transforms = [trans.unwrap(mol),
               trans.center_in_box(mol, wrap=True)]
         u.trajectory.add_transformations(*transforms)
-        
+    
         # Extract the atomic numbers
         ch = [at.element for at in mol]
         for at in ch:
@@ -125,8 +131,7 @@ class XtcDataset(pl.LightningDataModule):
             if len(label_atoms) != 2:
                 raise ValueError(f"Label distance selection {label_distance} must select exactly 2 atoms, found {len(label_atoms)}")
             self.label_list = ["Distance between " + label_atoms[0].name + " and " + label_atoms[1].name]
-        elif label_dihedrals is not None:
-            from MDAnalysis.analysis.dihedrals import Dihedral 
+        elif label_dihedrals is not None: 
             print(f"Using label dihedrals: {label_dihedrals}") if verbose else None
             label_atoms = []
             self.label_list = []
@@ -147,8 +152,6 @@ class XtcDataset(pl.LightningDataModule):
                     label_atoms.append(sel)
                     self.label_list.append(f"psi_{resnum}")
             
-        #label_atoms = u.select_atoms('(name CA and resnum 1) or (name CA and resnum 10)')
-        
         labels = []
         mol_traj = []
         s, e = 0, len(u.trajectory)
@@ -156,24 +159,43 @@ class XtcDataset(pl.LightningDataModule):
             s = random.randint(0, len(u.trajectory) - dataset_size - 1)
             e = dataset_size + s
         print(f"Reading trajectory of {e-s} frames...") if verbose else None
+        # ind = 0
+        print(f"Trajectory start: {s}, end: {e}") if verbose else None
         for ts in tqdm(u.trajectory[s:e], disable=not verbose):
-            structure = ase.Atoms(numbers=ch, positions=mol.positions)
+            # if ind < s:
+            #     continue
+            # if ind >= e:
+            #     break
+            structure = ase.Atoms(numbers=ch, positions=mol.atoms.positions)
             mol_traj.append(structure)
             if label_distance is not None:
                 labels.append(np.linalg.norm(label_atoms.positions[1] - label_atoms.positions[0]))
             elif label_dihedrals is not None:
-                dih = Dihedral(label_atoms)
-                res = dih.run(start=u.trajectory.frame, stop=u.trajectory.frame + 1)
-                labels.extend(res.angles)
+                dih = []
+                for dih_group in label_atoms:
+                    res = calc_dihedrals(
+                        dih_group.positions[0],
+                        dih_group.positions[1],
+                        dih_group.positions[2],
+                        dih_group.positions[3],
+                        dih_group.dimensions
+                    )
+                    dih.append(res)
+                labels.append(dih)
             else:
                 labels.append(0.0)
+            # ind += 1
         print(f"Finished reading trajectory.") if verbose else None
         if dataset_size is not None and not sequential:
             print(f"Subsampling dataset to {dataset_size} frames.") if verbose else None
             assert dataset_size <= len(mol_traj), f"Dataset size {dataset_size} must be less than the number of frames {len(mol_traj)}."
-            mol_traj = random.choices(mol_traj, k=dataset_size)
+            rand_indices = random.sample(range(len(mol_traj)), dataset_size)
+            mol_traj = [mol_traj[i] for i in rand_indices]
+            labels = [labels[i] for i in rand_indices]
 
+        
         FRAMES = len(mol_traj)
+        print(f"Total frames in trajectory: {FRAMES}") if verbose else None
         assert train_prop + validation_prop <= 1.0
         test_prop = 1.0 - train_prop - validation_prop
         self.train_size = int(FRAMES * train_prop)
@@ -189,8 +211,6 @@ class XtcDataset(pl.LightningDataModule):
                 )
         self.num_inputs = self.xtcData_full.num_inputs
         self.datapoint_shape = tuple(self.xtcData_full[0][0].shape)
-        
-        
         
         self.save_hyperparameters()
 

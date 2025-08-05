@@ -27,6 +27,7 @@ class distancesDataset(Dataset):
         group2 : str = "0",
         atm_ids : List[int] =  None
     ):
+        assert len(structures) == len(labels), "Number of structures and labels must match"
         group1 = parse_slice(group1)
         group2 = parse_slice(group2)
         
