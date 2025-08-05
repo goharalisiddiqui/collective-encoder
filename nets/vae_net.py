@@ -24,10 +24,12 @@ def vae_parse_args():
     desc = "VAE NN for enhanced sampling MD"
     parser = argparse.ArgumentParser(description=desc)
 
-
+    parser.add_argument('--cauto', action='store_true', dest='C_auto', help='Activate automatic C scheduler for information control in Beta-VAE')
+    
     parser.add_argument('--cmax', type=float, default = 0.0, dest='C_max', help='Maximum C for information control in Beta-VAE')
     parser.add_argument('--cstart', type=int, default = 0, dest='C_start', help='Epoch where C start to increase for information control in Beta-VAE')
     parser.add_argument('--cend', type=int, default = 0, dest='C_end', help='Epoch where C stops to increase for information control in Beta-VAE')
+
     parser.add_argument('--beta', required=True, type=float, help='beta for the beta-VAE')
 
     args, _ = parser.parse_known_args()
@@ -49,6 +51,7 @@ class VAE(AEBase):
                  C_max : float = 0.0,
                  C_start : int = 0,
                  C_end : int = 0,
+                 C_auto : bool = False,
                  saveplotdata : bool = False,
                  outname : str = './VAE_untitled/VAE_'):
         super().__init__(dim_data = l[0],
@@ -64,6 +67,11 @@ class VAE(AEBase):
         #### Setting up the layers of the netwrok ####
         self.init_network()
 
+        # Arguments Checks
+        assert not all([C_max != 0.0, C_auto == True]), "C_max and C_auto are incompatible, choose one of them"
+        assert C_start <= C_end, "C_start must be less than or equal to C_end"
+
+        self.C_default = 1e-6
 
     def init_network(self):
         print(f"[Initializing {type(self).__name__} Module]")
@@ -199,7 +207,7 @@ class VAE(AEBase):
         loss_kld = self.kld(mu_latent, logvar_latent)
         loss_kld = torch.mean(loss_kld, dim = 0)
 
-        C = 0.0
+        C = self.C_default
         if self.hparams.C_max != 0.0:
             c_start, c_end, cmax = self.hparams.C_start, self.hparams.C_end, self.hparams.C_max
             if self.current_epoch >= c_start and self.current_epoch <= c_end:
@@ -243,6 +251,18 @@ class VAE(AEBase):
                     'reg_loss' : loss_reg,
                     "current_C" : meta_reg["current_C"],
                     "kld" : meta_reg["kld"]}
+    
+    def on_validation_epoch_end(self):
+        if self.hparams.C_auto \
+            and self.losses.get("val_rec_loss") is not None \
+            and len(self.losses.get("val_rec_loss")) > 1:
+            if self.losses.get("val_rec_loss")[-1] > self.losses.get("val_rec_loss")[-2]:
+                self.C_default = self.losses.get("val_kld")[-1]
+                print(f"\nC_Scheduler: Setting C_default to {self.C_default} based on validation loss increase.")
+            else:
+                self.C_default = 1e-6
+                print("\nC_Scheduler: Resetting C_default to 1e-6 based on validation loss decrease.")
+        return super().on_validation_epoch_end()
 
     def plot_avg_sigma(self, latent_logvar):
         # This implements any extra printing or plotting in child class

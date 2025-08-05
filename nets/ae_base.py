@@ -52,6 +52,7 @@ class AEBase(pl.LightningModule):
 
         self.losses = {}
         self.losses["loss"] = []
+        self.lr_current = []
 
         self.metaD = False
         self.register_buffer('Mean', torch.zeros(dim_data))
@@ -104,10 +105,10 @@ class AEBase(pl.LightningModule):
         if self.hparams.lr_scheduler == False:
             return optimizer
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                                       factor=0.8, patience=3,
+                                                       factor=0.8, 
+                                                       patience=3,
                                                        min_lr=1e-10,
-                                                       cooldown = 10,
-                                                       verbose =True)
+                                                       cooldown=10)
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
@@ -149,6 +150,11 @@ class AEBase(pl.LightningModule):
                 self.losses[key][-1] *= batch_idx
                 self.losses[key][-1] += loss_value
                 self.losses[key][-1] /= batch_idx + 1
+        
+        sch = self.lr_schedulers()
+        if isinstance(sch, tuple):
+            sch = sch[0]
+        self.lr_current.append(sch.get_last_lr())
 
         return losses['loss']
 
@@ -252,8 +258,6 @@ class AEBase(pl.LightningModule):
             all_data = np.concatenate((latent, labels), axis=1)
             all_column_headers = ["Latent Dimension %d"%i for i in range(latent.shape[1])] 
             all_column_headers = all_column_headers + self.trainer.datamodule.label_list
-            print("\n",all_data.shape)
-            print(len(all_column_headers))
             data_df = pd.DataFrame(all_data, columns=all_column_headers)
         print("\n\n=======================================")
         print("Correlation of latent space and labels (if present)")
@@ -275,7 +279,7 @@ class AEBase(pl.LightningModule):
         if len(self.losses.keys()) == 0 or "loss" not in self.losses.keys():
             raise Exception("No losses to plot.")
         non_val_losses = {key: self.losses[key] for key in self.losses.keys() if "val_" not in key}
-        n_plots = len(non_val_losses.keys())
+        n_plots = len(non_val_losses.keys()) + 1
         fig, ax = plt.subplots(1, n_plots, squeeze=True, figsize=(6 * n_plots, 6))
         ax[0].set_title("Network Loss minimization")
         if all(np.asarray(non_val_losses["loss"]) > 0.0):
@@ -283,7 +287,7 @@ class AEBase(pl.LightningModule):
         lns = ax[0].plot(
             np.asarray(non_val_losses["loss"]),
             "o-",
-            label="Test (left)",
+            label="Train (left)",
             c="tab:red",
             alpha=0.3,
         )
@@ -312,7 +316,7 @@ class AEBase(pl.LightningModule):
             lns = ax[i].plot(
                 np.asarray(non_val_losses[key]),
                 "o-",
-                label="Test (left)",
+                label="Train (left)",
                 c=colors[i % len(colors)],
                 alpha=0.3,
             )
@@ -329,6 +333,12 @@ class AEBase(pl.LightningModule):
             ax[i].set_xlabel("Epoch")
             labs = [l.get_label() for l in lns]
             ax[i].legend(lns, labs, loc=0)
+        # Plot learning rate
+        ax[-1].plot(self.lr_current, "o-", label="Learning rate", c="tab:green")
+        ax[-1].set_title("Learning rate")
+        ax[-1].set_xlabel("Epoch")
+        ax[-1].set_yscale("log")
+
         plt.tight_layout()
         fig.savefig(f"{self.hparams.outname}{self.current_epoch}_training.png", dpi=150)
         logger = self.logger
@@ -373,6 +383,7 @@ class AEBase(pl.LightningModule):
     def plot_latent(self, latents, labels = None, plot_func : callable = None, tag = None):
         if labels is not None:
             label_list = self.trainer.datamodule.label_list
+            
         latent_len = len(latents) if isinstance(latents, tuple) else 1
         plot_len = latents[0].shape[0] if isinstance(latents, tuple) else latents.shape[0]
 
