@@ -151,7 +151,10 @@ class XtcDataset(pl.LightningDataModule):
                     assert sel is not None, f"Residue {resnum} does not have a psi dihedral"
                     label_atoms.append(sel)
                     self.label_list.append(f"psi_{resnum}")
-            
+        else:
+            self.label_list = ['None']
+        #label_atoms = u.select_atoms('(name CA and resnum 1) or (name CA and resnum 10)')
+        
         labels = []
         mol_traj = []
         s, e = 0, len(u.trajectory)

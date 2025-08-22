@@ -40,7 +40,9 @@ class DVAE(VAE):
                  C_start : int = 0,
                  C_end : int = 0,
                  saveplotdata : bool = False,
-                 outname : str = './DVAE_untitled/DVAE_'):
+                 outname : str = './DVAE_untitled/DVAE_',
+                 D : float = np.inf,
+                 ):
         super().__init__(l,
                          lr,
                          l2_reg,
@@ -52,7 +54,8 @@ class DVAE(VAE):
                          C_start,
                          C_end,
                          saveplotdata,
-                         outname)
+                         outname,
+                         D)
 
     def init_decoder_output(self):
         l = self.hparams.l

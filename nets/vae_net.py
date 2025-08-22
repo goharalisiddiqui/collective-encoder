@@ -4,10 +4,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
+from torch.distributions.multivariate_normal import MultivariateNormal
+from torch.distributions.kl import register_kl
 torch.manual_seed(0)
 TORCH_PI = torch.acos(torch.zeros(1))*2
 import argparse
 from warnings import warn
+
 
 
 import pandas as pd
@@ -31,6 +34,8 @@ def vae_parse_args():
     parser.add_argument('--cend', type=int, default = 0, dest='C_end', help='Epoch where C stops to increase for information control in Beta-VAE')
 
     parser.add_argument('--beta', required=True, type=float, help='beta for the beta-VAE')
+    parser.add_argument('--dvalue', dest='D', default=0.0, type=float, help='beta for the beta-VAE')
+
 
     args, _ = parser.parse_known_args()
 
@@ -53,7 +58,9 @@ class VAE(AEBase):
                  C_end : int = 0,
                  C_auto : bool = False,
                  saveplotdata : bool = False,
-                 outname : str = './VAE_untitled/VAE_'):
+                 outname : str = './VAE_untitled/VAE_',
+                 D : float = 0.0,
+                 ):
         super().__init__(dim_data = l[0],
                          dim_latent = l[-1],
                          lr = lr,
@@ -64,6 +71,8 @@ class VAE(AEBase):
                          saveplotdata = saveplotdata)
         assert len(l) >= 3
         self.save_hyperparameters()
+        assert any([a == 0.0 for a in [C_max, D]]), "Atleast one of C_max and D should be zero" 
+        
         #### Setting up the layers of the netwrok ####
         self.init_network()
 
@@ -177,12 +186,19 @@ class VAE(AEBase):
                     "mu_x" : mu_x, "logvar_x" : logvar_x, "z_sample" : z}
 
 
-
+    # @register_kl(MultivariateNormal, MultivariateNormal)
     def kld(self, mu, logvar):
         # KLD between univariate gaussian to Standard, explanation here:
         # https://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
         # Second Gaussian is zero mean and variance of 1, the prior on z
         kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), axis=1) # sum for all the latent variables
+
+        # q = MultivariateNormal(mu, torch.diag_embed(torch.exp(logvar)))
+        # p = MultivariateNormal(torch.zeros_like(mu), torch.eye(mu.size(1)))
+        # kld = torch.distributions.kl.kl_divergence(q, p)
+        # kld = torch.sum(kld, axis=1) # sum for all the latent variables
+
+        
 
         return kld
 
@@ -215,6 +231,9 @@ class VAE(AEBase):
             elif self.current_epoch > c_end:
                 C = cmax
         loss_reg = torch.abs(loss_kld - C)
+
+        if torch.mean(loss_reg) < self.hparams.D:
+            loss_reg *= 0.0
 
         return loss_reg, {"current_C" : C, "kld" : loss_kld}
 
