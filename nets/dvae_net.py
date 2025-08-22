@@ -39,6 +39,7 @@ class DVAE(VAE):
                  C_max : float = 0.0,
                  C_start : int = 0,
                  C_end : int = 0,
+                 C_auto : bool = False,
                  saveplotdata : bool = False,
                  outname : str = './DVAE_untitled/DVAE_',
                  D : float = np.inf,
@@ -53,6 +54,7 @@ class DVAE(VAE):
                          C_max,
                          C_start,
                          C_end,
+                         C_auto,
                          saveplotdata,
                          outname,
                          D)
