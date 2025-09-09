@@ -31,7 +31,8 @@ class XtcData(Dataset):
         labels: List[int],
         dtype=torch.float32,
     ):
-        self.positions = [torch.tensor(s.positions, dtype=dtype) for s in structures]
+        self.positions = [torch.tensor(
+            s.positions, dtype=dtype) for s in structures]
         self.num_inputs = len(self.positions[0])
 
     def __len__(self):
@@ -42,20 +43,35 @@ class XtcData(Dataset):
         x += (self.positions[index],)
         return x
 
+
 def xtcdatset_args():
     desc = "Xtc Dataset Arguments"
     parser = argparse.ArgumentParser(description=desc)
 
 
-    parser.add_argument('--xtcfile', required=True, type=str, help='Input compressed coordinate file')
-    parser.add_argument('--tprfile', required=True, type=str, help='Input binary file containing the topology')
-    parser.add_argument('--selection', required=True, type=str, help='Selection string of mdanalysis')
-    parser.add_argument('--datasize', dest="dataset_size", type=int, default = None, help='Size of the dataset to use')
-    parser.add_argument('--sequential', action='store_true', help='Take the trajectory sequentially, starting from a random frame')
+    parser.add_argument('--xtcfile', required=True, type=str,
+                        help='Input compressed coordinate file')
+    parser.add_argument('--tprfile', required=True, type=str,
+                        help='Input binary file containing the topology')
+    parser.add_argument('--selection', required=True, type=str,
+                        help='Selection string of mdanalysis')
+    parser.add_argument('--datasize', dest="dataset_size",
+                        type=int, default=None, help='Size of the dataset to use')
+    parser.add_argument('--sequential', dest="sequential",
+                        action='store_true', 
+                        help='Weather the trajectory should be sequential or not')
     
     label_group = parser.add_mutually_exclusive_group()
-    label_group.add_argument('--label_distance', dest='label_distance', type=str, default=None, help='Selection string for md analysis. Must select exactly 2 atoms. Distance between these atoms will be used as a label.')
-    label_group.add_argument('--label_dihedrals', dest='label_dihedrals', type=str, default=None, help='Comma separated list of DIH_RESID e.g. "phi_1" will compute the phi dihedral angle for residue 1 and use it as a label')
+    label_group.add_argument('--label_distance', dest='label_distance', 
+                             type=str, default=None, 
+                             help='Selection string for md analysis. ' \
+                             'Must select exactly 2 atoms. ' \
+                             'Distance between these atoms will be used as a label.')
+    label_group.add_argument('--label_dihedrals', dest='label_dihedrals', 
+                             type=str, default=None, 
+                             help='Comma separated list of DIH_RESID ' \
+                             'e.g. "phi_1" will compute the phi dihedral angle ' \
+                             'for residue 1 and use it as a label')
     # parser.add_argument('--labels', dest = 'label_list', nargs='+', help='Label columns in the data file')
 
     args, _ = parser.parse_known_args()
@@ -64,6 +80,7 @@ def xtcdatset_args():
 
 
 XTC_args = xtcdatset_args
+
 
 class XtcDataset(pl.LightningDataModule):
     def __init__(self,
@@ -87,7 +104,8 @@ class XtcDataset(pl.LightningDataModule):
         super().__init__()
         print(f"\n\n[Initializing XtcDataset Module]") if verbose else None
         print("==========================================") if verbose else None
-        print(f"Loading coordinates from file {xtcfile} and topology from file {tprfile}") if verbose else None
+        print(
+            f"Loading coordinates from file {xtcfile} and topology from file {tprfile}") if verbose else None
         if not os.path.exists(xtcfile):
             raise FileNotFoundError(f"File {xtcfile} not found")
         if not os.path.exists(tprfile):
@@ -111,16 +129,16 @@ class XtcDataset(pl.LightningDataModule):
         
         # Center the and unwrap the trajectory
         transforms = [trans.unwrap(mol),
-              trans.center_in_box(mol, wrap=True)]
+                      trans.center_in_box(mol, center='geometry', point=[0.0,0.0,0.0], wrap=False)]
         u.trajectory.add_transformations(*transforms)
     
         # Extract the atomic numbers
-        ch = [at.element for at in mol]
-        for at in ch:
-            if at not in atomic_numbers:
-                raise ValueError(f"Atom {at} not found in atomic numbers dictionary")
-        ch = [atomic_numbers[at] for at in ch]
-        
+        at_elements = [at.element for at in mol]
+        self.atns = []
+        for elem in at_elements:
+            assert elem in atomic_numbers, f"Atom {elem} not found in atomic numbers dictionary"
+            self.atns.append(atomic_numbers[elem])
+
         # Get the atom numbers in the trajectory
         atm_ids = [at.id + 1 for at in mol.atoms]
         
@@ -153,24 +171,44 @@ class XtcDataset(pl.LightningDataModule):
                     self.label_list.append(f"psi_{resnum}")
         else:
             self.label_list = ['None']
-        #label_atoms = u.select_atoms('(name CA and resnum 1) or (name CA and resnum 10)')
         
+        # Extract the bonds information
+        self.bonds = mol.get_connections('bonds', outside=False).indices
+        for i in range(len(self.bonds)):
+            self.bonds[i] = [np.where(mol.atoms.indices == self.bonds[i][0])[0][0], np.where(mol.atoms.indices == self.bonds[i][1])[0][0]]
+        
+        # Read the trajectory and store the frames
         labels = []
         mol_traj = []
-        s, e = 0, len(u.trajectory)
-        if dataset_size is not None and sequential:
-            s = random.randint(0, len(u.trajectory) - dataset_size - 1)
-            e = dataset_size + s
-        print(f"Reading trajectory of {e-s} frames...") if verbose else None
-        # ind = 0
-        print(f"Trajectory start: {s}, end: {e}") if verbose else None
-        for ts in tqdm(u.trajectory[s:e], disable=not verbose):
-            # if ind < s:
-            #     continue
-            # if ind >= e:
-            #     break
-            structure = ase.Atoms(numbers=ch, positions=mol.atoms.positions)
+        if dataset_size is None:
+            dataset_size = len(u.trajectory)
+        if sequential:
+            s = random.randint(0, len(u.trajectory) - dataset_size)
+            e = dataset_size + s + 1
+            print(f"Reading trajectory of {e-s} frames...") if verbose else None
+            print(f"Trajectory start frame (1-indexed): {s+1}, end: {e}") if verbose else None
+            read_frame_seq = [i for i in range(s, e)]
+        else:
+            read_frame_seq = random.sample(range(len(u.trajectory)), dataset_size)
+            read_frame_seq.sort()
+            print(f"Reading trajectory of {len(read_frame_seq)} random frames...") if verbose else None
+
+        for idx in tqdm(read_frame_seq, disable=not verbose):
+            u.trajectory[idx]
+            # Create the ASE structure
+            structure = ase.Atoms(numbers=self.atns, positions=mol.atoms.positions)
+
+            # Retain topology information
+            residues = [str(r.residue.resname) for r in mol.atoms]
+            resids = [r.residue.resid for r in mol.atoms]
+            atomnames = [str(a.name) for a in mol.atoms]
+            structure.set_array('residuenumbers', np.array(resids))
+            structure.set_array('residuenames', np.array(residues))
+            structure.set_array('atomtypes', np.array(atomnames))
+
             mol_traj.append(structure)
+
+            # Get the labels
             if label_distance is not None:
                 labels.append(np.linalg.norm(label_atoms.positions[1] - label_atoms.positions[0]))
             elif label_dihedrals is not None:
@@ -187,15 +225,8 @@ class XtcDataset(pl.LightningDataModule):
                 labels.append(dih)
             else:
                 labels.append(0.0)
-            # ind += 1
         print(f"Finished reading trajectory.") if verbose else None
-        if dataset_size is not None and not sequential:
-            print(f"Subsampling dataset to {dataset_size} frames.") if verbose else None
-            assert dataset_size <= len(mol_traj), f"Dataset size {dataset_size} must be less than the number of frames {len(mol_traj)}."
-            rand_indices = random.sample(range(len(mol_traj)), dataset_size)
-            mol_traj = [mol_traj[i] for i in rand_indices]
-            labels = [labels[i] for i in rand_indices]
-
+        
         
         FRAMES = len(mol_traj)
         print(f"Total frames in trajectory: {FRAMES}") if verbose else None
@@ -204,6 +235,8 @@ class XtcDataset(pl.LightningDataModule):
         self.train_size = int(FRAMES * train_prop)
         self.validation_size = int(FRAMES * validation_prop)
         self.test_size = FRAMES - self.train_size - self.validation_size
+        
+        self.mol_traj = mol_traj
 
         dataset_args['atm_ids'] = atm_ids
         self.xtcData_full = dataset_type(
@@ -230,11 +263,9 @@ class XtcDataset(pl.LightningDataModule):
         print(f"Total frames: {FRAMES}, Train size: {self.train_size}, Batch size: {self.hparams.batch_size}, Validation size: {self.validation_size}") if verbose else None
         print("==========================================") if verbose else None
 
-
     # def prepare_data(self): # only called on 1 GPU/TPU in distributed
 
-
-    def setup(self, stage): # Called on every GPU/TPU in distributed
+    def setup(self, stage):  # Called on every GPU/TPU in distributed
         # Assign train/val datasets for use in dataloaders
         self.mddata_train, self.mddata_val, self.mddata_test, _ = \
             torch.utils.data.random_split(
@@ -243,8 +274,28 @@ class XtcDataset(pl.LightningDataModule):
                     self.train_size,
                     self.validation_size,
                     self.test_size,
-                    len(self.xtcData_full) - self.train_size - self.validation_size - self.test_size
+                    len(self.xtcData_full) - self.train_size -
+                    self.validation_size - self.test_size
                 ])
+    
+    def get_atns(self):
+        return self.loatn
+    
+    def get_bond_indices(self):
+        return self.bonds
+    
+    def output_trajectory(self, output_file, trajectory = None):
+        if os.path.exists(output_file):
+            Warning(f"File {output_file} already exists. Overwriting...")
+            os.remove(output_file)
+        mol_traj = self.mol_traj
+        for i in range(len(self.mol_traj)):
+            frame = mol_traj[i]
+            if trajectory is not None:
+                if i >= len(trajectory):
+                    break
+                frame.positions = trajectory[i]
+            frame.write(output_file, append = True)
 
     def get_full_batch(self):
         mddata = self.xtcData_full
@@ -279,7 +330,8 @@ class XtcDataset(pl.LightningDataModule):
         mddata_test = self.xtcData_full
         return DataLoader(
             mddata_test,
-            batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size is not None else len(mddata_test),
+            batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size is not None else len(
+                mddata_test),
             shuffle=False,
             drop_last=True,
             num_workers=self.hparams.num_workers,
@@ -302,4 +354,3 @@ class XtcDataset(pl.LightningDataModule):
 
     def get_datapoint_shape(self):
         return self.datapoint_shape
-

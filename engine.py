@@ -39,10 +39,11 @@ def parse_args():
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
     parser.add_argument('--outfolder', type=str, default='ce_training', help='Stem of the folder name to save the output')
     parser.add_argument('--nexp', required=False, default=1, type=int, help='Experiment number for output names')
-    parser.add_argument('--wand', action="store_true", help='Log to WandB logger')
+    parser.add_argument('--wandb', action="store_true", help='Log to WandB logger')
     parser.add_argument('--tblogger', action="store_true", help='Log to Tensorboard logger')
     parser.add_argument('--overwrite', action="store_true", help='Overwrite output folder')
     parser.add_argument('--output_to_file', action="store_true", help='Also store output in a file')
+    parser.add_argument('--output_traj', action="store_true", help='Print trajectory of the training data')
 
     # Save and/or Load Model
     parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
@@ -54,6 +55,10 @@ def parse_args():
     parser.add_argument('--nogpu', action="store_true", help='Do not use gpu acceleration')
     parser.add_argument('--normalize', action="store_true", help='Normalize input or not')
     parser.add_argument('--plot_every', type=int, default=0, help='Number of epochs to run')
+    parser.add_argument('--bondrestrict', action="store_true",
+                        help='Add bond deviation loss to the training')
+    parser.add_argument('--stericloss', action="store_true",
+                        help='Add steric loss to the training')
 
     parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
     parser.add_argument('--scheduler', action="store_true", help='Use learning rate scheduler')
@@ -119,6 +124,9 @@ elif nntype == "DVAE":
 elif nntype == "EDVAE":
     from nets.edvae_net import EDVAE as main_nn
     from nets.edvae_net import EDVAE_args as nn_nested_args
+elif nntype == "EDVAEGAN":
+    from nets.edvae_gan_net import EDVAEGAN as main_nn
+    from nets.edvae_gan_net import EDVAEGAN_args as nn_nested_args
 elif nntype == "GMVAE":
     from ce_nets import GMVAE as main_nn
     nn_nested_args = {}
@@ -248,8 +256,18 @@ else:
     netargs['n_x'] = nodes[0]
     netargs['n_z'] = nodes[-1]
 
-if nntype == "EDVAE":
+if nntype in ["EDVAE", "EDVAEGAN"]:
     netargs['datapoint_shape'] = colvardata.get_datapoint_shape()
+    if args.bondrestrict:
+        netargs['use_bond_deviation_loss'] = True
+        netargs['bond_indices'] = colvardata.get_bond_indices()
+        netargs['atomic_numbers'] = colvardata.get_atns()
+    if args.stericloss:
+        netargs['use_steric_loss'] = True
+        if 'atomic_numbers' not in netargs.keys():
+            netargs['atomic_numbers'] = colvardata.get_atns()
+        
+        
 
 nn_nested_args = nn_nested_args()
 netargs = netargs | vars(nn_nested_args)
@@ -274,14 +292,16 @@ trainargs = {"max_epochs" : num_epochs,
 if not args.nogpu:
     trainargs["accelerator"] = 'auto'
     trainargs["devices"] = 'auto'
-if args.wand:
-    wandb_logger = WandbLogger(log_model="all")
+if args.wandb:
+    wandb_logger = WandbLogger(project="Collective_encoder",
+                             name=odir_name.strip(".").strip("/").replace("/", "_"),
+                             log_model=True)
     trainargs["logger"] = wandb_logger
 if args.tblogger:
     tblogger = TensorBoardLogger(version=odir_name, save_dir=args.outpath)
     trainargs["logger"] = tblogger
 
-trainargs["gradient_clip_val"] = 0.5
+# trainargs["gradient_clip_val"] = 0.5
 # trainargs["gradient_clip_algorithm"] = "norm"
 
 
@@ -301,7 +321,13 @@ if not train and args.load_model == None:
 ##################################
 # model.print_fve(colvardata)
 
-
+if args.output_traj:
+    colvardata.output_trajectory(f"{odir_name}/data_trajectory.pdb")
+    if not args.networktype in ["DVAE", "EDVAE", "EDVAEGAN"]:
+        Warning("Model does not output coordinates, cannot output predicted trajectory")
+    else:
+        pred = model(colvardata.get_full_batch()[0])[0].detach().cpu().numpy()
+        colvardata.output_trajectory(f"{odir_name}/recon_trajectory.pdb", pred)
 
 #####################################
 # Output latent space of the dataset
@@ -311,8 +337,6 @@ if export_latent:
     model.export_latent(next(iter(colvardata.test_dataloader())))
 
 
-
-
 ##################################
 # Serializing and checkpointing the model
 ##################################
@@ -320,7 +344,7 @@ if args.save_serial_model:
     modelpath = args.save_serial_model_path if args.save_serial_model_path != None else '.'
     model.export_serial_model(f'{odir_name}/{modelpath}')
 
-if args.save_checkpoint:
+if args.save_checkpoint and train:
     trainer.save_checkpoint(f"{outname}checkpoint")
     print(f"@@ checkpoint saved as: {outname}checkpoint")
 

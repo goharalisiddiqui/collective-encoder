@@ -17,8 +17,8 @@ def edvae_parse_args():
     desc = "Embedded Deterministic VAE Module"
     parser = argparse.ArgumentParser(description=desc)
 
-
-    parser.add_argument('--emb_type', dest= "embedding_type", required=True, type=str, help='Type of embedding for Embedded Deterministic VAE Module')
+    parser.add_argument('--emb_type', dest="embedding_type", required=True,
+                        type=str, help='Type of embedding for Embedded Deterministic VAE Module')
 
     args, _ = parser.parse_known_args()
 
@@ -26,24 +26,31 @@ def edvae_parse_args():
 
     return argparse.Namespace(**vars(args), **vars(res_args))
 
+
 EDVAE_args = edvae_parse_args
+
 
 class EDVAE(DVAE):
     def __init__(self,
                  l: list,
-                 embedding_type : str,
-                 datapoint_shape : tuple,
-                 lr : float = 0.01,
-                 l2_reg : float = 1e-7,
-                 beta : float = 1.0,
-                 batch_norm : bool = True,
-                 lr_scheduler : bool = True,
-                 plot_every : int = 0,
-                 C_max : float = 0.0,
-                 C_start : int = 0,
-                 C_end : int = 0,
-                 saveplotdata : bool = False,
-                 outname : str = './EDVAE_untitled/EDVAE_'):
+                 embedding_type: str,
+                 datapoint_shape: tuple,
+                 lr: float = 0.01,
+                 l2_reg: float = 1e-7,
+                 beta: float = 1.0,
+                 batch_norm: bool = True,
+                 lr_scheduler: bool = True,
+                 plot_every: int = 0,
+                 C_max: float = 0.0,
+                 C_start: int = 0,
+                 C_end: int = 0,
+                 saveplotdata: bool = False,
+                 use_bond_deviation_loss = False,
+                 bond_indices = None,
+                 atomic_numbers = None,
+                 outname: str = './EDVAE_untitled/EDVAE_',
+                 use_steric_loss = False,
+                 ):
 
         self.save_hyperparameters()
 
@@ -58,7 +65,12 @@ class EDVAE(DVAE):
                          C_start,
                          C_end,
                          saveplotdata,
-                         outname = outname)
+                         use_bond_deviation_loss,
+                         bond_indices,
+                         atomic_numbers,
+                         outname=outname,
+                         use_steric_loss=use_steric_loss,
+                         )
 
         self.Mean = torch.zeros(self.hparams.l[0])
         self.Range = torch.ones(self.hparams.l[0])
@@ -91,7 +103,7 @@ class EDVAE(DVAE):
         if self.hparams.embedding_type == "flatten":
             self.embedding = nn.Flatten()
             self.embedded_length = np.prod(datapoint_shape)
-            # print("(Flatten layer)")
+            print("(Flatten layer)")
             print(datapoint_shape, " --> ", self.embedded_length," (embedding)")
 
         self.hparams.l[0] = self.embedded_length
@@ -102,8 +114,8 @@ class EDVAE(DVAE):
 
         if self.hparams.embedding_type == "flatten":
             self.deembedding = nn.Unflatten(1, datapoint_shape)
-            # print("(Unflatten layer)")
-            print(l[0], " --> ", datapoint_shape," (deembedding)")
+            print("(Unflatten layer)")
+            print(l[0], " --> ", datapoint_shape, " (deembedding)")
 
     def forward(self, x):
         x = self.embedding(x)
@@ -123,12 +135,6 @@ class EDVAE(DVAE):
         latent_mu, latent_logvar = self.encode(data_x)
         return latent_mu.detach().cpu().numpy(), latent_logvar.detach().cpu().numpy()
 
-    def decode_latent(self, latent):
-        x_out = self.decode(latent)
-        x_out = self.denormalize(x_out)
-        x_out = self.deembedding(x_out)
-        return x_out.detach().cpu().numpy()
-    
     def print_labels_latent_correlations(self, latent, labels = None):
         pass
     
@@ -137,3 +143,10 @@ class EDVAE(DVAE):
         self.plot_latent(latents, data_y, self.plot_sd, "latent_pdf")
 
 
+    def decode_latent(self, latent, keeptensor=False):
+        latent = self.decode(latent)
+        latent = self.deembedding(latent)
+        x_out = self.denormalize(latent)
+        if not keeptensor:
+            x_out = x_out.detach().cpu().numpy()
+        return x_out
