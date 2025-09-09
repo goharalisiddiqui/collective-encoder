@@ -253,10 +253,10 @@ class XtcDataset(pl.LightningDataModule):
                 **dataset_args
                 )
         
+        self.target_scaler = StandardScaler()
         if dataset_type in [XtcData, distancesDataset]:
             self.num_inputs = self.xtcData_full.num_inputs
             self.datapoint_shape = tuple(self.xtcData_full[0][0].shape)
-            self.target_scaler = StandardScaler()
             self.target_scaler.fit(self.xtcData_full.get_data()[0])
         
         if dataset_type == graphDataset:
@@ -266,6 +266,18 @@ class XtcDataset(pl.LightningDataModule):
             print(f"Edge feature size: {self.xtcData_full[0].edge_attr.shape[1]}") if verbose else None
             print(f"Total number of edges: {self.xtcData_full[0].edge_index.shape[1]}") if verbose else None
             self.num_inputs = len(self.bonds)
+            self.datapoint_shape = (len(self.bonds), self.xtcData_full[0].x.shape[1])
+
+            data_to_normalize = []
+            for g in self.xtcData_full:
+                node_feat = g.x.numpy()
+                edge_feat = g.edge_attr.numpy()
+                data_to_normalize.append(np.hstack([node_feat.flatten(), edge_feat.flatten()]))
+            data_to_normalize = np.vstack(data_to_normalize)
+            self.target_scaler.fit(data_to_normalize)
+
+        print(self.get_scaler_mean().shape)
+        print(self.get_scaler_var().shape) 
         
         self.save_hyperparameters()
 
