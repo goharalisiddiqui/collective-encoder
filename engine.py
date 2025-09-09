@@ -1,27 +1,24 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-import numpy as np
 import sys
-import torch
 import os
-import argparse
-
-from utils import parse_vars
-
-
-from timeit import default_timer as timer
-import pytorch_lightning as pl
-from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
-
-torch.manual_seed(0)
-np.random.seed(0)
-import warnings
-warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
 sys.path.append(os.path.dirname(os.getcwd() + '/nets/'))
 sys.path.append(os.path.dirname(os.getcwd() + '/dataloaders/'))
 
+import argparse
+import warnings
+
+import numpy as np
+
+import torch
+
+import pytorch_lightning as pl
+from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
+
+from utils import parse_vars
+
+torch.manual_seed(0)
+np.random.seed(0)
+warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
 ##################################
 # Arguments
@@ -31,8 +28,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description=desc)
 
     ## Type of Data
-    parser.add_argument('--runtype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC', 'MD17', 'XTC', 'XYZ'])
-    parser.add_argument('--dataset', type=str, default='DEFAULT', help='Type of dataset to use', choices=['DEFAULT', 'DISTANCES'])
+    parser.add_argument('--datatype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC', 'MD17', 'XTC', 'XYZ'])
+    parser.add_argument('--dataset', type=str, default='DEFAULT', help='Type of dataset to use', choices=['DEFAULT', 'DISTANCES', 'GRAPH'])
     parser.add_argument('--dataset_args', metavar="KEY=VALUE", nargs='+', help='Key-value pairs of arguments for the dataset', default=[])  
 
     # Output Settings
@@ -145,19 +142,19 @@ elif nntype == "VAEC":
 else:
     raise ValueError("Unknown network type")
 
-if args.runtype == 'KMC':
+if args.datatype == 'KMC':
     from dataloaders.kmc_dataloader import KmcDataset as main_dl
     from dataloaders.kmc_dataloader import KMC_args as data_nested_args
-elif args.runtype == 'COLVAR':
+elif args.datatype == 'COLVAR':
     from dataloaders.colvar_dataloader import ColvarDataset as main_dl
     from dataloaders.colvar_dataloader import COLVAR_args as data_nested_args
-elif args.runtype == 'MD17':
+elif args.datatype == 'MD17':
     from dataloaders.md17_dataloader import MD17Data as main_dl
     from dataloaders.md17_dataloader import MD17_args as data_nested_args
-elif args.runtype == 'XTC':
+elif args.datatype == 'XTC':
     from dataloaders.xtc_dataloader import XtcDataset as main_dl
     from dataloaders.xtc_dataloader import XTC_args as data_nested_args
-elif args.runtype == 'XYZ':
+elif args.datatype == 'XYZ':
     from dataloaders.xyz_dataloader import XyzLoader as main_dl
     from dataloaders.xyz_dataloader import XYZ_args as data_nested_args
 
@@ -210,7 +207,7 @@ print("Using Pytorch", torch.__version__)
 outname = odir_name+"/"+nntype+"_"
 
 datamodargs = {}
-if args.runtype in ["COLVAR", "KMC"]:
+if args.datatype in ["COLVAR", "KMC"]:
     datamodargs['train_prop'] = 0.8
     datamodargs['batch_prop'] = 0.1
 
@@ -221,17 +218,18 @@ datamodargs = datamodargs | vars(data_nested_args)
 if args.dataset != 'DEFAULT':
     if args.dataset == 'DISTANCES':
         from datasets.distances_dataset import distancesDataset as dataset
+    elif args.dataset == 'GRAPH':
+        from datasets.graph import graphDataset as dataset
     else:
         raise ValueError("Unknown dataset type")
     datamodargs['dataset_type'] = dataset
     datamodargs['dataset_args'] = parse_vars(args.dataset_args)
 
 colvardata = main_dl(**datamodargs)
-if args.runtype == 'MD17':
+if args.datatype == 'MD17':
     colvardata.prepare_data()
 
 colvardata.setup(stage="fit")
-
 
 ##################################
 # Setting up the NN

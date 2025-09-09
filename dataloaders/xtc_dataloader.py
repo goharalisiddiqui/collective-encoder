@@ -20,6 +20,9 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
 
+from datasets.distances_dataset import distancesDataset
+from datasets.graph import graphDataset
+
 DOUBLE_PRECISION = False
 
 class XtcData(Dataset):
@@ -42,6 +45,9 @@ class XtcData(Dataset):
         x = ()
         x += (self.positions[index],)
         return x
+    
+    def get_data(self):
+        return np.array([d.numpy() for d in self.positions])
 
 
 def xtcdatset_args():
@@ -175,8 +181,8 @@ class XtcDataset(pl.LightningDataModule):
         # Extract the bonds information
         self.bonds = mol.get_connections('bonds', outside=False).indices
         for i in range(len(self.bonds)):
-            self.bonds[i] = [np.where(mol.atoms.indices == self.bonds[i][0])[0][0], np.where(mol.atoms.indices == self.bonds[i][1])[0][0]]
-        
+            self.bonds[i] = (np.where(mol.atoms.indices == self.bonds[i][0])[0][0], np.where(mol.atoms.indices == self.bonds[i][1])[0][0])
+
         # Read the trajectory and store the frames
         labels = []
         mol_traj = []
@@ -184,7 +190,7 @@ class XtcDataset(pl.LightningDataModule):
             dataset_size = len(u.trajectory)
         if sequential:
             s = random.randint(0, len(u.trajectory) - dataset_size)
-            e = dataset_size + s + 1
+            e = dataset_size + s
             print(f"Reading trajectory of {e-s} frames...") if verbose else None
             print(f"Trajectory start frame (1-indexed): {s+1}, end: {e}") if verbose else None
             read_frame_seq = [i for i in range(s, e)]
@@ -229,24 +235,37 @@ class XtcDataset(pl.LightningDataModule):
         
         
         FRAMES = len(mol_traj)
-        print(f"Total frames in trajectory: {FRAMES}") if verbose else None
         assert train_prop + validation_prop <= 1.0
-        test_prop = 1.0 - train_prop - validation_prop
         self.train_size = int(FRAMES * train_prop)
         self.validation_size = int(FRAMES * validation_prop)
         self.test_size = FRAMES - self.train_size - self.validation_size
         
         self.mol_traj = mol_traj
 
-        dataset_args['atm_ids'] = atm_ids
+        if dataset_type == distancesDataset:
+            dataset_args['atm_ids'] = atm_ids
+        if dataset_type == graphDataset:
+            dataset_args['bond_indices'] = self.bonds
         self.xtcData_full = dataset_type(
                 structures=mol_traj,
                 labels=labels,
                 dtype=torch.float64 if DOUBLE_PRECISION else torch.float32,
                 **dataset_args
                 )
-        self.num_inputs = self.xtcData_full.num_inputs
-        self.datapoint_shape = tuple(self.xtcData_full[0][0].shape)
+        
+        if dataset_type in [XtcData, distancesDataset]:
+            self.num_inputs = self.xtcData_full.num_inputs
+            self.datapoint_shape = tuple(self.xtcData_full[0][0].shape)
+            self.target_scaler = StandardScaler()
+            self.target_scaler.fit(self.xtcData_full.get_data()[0])
+        
+        if dataset_type == graphDataset:
+            print(f"Loaded graph dataset with {len(self.xtcData_full)} graphs") if verbose else None
+            print(f"Number of bonds (nodes): {len(self.bonds)}") if verbose else None
+            print(f"Node feature size: {self.xtcData_full[0].x.shape[1]}") if verbose else None
+            print(f"Edge feature size: {self.xtcData_full[0].edge_attr.shape[1]}") if verbose else None
+            print(f"Total number of edges: {self.xtcData_full[0].edge_index.shape[1]}") if verbose else None
+            self.num_inputs = len(self.bonds)
         
         self.save_hyperparameters()
 
@@ -255,8 +274,6 @@ class XtcDataset(pl.LightningDataModule):
         if self.hparams.val_batch_size is None:
             self.hparams.val_batch_size = int(self.validation_size * 0.1)
         # Printing
-        self.target_scaler = StandardScaler()
-        self.target_scaler.fit(self.xtcData_full.get_data()[0])
         assert self.hparams.batch_size < self.train_size, "Batch size must be less than the training size"
         assert self.hparams.val_batch_size < self.validation_size, "Validation batch size must be less than the validation size"
 
