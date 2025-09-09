@@ -40,7 +40,12 @@ class DVAE(VAE):
                  C_start : int = 0,
                  C_end : int = 0,
                  saveplotdata : bool = False,
-                 outname : str = './DVAE_untitled/DVAE_'):
+                 use_bond_deviation_loss = False,
+                 bond_indices = None,
+                 atomic_numbers = None,
+                 outname : str = './DVAE_untitled/DVAE_',
+                 use_steric_loss = False,
+                 ):
         super().__init__(l,
                          lr,
                          l2_reg,
@@ -52,7 +57,12 @@ class DVAE(VAE):
                          C_start,
                          C_end,
                          saveplotdata,
-                         outname)
+                         use_bond_deviation_loss,
+                         bond_indices,
+                         atomic_numbers,
+                         outname,
+                         use_steric_loss,
+                         )
 
     def init_decoder_output(self):
         l = self.hparams.l
@@ -101,19 +111,34 @@ class DVAE(VAE):
         loss_reg = torch.mean(loss_reg) # Mean of batch
         loss = loss_rec + self.hparams.beta * loss_reg
 
-        if loss.isnan().any().detach().cpu().numpy():
-            print("loss contains nan. Can't continue")
-            exit()
+        # if loss.isnan().any().detach().cpu().numpy():
+        #     print("loss contains nan. Can't continue")
+        #     exit()
+        if self.hparams.use_bond_deviation_loss:
+            loss_bond = self.bond_deviation_loss(recon_x)
+            loss += loss_bond
+        
+        if self.hparams.use_steric_loss:
+            loss_steric = self.steric_loss(recon_x)
+            loss += loss_steric * 100
 
         loss_mae = self.mae_loss(recon_x, tru_x)
         loss_mae = torch.mean(loss_mae)
+        
+        return_val  = {'loss': loss,
+                'mae_loss': loss_mae,
+                'rec_loss': loss_rec,
+                'reg_loss': loss_reg,
+                "current_C": meta_reg["current_C"],
+                "kld": meta_reg["kld"]}
+        
+        if self.hparams.use_bond_deviation_loss:
+            return_val["bond_deviation_loss"] = loss_bond
+        
+        if self.hparams.use_steric_loss:
+            return_val["steric_loss"] = loss_steric
+        
 
-        return {'loss' : loss,
-                'mae_loss' : loss_mae,
-                'rec_loss' : loss_rec,
-                'reg_loss' : loss_reg,
-                'current_C' : meta_reg["current_C"],
-                'kld' : meta_reg["kld"]}
-
+        return return_val
 
 

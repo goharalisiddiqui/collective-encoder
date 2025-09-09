@@ -95,10 +95,11 @@ class AEBase(pl.LightningModule):
         samples = dist.rsample(mu.shape[:-1]).to(mu.device)
         return mu + samples*std
 
-
+    def get_train_parameters(self):
+        return self.parameters()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
+        optimizer = torch.optim.Adam(self.get_train_parameters(), lr=self.hparams.lr, weight_decay= self.hparams.l2_reg)
         if self.hparams.lr_scheduler == False:
             return optimizer
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
@@ -129,11 +130,16 @@ class AEBase(pl.LightningModule):
     def print_hparams(self):
         # This prints the hparams in child models
         return
+    
+    def extra_training_step(self, data, result, meta, losses):
+        # This implements any extra training in child class
+        return losses
 
     def training_step(self, train_batch, batch_idx):
         data = self.normalize(train_batch[0].float())
         result, meta = self(train_batch[0].float())
         losses = self.loss(result, data, **meta)
+        
 
         for key in losses.keys():
             loss_value = losses[key].item() if isinstance(losses[key], torch.Tensor) else losses[key]
@@ -145,6 +151,8 @@ class AEBase(pl.LightningModule):
                 self.losses[key][-1] *= batch_idx
                 self.losses[key][-1] += loss_value
                 self.losses[key][-1] /= batch_idx + 1
+        
+        losses = self.extra_training_step(data, result, meta, losses)
 
         return losses['loss']
 
