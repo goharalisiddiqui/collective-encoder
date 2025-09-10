@@ -36,11 +36,14 @@ def parse_args():
     parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
     parser.add_argument('--outfolder', type=str, default='ce_training', help='Stem of the folder name to save the output')
     parser.add_argument('--nexp', required=False, default=1, type=int, help='Experiment number for output names')
-    parser.add_argument('--wandb', action="store_true", help='Log to WandB logger')
     parser.add_argument('--tblogger', action="store_true", help='Log to Tensorboard logger')
     parser.add_argument('--overwrite', action="store_true", help='Overwrite output folder')
     parser.add_argument('--output_to_file', action="store_true", help='Also store output in a file')
     parser.add_argument('--output_traj', action="store_true", help='Print trajectory of the training data')
+
+    # Logging
+    parser.add_argument('--wandb', action="store_true", help='Log to WandB logger')
+    parser.add_argument('--wandb_project', type=str, default='Collective_encoder', help='WandB project name')
 
     # Save and/or Load Model
     parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
@@ -59,7 +62,8 @@ def parse_args():
 
     parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
     parser.add_argument('--scheduler', action="store_true", help='Use learning rate scheduler')
-    parser.add_argument('--l2norm', type=float, default=1e-3, help='Weights regularization for the training')
+    parser.add_argument('--scheduler_gamma', type=float, default=0.1, help='Learning rate scheduler gamma')
+    parser.add_argument('--weight_decay', type=float, default=1e-3, help='Weights regularization for the training')
     parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
 
     parser.add_argument('--networktype', type=str, default='VAE', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
@@ -99,8 +103,7 @@ plot_every = args.plot_every
 train = True if num_epochs > 0 else False
 # Optimization
 lrate = args.lrate  # Learning rate
-l2_reg = args.l2norm  # Regularization of network weights
-
+weight_decay = args.weight_decay  # Weights regularization
 
 
 
@@ -139,6 +142,9 @@ elif nntype == "VAEC_mse":
 elif nntype == "VAEC":
     from nets.vae_cnn_net import VAEC as main_nn
     from nets.vae_cnn_net import VAEC_args as nn_nested_args
+elif nntype == "GRAPH_ENCODER":
+    from nets.gnn_encoder import BondGraphNetEncoder as main_nn
+    from nets.gnn_encoder import BGNE_args as nn_nested_args
 else:
     raise ValueError("Unknown network type")
 
@@ -229,7 +235,8 @@ colvardata = main_dl(**datamodargs)
 if args.datatype == 'MD17':
     colvardata.prepare_data()
 
-colvardata.setup(stage="fit")
+    colvardata.setup(stage="fit")
+
 
 ##################################
 # Setting up the NN
@@ -240,19 +247,27 @@ nodes.insert(0, colvardata.num_inputs)
 
 
 netargs = {}
-netargs['lr'] = lrate
-netargs['l2_reg'] = l2_reg
-netargs['outname'] = outname
-netargs['batch_norm'] = args.nobatchnorm
-netargs['plot_every'] = args.plot_every
-netargs['saveplotdata'] = not args.no_plotdata
-netargs['lr_scheduler'] = args.scheduler
 
-if nntype != "GMVAE":
-    netargs['l'] = nodes
+
+if nntype in ["GRAPH_ENCODER"]:
+    # netargs['lr'] = lrate
+    # netargs['weight_decay'] = args.weight_decay
+    # netargs['scheduler_gamma'] = args.scheduler_gamma
+    pass
 else:
-    netargs['n_x'] = nodes[0]
-    netargs['n_z'] = nodes[-1]
+    netargs['lr'] = lrate
+    netargs['l2_reg'] = args.weight_decay
+    netargs['outname'] = outname
+    netargs['batch_norm'] = args.nobatchnorm
+    netargs['plot_every'] = args.plot_every
+    netargs['saveplotdata'] = not args.no_plotdata
+    netargs['lr_scheduler'] = args.scheduler_gamma  
+
+    if nntype != "GMVAE":
+        netargs['l'] = nodes
+    else:
+        netargs['n_x'] = nodes[0]
+        netargs['n_z'] = nodes[-1]
 
 if nntype in ["EDVAE", "EDVAEGAN"]:
     netargs['datapoint_shape'] = colvardata.get_datapoint_shape()
@@ -291,7 +306,7 @@ if not args.nogpu:
     trainargs["accelerator"] = 'auto'
     trainargs["devices"] = 'auto'
 if args.wandb:
-    wandb_logger = WandbLogger(project="Collective_encoder",
+    wandb_logger = WandbLogger(project=args.wandb_project,
                              name=odir_name.strip(".").strip("/").replace("/", "_"),
                              log_model=True)
     trainargs["logger"] = wandb_logger
@@ -305,6 +320,22 @@ if args.tblogger:
 
 
 trainer = pl.Trainer(**trainargs)
+
+
+
+
+
+
+test_datapoint = colvardata.get_full_batch()
+print("Test datapoint shape:", test_datapoint)
+model_output = model(test_datapoint)
+print("Model output shape:", model_output[0].shape if type(model_output) is tuple else model_output.shape)
+
+
+exit()
+
+
+
 if train:
     # trainer.tune(model, datamodule=colvardata) # To auto find the lr
     trainer.fit(model, datamodule=colvardata)

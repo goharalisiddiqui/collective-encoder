@@ -18,6 +18,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torch_geometric.loader import DataLoader as GeoDataLoader
 import pytorch_lightning as pl
 
 from datasets.distances_dataset import distancesDataset
@@ -268,16 +269,15 @@ class XtcDataset(pl.LightningDataModule):
             self.num_inputs = len(self.bonds)
             self.datapoint_shape = (len(self.bonds), self.xtcData_full[0].x.shape[1])
 
-            data_to_normalize = []
+            # We only normalize the bond lengths (3rd column of node features) and edge features
+            data_to_normalize = [] 
             for g in self.xtcData_full:
-                node_feat = g.x.numpy()
+                node_feat = g.x[:,2].numpy()
                 edge_feat = g.edge_attr.numpy()
                 data_to_normalize.append(np.hstack([node_feat.flatten(), edge_feat.flatten()]))
             data_to_normalize = np.vstack(data_to_normalize)
             self.target_scaler.fit(data_to_normalize)
 
-        print(self.get_scaler_mean().shape)
-        print(self.get_scaler_var().shape) 
         
         self.save_hyperparameters()
 
@@ -327,17 +327,20 @@ class XtcDataset(pl.LightningDataModule):
             frame.write(output_file, append = True)
 
     def get_full_batch(self):
-        mddata = self.xtcData_full
-        dl = DataLoader(
-            mddata,
-            batch_size=len(mddata),
-            shuffle=False,
-            num_workers=self.hparams.num_workers,
-            pin_memory=True)
+        dl = self.test_dataloader()
         return next(iter(dl))
 
         # called on every process in DDP
     def train_dataloader(self):
+        if self.hparams.dataset_type == graphDataset:
+            # For graph dataset we use pyg DataLoader
+            return GeoDataLoader(
+                self.mddata_train,
+                batch_size=self.hparams.batch_size,
+                shuffle=True,
+                drop_last=True,
+                num_workers=self.hparams.num_workers,
+                pin_memory=True)
         return DataLoader(
             self.mddata_train,
             batch_size=self.hparams.batch_size,
@@ -347,6 +350,15 @@ class XtcDataset(pl.LightningDataModule):
             pin_memory=True)
 
     def val_dataloader(self):
+        if self.hparams.dataset_type == graphDataset:
+            # For graph dataset we use pyg DataLoader
+            return GeoDataLoader(
+                self.mddata_val,
+                batch_size=self.hparams.val_batch_size,
+                shuffle=False,
+                drop_last=True,
+                num_workers=self.hparams.num_workers,
+                pin_memory=True)
         return DataLoader(
             self.mddata_val,
             batch_size=self.hparams.val_batch_size,
@@ -357,6 +369,16 @@ class XtcDataset(pl.LightningDataModule):
 
     def test_dataloader(self):
         mddata_test = self.xtcData_full
+        if self.hparams.dataset_type == graphDataset:
+            # For graph dataset we use pyg DataLoader
+            return GeoDataLoader(
+                mddata_test,
+                batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size is not None else len(
+                    mddata_test),
+                shuffle=False,
+                drop_last=True,
+                num_workers=self.hparams.num_workers,
+                pin_memory=True)
         return DataLoader(
             mddata_test,
             batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size is not None else len(
