@@ -17,9 +17,9 @@ from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 from utils import parse_vars
 
 torch.manual_seed(0)
+torch.set_default_dtype(torch.float64)
 np.random.seed(0)
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
-
 ##################################
 # Arguments
 ##################################
@@ -52,26 +52,25 @@ def parse_args():
     parser.add_argument('--load_model', default=None, type=str, help='Load model from checkpoint')
 
     # Run parameters
-    parser.add_argument('--nogpu', action="store_true", help='Do not use gpu acceleration')
-    parser.add_argument('--normalize', action="store_true", help='Normalize input or not')
-    parser.add_argument('--plot_every', type=int, default=0, help='Number of epochs to run')
-    parser.add_argument('--bondrestrict', action="store_true",
-                        help='Add bond deviation loss to the training')
-    parser.add_argument('--stericloss', action="store_true",
-                        help='Add steric loss to the training')
+    parser.add_argument('--nogpu', action="store_true", help='Do not use gpu acceleration even if available')
+    # parser.add_argument('--plot_every', type=int, default=0, help='Number of epochs to run')
+    # parser.add_argument('--bondrestrict', action="store_true",
+    #                     help='Add bond deviation loss to the training')
+    # parser.add_argument('--stericloss', action="store_true",
+    #                     help='Add steric loss to the training')
 
-    parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
-    parser.add_argument('--scheduler', action="store_true", help='Use learning rate scheduler')
-    parser.add_argument('--scheduler_gamma', type=float, default=0.1, help='Learning rate scheduler gamma')
-    parser.add_argument('--weight_decay', type=float, default=1e-3, help='Weights regularization for the training')
-    parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
+    # parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
+    # parser.add_argument('--scheduler', action="store_true", help='Use learning rate scheduler')
+    # parser.add_argument('--scheduler_gamma', type=float, default=0.1, help='Learning rate scheduler gamma')
+    # parser.add_argument('--weight_decay', type=float, default=1e-3, help='Weights regularization for the training')
+    # parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
 
     parser.add_argument('--networktype', type=str, default='VAE', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
-    parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
+    # parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
     parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
 
     parser.add_argument('--export_latent', action="store_true", help='Export latent space values on the data')
-    parser.add_argument('--no_plotdata', action="store_true", help='Do not export plot data as numpy objects')
+    # parser.add_argument('--no_plotdata', action="store_true", help='Do not export plot data as numpy objects')
 
 
     args, _ = parser.parse_known_args()
@@ -89,21 +88,18 @@ odir = args.outpath + "/" + args.outfolder + "_"
 nntype = args.networktype
 nexp = args.nexp
 # Input directory and columns
-ignore_list = ["#!", "FIELDS", "time"]
-# Input standarization
-standardize_inputs = args.normalize # Normalize inputs to range -1 to 1 (no normalization for values below 1e-6)
 # Output file
 output_to_file = args.output_to_file
 output_to_terminal = True
 # Load pre-trained model
 # Train model
-hidden_nodes = args.network # NN hidden layers
+# hidden_nodes = args.network # NN hidden layers
 num_epochs = args.nepochs
-plot_every = args.plot_every
+# plot_every = args.plot_every
 train = True if num_epochs > 0 else False
 # Optimization
-lrate = args.lrate  # Learning rate
-weight_decay = args.weight_decay  # Weights regularization
+# lrate = args.lrate  # Learning rate
+# weight_decay = args.weight_decay  # Weights regularization
 
 
 
@@ -143,10 +139,10 @@ elif nntype == "VAEC":
     from nets.vae_cnn_net import VAEC as main_nn
     from nets.vae_cnn_net import VAEC_args as nn_nested_args
 elif nntype == "GRAPH_ENCODER":
-    from nets.gnn_encoder import BondGraphNetEncoder as main_nn
+    from nets.gnn_encoder import BondGraphNetEncoderDecoder as main_nn
     from nets.gnn_encoder import BGNE_args as nn_nested_args
 else:
-    raise ValueError("Unknown network type")
+    raise ValueError("Unknown network type: "+nntype)
 
 if args.datatype == 'KMC':
     from dataloaders.kmc_dataloader import KmcDataset as main_dl
@@ -188,8 +184,6 @@ if len(os.listdir(odir_name)) != 0:
     import shutil
     shutil.rmtree(odir_name, ignore_errors=True)
     os.mkdir(odir_name)
-
-
 
 ##################################
 # Output to file
@@ -241,19 +235,9 @@ if args.datatype == 'MD17':
 ##################################
 # Setting up the NN
 ##################################
-
-nodes = [int(x) for x in hidden_nodes.split(",")]
-nodes.insert(0, colvardata.num_inputs)
-
-
 netargs = {}
-
-
 if nntype in ["GRAPH_ENCODER"]:
-    # netargs['lr'] = lrate
-    # netargs['weight_decay'] = args.weight_decay
-    # netargs['scheduler_gamma'] = args.scheduler_gamma
-    pass
+    netargs['template_data'] = colvardata.get_dataset().get_template_graph()
 else:
     netargs['lr'] = lrate
     netargs['l2_reg'] = args.weight_decay
@@ -262,6 +246,9 @@ else:
     netargs['plot_every'] = args.plot_every
     netargs['saveplotdata'] = not args.no_plotdata
     netargs['lr_scheduler'] = args.scheduler_gamma  
+
+    nodes = [int(x) for x in hidden_nodes.split(",")]
+    nodes.insert(0, colvardata.num_inputs)
 
     if nntype != "GMVAE":
         netargs['l'] = nodes
@@ -280,11 +267,8 @@ if nntype in ["EDVAE", "EDVAEGAN"]:
         if 'atomic_numbers' not in netargs.keys():
             netargs['atomic_numbers'] = colvardata.get_atns()
         
-        
-
 nn_nested_args = nn_nested_args()
 netargs = netargs | vars(nn_nested_args)
-
 
 if args.load_model != None and args.load_model != "false":
     checkpoint_file = args.load_model
@@ -292,9 +276,6 @@ if args.load_model != None and args.load_model != "false":
     model = main_nn.load_from_checkpoint(checkpoint_file, **netargs)
 else:
     model = main_nn(**netargs)
-if standardize_inputs:
-    model.set_norm(torch.Tensor(colvardata.get_scaler_mean(), device=model.device),
-                    torch.Tensor(colvardata.get_scaler_scale(), device=model.device))
 
 ##################################
 # Training the NN
@@ -322,20 +303,6 @@ if args.tblogger:
 trainer = pl.Trainer(**trainargs)
 
 
-
-
-
-
-test_datapoint = colvardata.get_full_batch()
-print("Test datapoint shape:", test_datapoint)
-model_output = model(test_datapoint)
-print("Model output shape:", model_output[0].shape if type(model_output) is tuple else model_output.shape)
-
-
-exit()
-
-
-
 if train:
     # trainer.tune(model, datamodule=colvardata) # To auto find the lr
     trainer.fit(model, datamodule=colvardata)
@@ -352,8 +319,8 @@ if not train and args.load_model == None:
 
 if args.output_traj:
     colvardata.output_trajectory(f"{odir_name}/data_trajectory.pdb")
-    if not args.networktype in ["DVAE", "EDVAE", "EDVAEGAN"]:
-        Warning("Model does not output coordinates, cannot output predicted trajectory")
+    if not args.datatype in ["XTC"]:
+        raise ValueError(f"Unsupported data type: {args.datatype}")
     else:
         pred = model(colvardata.get_full_batch()[0])[0].detach().cpu().numpy()
         colvardata.output_trajectory(f"{odir_name}/recon_trajectory.pdb", pred)
@@ -364,7 +331,6 @@ if args.output_traj:
 
 if export_latent:
     model.export_latent(next(iter(colvardata.test_dataloader())))
-
 
 ##################################
 # Serializing and checkpointing the model

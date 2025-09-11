@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 from torch_geometric.data import Data, Dataset
 
-DOUBLE_PRECISION = False
+torch.set_default_dtype(torch.float64)
 
 def bond_type_one_hot(kind: str) -> List[float]:
     # single, double, triple, aromatic, virtual
@@ -51,7 +51,6 @@ class graphDataset(Dataset):
             structures: List[ase.Atoms],
             bond_indices: List[Tuple[int, int]],
             labels: Optional[List[float]] = None,
-            dtype: torch.dtype = torch.float32,
             add_torsion: bool = True,
             add_angles: bool = True,
             validate_indices: bool = True,
@@ -66,7 +65,6 @@ class graphDataset(Dataset):
         self.labels = labels if labels is not None else [None] * len(structures)
         assert len(self.structures) == len(self.labels), "Structures and labels length mismatch"
         self.bond_indices: List[Tuple[int, int]] = [tuple(map(int, b)) for b in bond_indices]
-        self.dtype = dtype
         self.add_torsion = add_torsion
         self.add_angles = add_angles
         if validate_indices:
@@ -93,7 +91,7 @@ class graphDataset(Dataset):
             # mi = atomic_masses[Zi]
             # mj = atomic_masses[Zj]
             feats.append([Zi, Zj, d])
-        return torch.tensor(feats, dtype=self.dtype)
+        return torch.tensor(feats)
 
     def _angle_and_torsion_edges(self, atoms: ase.Atoms, bonds: List[Tuple[int, int, float]]):
         # Map bond (i,j) with i<j to bond index
@@ -179,10 +177,10 @@ class graphDataset(Dataset):
 
         if len(edge_index_src) == 0:
             edge_index = torch.empty((2, 0), dtype=torch.long)
-            edge_attr_t = torch.empty((0, 3), dtype=self.dtype)
+            edge_attr_t = torch.empty((0, 3))
         else:
             edge_index = torch.tensor([edge_index_src, edge_index_dst], dtype=torch.long)
-            edge_attr_t = torch.tensor(edge_attr, dtype=self.dtype)
+            edge_attr_t = torch.tensor(edge_attr)
 
         return edge_index, edge_attr_t, bond_index_map
 
@@ -198,9 +196,10 @@ class graphDataset(Dataset):
         edge_index, edge_attr, _ = self._angle_and_torsion_edges(atoms, bonds)
         # Store bond <-> atom mapping
         bond_atoms = torch.tensor([[i, j] for (i, j, _) in bonds], dtype=torch.long)
-        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, bond_index=bond_atoms)
+        positions = torch.tensor(atoms.get_positions())
+        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, bond_index=bond_atoms, pos=positions)
         if label is not None:
-            y = torch.tensor([label], dtype=self.dtype)
+            y = torch.tensor([label])
             data.y = y
         data.num_nodes = x.size(0)
         return data
@@ -398,7 +397,7 @@ class graphDataset(Dataset):
                 vec.extend(at_one)
             node_features.append(vec)
 
-        x = torch.tensor(node_features, dtype=self.dtype)
+        x = torch.tensor(node_features)
 
         # Precompute distances
         dmat = np.linalg.norm(positions[:, None, :] - positions[None, :, :], axis=-1)
@@ -411,8 +410,8 @@ class graphDataset(Dataset):
         # For now assume all provided bonds are single (RDKit could refine but keep simple)
         for (i, j) in bond_set:
             dist = float(dmat[i, j])
-            bt = torch.tensor(bond_type_one_hot("single"), dtype=self.dtype)
-            feat = torch.cat([bt, torch.tensor([dist], dtype=self.dtype)], dim=0)
+            bt = torch.tensor(bond_type_one_hot("single"))
+            feat = torch.cat([bt, torch.tensor([dist])], dim=0)
             for s, t in ((i, j), (j, i)):
                 edge_src.append(s)
                 edge_dst.append(t)
@@ -444,8 +443,8 @@ class graphDataset(Dataset):
                         continue  # already direct edge
                     # add virtual edge both directions
                     dist = float(dmat[a, b])
-                    bt = torch.tensor(bond_type_one_hot("virtual"), dtype=self.dtype)
-                    feat = torch.cat([bt, torch.tensor([dist], dtype=self.dtype)], dim=0)
+                    bt = torch.tensor(bond_type_one_hot("virtual"))
+                    feat = torch.cat([bt, torch.tensor([dist])], dim=0)
                     edge_src.append(a)
                     edge_dst.append(b)
                     edge_attr_list.append(feat)
@@ -458,7 +457,7 @@ class graphDataset(Dataset):
             edge_attr = torch.stack(edge_attr_list, dim=0)
         else:
             edge_index = torch.empty((2, 0), dtype=torch.long)
-            edge_attr = torch.empty((0, 5 + 1), dtype=self.dtype)
+            edge_attr = torch.empty((0, 5 + 1))
 
         data = Data(
             x=x,

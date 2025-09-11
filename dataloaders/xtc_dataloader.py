@@ -24,7 +24,7 @@ import pytorch_lightning as pl
 from datasets.distances_dataset import distancesDataset
 from datasets.graph import graphDataset
 
-DOUBLE_PRECISION = False
+torch.set_default_dtype(torch.float64)
 
 class XtcData(Dataset):
     """XTC dataset"""
@@ -250,15 +250,10 @@ class XtcDataset(pl.LightningDataModule):
         self.xtcData_full = dataset_type(
                 structures=mol_traj,
                 labels=labels,
-                dtype=torch.float64 if DOUBLE_PRECISION else torch.float32,
                 **dataset_args
                 )
         
-        self.target_scaler = StandardScaler()
-        if dataset_type in [XtcData, distancesDataset]:
-            self.num_inputs = self.xtcData_full.num_inputs
-            self.datapoint_shape = tuple(self.xtcData_full[0][0].shape)
-            self.target_scaler.fit(self.xtcData_full.get_data()[0])
+        self.target_scaler = None
         
         if dataset_type == graphDataset:
             print(f"Loaded graph dataset with {len(self.xtcData_full)} graphs") if verbose else None
@@ -269,16 +264,6 @@ class XtcDataset(pl.LightningDataModule):
             self.num_inputs = len(self.bonds)
             self.datapoint_shape = (len(self.bonds), self.xtcData_full[0].x.shape[1])
 
-            # We only normalize the bond lengths (3rd column of node features) and edge features
-            data_to_normalize = [] 
-            for g in self.xtcData_full:
-                node_feat = g.x[:,2].numpy()
-                edge_feat = g.edge_attr.numpy()
-                data_to_normalize.append(np.hstack([node_feat.flatten(), edge_feat.flatten()]))
-            data_to_normalize = np.vstack(data_to_normalize)
-            self.target_scaler.fit(data_to_normalize)
-
-        
         self.save_hyperparameters()
 
         if self.hparams.batch_size is None:
@@ -313,6 +298,26 @@ class XtcDataset(pl.LightningDataModule):
     def get_bond_indices(self):
         return self.bonds
     
+    def fit_target_scaler(self):
+        if self.target_scaler is not None:
+            return
+        self.target_scaler = StandardScaler()
+
+        if self.hparams.dataset_type in [XtcData, distancesDataset]:
+            self.num_inputs = self.xtcData_full.num_inputs
+            self.datapoint_shape = tuple(self.xtcData_full[0][0].shape)
+            self.target_scaler.fit(self.xtcData_full.get_data()[0])
+        elif self.hparams.dataset_type == graphDataset:
+            data_to_normalize = [] 
+            for g in self.xtcData_full:
+                node_feat = g.x.numpy()
+                edge_feat = g.edge_attr.numpy()
+                data_to_normalize.append(np.hstack([node_feat.mean(axis=0), edge_feat.mean(axis=0)]))
+            data_to_normalize = np.vstack(data_to_normalize)
+            self.target_scaler.fit(data_to_normalize)
+        else:
+            raise ValueError(f"Unsupported dataset type for normalization {self.hparams.dataset_type}")
+    
     def output_trajectory(self, output_file, trajectory = None):
         if os.path.exists(output_file):
             Warning(f"File {output_file} already exists. Overwriting...")
@@ -329,6 +334,9 @@ class XtcDataset(pl.LightningDataModule):
     def get_full_batch(self):
         dl = self.test_dataloader()
         return next(iter(dl))
+    
+    def get_dataset(self):
+        return self.xtcData_full
 
         # called on every process in DDP
     def train_dataloader(self):
@@ -389,18 +397,23 @@ class XtcDataset(pl.LightningDataModule):
             pin_memory=True)
 
     def target_scaler(self, X):
+        self.fit_target_scaler()
         return self.target_scaler.transform(X)
 
     def target_inverse_scaler(self, X):
+        self.fit_target_scaler()
         return self.target_scaler.inverse_transform(X)
 
     def get_scaler_mean(self):
+        self.fit_target_scaler()
         return self.target_scaler.mean_
 
     def get_scaler_var(self):
+        self.fit_target_scaler()
         return self.target_scaler.var_
 
     def get_scaler_scale(self):
+        self.fit_target_scaler()
         return self.target_scaler.scale_
 
     def get_datapoint_shape(self):
