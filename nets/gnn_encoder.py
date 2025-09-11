@@ -61,22 +61,21 @@ class AttentionMP(MessagePassing):
         self.q_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.k_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.v_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        
+        self.node_msg = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.edge_msg = nn.Linear(edge_dim, hidden_dim, bias=False)
 
-        # Edge encoders
-        self.edge_mlp = nn.Sequential(
-            nn.Linear(edge_dim, hidden_dim),
-            nn.ELU(),
-            nn.Linear(hidden_dim, hidden_dim),
+        self.beta = nn.Sequential(
+            nn.Linear(hidden_dim*3, 1, bias=False), 
+            nn.Sigmoid()
         )
-        self.edge_attn = nn.Linear(hidden_dim, heads, bias=False)
-        self.edge_msg = nn.Linear(hidden_dim, hidden_dim, bias=False)
 
-        self.out_proj = nn.Linear(hidden_dim, hidden_dim)
         self.attn_drop = nn.Dropout(dropout)
 
     def forward(self, x: Tensor, edge_index: Tensor, edge_attr: Optional[Tensor]) -> Tensor:
         if edge_index.numel() == 0:
             return x  # no edges
+
         return self.propagate(edge_index, x=x, edge_attr=edge_attr)
 
     def message(self, x_i: Tensor, x_j: Tensor, edge_attr: Tensor, index: Tensor) -> Tensor:
@@ -85,34 +84,32 @@ class AttentionMP(MessagePassing):
         k = self.k_proj(x_j).view(-1, self.heads, self.d_head)
         v = self.v_proj(x_j).view(-1, self.heads, self.d_head)
 
-        e = self.edge_mlp(edge_attr)  # (E, hidden_dim)
-        e_attn = self.edge_attn(e)  # (E, heads)
-        e_msg = self.edge_msg(e).view(-1, self.heads, self.d_head)  # (E, heads, d_head)
+        e_msg = self.edge_msg(edge_attr).view(-1, self.heads, self.d_head)  # (E, heads, d_head)
 
-        logits = (q * k).sum(dim=-1) / math.sqrt(self.d_head)  # (E, heads)
-        logits = logits + e_attn  # add edge bias
+        k_e = k + e_msg  # (E, heads, d_head)
+
+        logits = (q * k_e).sum(dim=-1) / math.sqrt(self.d_head)  # (E, heads)
 
         alpha = softmax(logits, index)  # softmax over incoming edges per target node
         alpha = self.attn_drop(alpha)
         alpha = alpha.unsqueeze(-1)  # (E, heads, 1)
 
         msg = alpha * (v + e_msg)  # (E, heads, d_head)
+
+        msg = msg.view(-1, self.hidden_dim)  # (E, hidden_dim)
+              
         return msg
 
-    def aggregate(self, inputs: Tensor, index: Tensor, ptr=None, dim_size=None):  # type: ignore
-        # inputs: (E, heads, d_head)
-        out = torch.zeros(dim_size, self.heads, self.d_head, device=inputs.device, dtype=inputs.dtype)
-        out.index_add_(0, index, inputs)
-        return out
-
-    def update(self, aggr_out: Tensor) -> Tensor:
+    def update(self, aggr_out: Tensor, x_i: Tensor, index: Tensor) -> Tensor:
         # aggr_out: (N, heads, d_head)
-        out = aggr_out.view(-1, self.hidden_dim)
-        out = self.out_proj(out)
+        n_msg_all = self.node_msg(x_i)
+        n_msg = torch.zeros_like(aggr_out)
+        n_msg.index_add_(0, index, n_msg_all)
+
+        beta = self.beta(torch.cat([n_msg, aggr_out, n_msg - aggr_out], dim=-1))  # (N, heads, 1)
+        out = beta * n_msg + (1 - beta) * aggr_out  # (N, heads, d_head)
+        out = out.view(-1, self.hidden_dim)  # (N, hidden_dim)
         return out
-
-
-
 
 class BondGraphNetEncoder(nn.Module):
     """Bond-based message passing GNN Encoder with multi-head attention and Set2Set pooling.
