@@ -15,7 +15,7 @@ from MDAnalysis.lib.distances import calc_dihedrals
 import MDAnalysis.transformations as trans
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch_geometric.loader import DataLoader as GeoDataLoader
@@ -23,8 +23,6 @@ import pytorch_lightning as pl
 
 from datasets.distances_dataset import distancesDataset
 from datasets.graph import graphDataset
-
-torch.set_default_dtype(torch.float64)
 
 class XtcData(Dataset):
     """XTC dataset"""
@@ -67,7 +65,25 @@ def xtcdatset_args():
     parser.add_argument('--sequential', dest="sequential",
                         action='store_true', 
                         help='Weather the trajectory should be sequential or not')
+    parser.add_argument('--norm_type', dest="norm_type",
+                        type=str, default='standard', choices=['standard', 'minmax'],
+                        help='Normalization type to use')
     
+    parser.add_argument('--train_prop', dest='train_prop', type=float, default=0.8,
+                        help='Proportion of the data to use for training')
+    parser.add_argument('--validation_prop', dest='validation_prop', type=float, default=0.2,
+                        help='Proportion of the data to use for validation')
+    parser.add_argument('--batch_size', dest='batch_size', type=int, default=None,
+                        help='Batch size for training')
+    parser.add_argument('--val_batch_size', dest='val_batch_size', type=int, default=None,
+                        help='Batch size for validation')
+    parser.add_argument('--test_batch_size', dest='test_batch_size', type=int, default=None,
+                        help='Batch size for testing')
+    parser.add_argument('--num_workers', dest='num_workers', type=int, default=1,
+                        help='Number of workers for data loading')
+    parser.add_argument('--verbose', dest='verbose', action='store_true',
+                        help='Whether to print information about the dataset loading')
+
     label_group = parser.add_mutually_exclusive_group()
     label_group.add_argument('--label_distance', dest='label_distance', 
                              type=str, default=None, 
@@ -107,6 +123,7 @@ class XtcDataset(pl.LightningDataModule):
                  dataset_args : Dict = {},
                  label_distance : str = None,
                  label_dihedrals : str = None,
+                 norm_type : str = 'standard',
                  ):
         super().__init__()
         print(f"\n\n[Initializing XtcDataset Module]") if verbose else None
@@ -240,6 +257,7 @@ class XtcDataset(pl.LightningDataModule):
         self.train_size = int(FRAMES * train_prop)
         self.validation_size = int(FRAMES * validation_prop)
         self.test_size = FRAMES - self.train_size - self.validation_size
+        print(f"Train size: {self.train_size}, Validation size: {self.validation_size}, Test size: {self.test_size}") if verbose else None
         
         self.mol_traj = mol_traj
 
@@ -301,7 +319,12 @@ class XtcDataset(pl.LightningDataModule):
     def fit_target_scaler(self):
         if self.target_scaler is not None:
             return
-        self.target_scaler = StandardScaler()
+        if self.hparams.norm_type == 'standard':
+            self.target_scaler = StandardScaler()
+        elif self.hparams.norm_type == 'minmax':
+            self.target_scaler = MinMaxScaler()
+        else:
+            raise ValueError(f"Normalization type {self.hparams.norm_type} not supported")
 
         if self.hparams.dataset_type in [XtcData, distancesDataset]:
             self.num_inputs = self.xtcData_full.num_inputs
@@ -376,6 +399,26 @@ class XtcDataset(pl.LightningDataModule):
             pin_memory=True)
 
     def test_dataloader(self):
+        if self.hparams.dataset_type == graphDataset:
+            # For graph dataset we use pyg DataLoader
+            return GeoDataLoader(
+                self.mddata_test,
+                batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size not in [None, 0] else len(
+                    self.mddata_test),
+                shuffle=False,
+                drop_last=True,
+                num_workers=self.hparams.num_workers,
+                pin_memory=True)
+        return DataLoader(
+            self.mddata_test,
+            batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size not in [None, 0] else len(
+                self.mddata_test),
+            shuffle=False,
+            drop_last=True,
+            num_workers=self.hparams.num_workers,
+            pin_memory=True)
+
+    def full_dataloader(self):
         mddata_test = self.xtcData_full
         if self.hparams.dataset_type == graphDataset:
             # For graph dataset we use pyg DataLoader

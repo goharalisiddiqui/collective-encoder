@@ -237,7 +237,7 @@ if args.datatype == 'MD17':
 ##################################
 netargs = {}
 if nntype in ["GRAPH_ENCODER"]:
-    netargs['template_data'] = colvardata.get_dataset().get_template_graph()
+    netargs['datasetobject'] = colvardata.get_dataset()
 else:
     netargs['lr'] = lrate
     netargs['l2_reg'] = args.weight_decay

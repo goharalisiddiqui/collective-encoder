@@ -1,7 +1,10 @@
 import argparse
 import math
-from typing import List, Optional
+from typing import Callable, List, Optional
 
+import numpy as np
+
+from torch_geometric.data import Dataset
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
@@ -9,26 +12,24 @@ from torch_geometric.nn import MessagePassing, Set2Set
 from torch_geometric.utils import softmax
 import pytorch_lightning as pl
 
-torch.set_default_dtype(torch.float64)
-
 class ScalarFeatureEmbedding(nn.Module):
     """Applies one independent MLP per scalar feature dimension and sums outputs.
 
     Given input x of shape (N, F), we create F small MLPs each processing x[:, f:f+1].
     Each MLP outputs (N, hidden_dim); final embedding h is the (optionally scaled) sum.
     """
-    def __init__(self, in_features: int, hidden_dim: int, mlp_hidden: Optional[int] = None, activation=nn.ELU()):
+    def __init__(self, in_dim: int, out_dim: int, hidden_dim: int = 128, activation=nn.ELU()):
         super().__init__()
-        self.in_features = in_features
+        self.in_dim = in_dim
         self.hidden_dim = hidden_dim
-        mlp_hidden = mlp_hidden or hidden_dim
+        self.out_dim = out_dim
         self.mlps = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(1, mlp_hidden),
+                nn.Linear(1, hidden_dim),
                 activation,
-                nn.Linear(mlp_hidden, hidden_dim),
+                nn.Linear(hidden_dim, out_dim),
             )
-            for _ in range(in_features)
+            for _ in range(in_dim)
         ])
 
     def forward(self, x: Tensor) -> Tensor:
@@ -37,7 +38,7 @@ class ScalarFeatureEmbedding(nn.Module):
         for f, mlp in enumerate(self.mlps):
             outs.append(mlp(x[:, f:f+1]))
         h = torch.stack(outs, dim=0).sum(dim=0)  # (N, hidden_dim)
-        h = h / math.sqrt(self.in_features)  # scale
+        h = h / math.sqrt(self.in_dim)  # scale
         return h
 
 
@@ -50,20 +51,22 @@ class AttentionMP(MessagePassing):
     Aggregation: sum over j -> i
     Output: residual + linear projection + optional norm & activation handled externally.
     """
-    def __init__(self, hidden_dim: int, heads: int = 4, edge_dim: int = 3, dropout: float = 0.0):
+    def __init__(self, node_feat_dim: int, edge_feat_dim: int, hidden_dim: int = 128, heads: int = 4, dropout: float = 0.0):
         super().__init__(aggr='add', node_dim=0)
         assert hidden_dim % heads == 0, "hidden_dim must be divisible by heads"
+        self.node_feat_dim = node_feat_dim
+        self.edge_feat_dim = edge_feat_dim
         self.hidden_dim = hidden_dim
         self.heads = heads
         self.d_head = hidden_dim // heads
         self.dropout = dropout
 
-        self.q_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
-        self.k_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
-        self.v_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
-        
-        self.node_msg = nn.Linear(hidden_dim, hidden_dim, bias=False)
-        self.edge_msg = nn.Linear(edge_dim, hidden_dim, bias=False)
+        self.q_proj = nn.Linear(node_feat_dim, hidden_dim, bias=False)
+        self.k_proj = nn.Linear(node_feat_dim, hidden_dim, bias=False)
+        self.v_proj = nn.Linear(node_feat_dim, hidden_dim, bias=False)
+
+        self.node_msg = nn.Linear(node_feat_dim, hidden_dim, bias=False)
+        self.edge_msg = nn.Linear(edge_feat_dim, hidden_dim, bias=False)
 
         self.beta = nn.Sequential(
             nn.Linear(hidden_dim*3, 1, bias=False), 
@@ -122,33 +125,46 @@ class BondGraphNetEncoder(nn.Module):
 
     Args:
         in_features: Number of scalar node features (default 3 for bond nodes).
+        edge_dim: Edge feature dimension (default 3: angle one-hot + value).
         hidden_dim: Hidden embedding size.
         num_layers: Number of message passing layers (L).
         heads: Attention heads.
-        edge_dim: Edge feature dimension (default 3: angle one-hot + value).
         set2set_steps: T processing steps for Set2Set.
         latent_dim: Output latent embedding size.
         dropout: Dropout applied to attention coefficients.
     """
     def __init__(
         self,
-        in_features: int = 3,
+        node_feat: int = 3,
+        edge_feat: int = 3,
+        node_embed_dim: int = 10,
+        edge_embed_dim: int = 2,
         hidden_dim: int = 128,
         num_layers: int = 4,
         heads: int = 4,
-        edge_dim: int = 3,
         set2set_steps: int = 3,
         latent_dim: int = 256,
         dropout: float = 0.0,
     ):
         super().__init__()
+        self.node_embed_dim = node_embed_dim
+        self.edge_embed_dim = edge_embed_dim
         self.hidden_dim = hidden_dim
         self.latent_dim = latent_dim
 
-        self.feature_embed = ScalarFeatureEmbedding(in_features, hidden_dim)
+        self.node_embed = ScalarFeatureEmbedding(node_feat, node_embed_dim)
+        self.edge_embed = ScalarFeatureEmbedding(edge_feat, edge_embed_dim)
+
+        self.node_dim = node_embed_dim #* node_feat
+        self.edge_dim = edge_embed_dim #* edge_feat
+
         self.layers = nn.ModuleList([
-            AttentionMP(hidden_dim, heads=heads, edge_dim=edge_dim, dropout=dropout)
-            for _ in range(num_layers)
+            AttentionMP(node_feat_dim=self.node_dim if i == 0 else hidden_dim, 
+                        edge_feat_dim=self.edge_dim, 
+                        hidden_dim=hidden_dim, 
+                        heads=heads, 
+                        dropout=dropout)
+            for i in range(num_layers)
         ])
         self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers)])
         self.elu = nn.ELU()
@@ -159,15 +175,15 @@ class BondGraphNetEncoder(nn.Module):
         x, edge_index, edge_attr = data.x, data.edge_index, getattr(data, 'edge_attr', None)
         if edge_attr is None:
             # create zero edge features if missing
-            edge_attr = torch.zeros(edge_index.size(1), 3, device=x.device, dtype=x.dtype)
+            edge_attr = torch.zeros(edge_index.size(1), self.edge_dim, device=x.device, dtype=x.dtype)
         batch = getattr(data, 'batch', None)
         if batch is None:
             batch = x.new_zeros(x.size(0), dtype=torch.long)
 
-        h = self.feature_embed(x)
+        h = self.node_embed(x)
+        e = self.edge_embed(edge_attr)
         for mp, bn in zip(self.layers, self.bns):
-            h_new = mp(h, edge_index, edge_attr)
-            h = h + h_new  # residual
+            h = mp(h, edge_index, e)
             h = bn(h)
             h = self.elu(h)
 
@@ -227,11 +243,15 @@ class BondGraphNetDecoder(nn.Module):
         self,
         template_data,  # PyG Data object (atom-level or bond-level template graph)
         latent_dim: int,
+        label_indices: Optional[tuple],  # (bond_index, angle_index, torsion_index)
+        node_embed_dim: int = 10,
+        edge_embed_dim: int = 2,
         hidden_dim: int = 128,
         num_layers: int = 4,
         heads: int = 4,
         dropout_mp: float = 0.0,
         dropout_mlp: float = 0.0,
+        final_mlp_layers: int = 3,
         rbf_dim: int = 16,
         rbf_min: float = 0.0,
         rbf_max: float = 4.0,
@@ -241,11 +261,17 @@ class BondGraphNetDecoder(nn.Module):
     ):
         super().__init__()
         self.latent_dim = latent_dim
+        self.bond_index = np.array(label_indices[0])
+        self.angle_index = np.array(label_indices[1])
+        self.torsion_index = np.array(label_indices[2])
+        self.node_embed_dim = node_embed_dim
+        self.edge_embed_dim = edge_embed_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.heads = heads
         self.dropout_mp = dropout_mp
         self.dropout_mlp = dropout_mlp
+        self.final_mlp_layers = final_mlp_layers
         self.rbf_dim = rbf_dim
         self.register_buffer('rbf_centers', torch.linspace(rbf_min, rbf_max, rbf_dim))
         self.rbf_gamma = rbf_gamma
@@ -266,13 +292,19 @@ class BondGraphNetDecoder(nn.Module):
         edge_features = torch.cat([bond_types, bond_rbf], dim=-1)  # (E, 5+rbf_dim)
 
         # Per-feature MLP embedding for nodes and edges
-        self.node_embed = ScalarFeatureEmbedding(in_features=template_data.x.size(1), hidden_dim=hidden_dim)
-        self.edge_embed = ScalarFeatureEmbedding(in_features=edge_features.size(1), hidden_dim=hidden_dim)
+        self.node_embed = ScalarFeatureEmbedding(in_dim=template_data.x.size(1), out_dim=node_embed_dim)
+        self.edge_embed = ScalarFeatureEmbedding(in_dim=edge_features.size(1), out_dim=edge_embed_dim)
 
+        self.node_dim = node_embed_dim #* template_data.x.size(1)
+        self.edge_dim = edge_embed_dim #* edge_features.size(1)
         # Attention message passing layers (edge_dim = hidden_dim after embedding)
         self.mp_layers = nn.ModuleList([
-            AttentionMP(hidden_dim, heads=heads, edge_dim=hidden_dim, dropout=dropout_mp)
-            for _ in range(num_layers)
+            AttentionMP(node_feat_dim=self.node_dim if i == 0 else hidden_dim, 
+                        edge_feat_dim=self.edge_dim, 
+                        hidden_dim=hidden_dim, 
+                        heads=heads, 
+                        dropout=dropout_mp)
+            for i in range(num_layers)
         ])
         self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers)])
         self.elu = nn.ELU()
@@ -280,12 +312,16 @@ class BondGraphNetDecoder(nn.Module):
         # Precompute structural embedding (optional)
         if precompute:
             with torch.no_grad():
-                h_nodes = self.node_embed(template_data.x)
-                h_edges = self.edge_embed(edge_features)
-                h = h_nodes
+                h = self.node_embed(template_data.x)
+                e = self.edge_embed(edge_features)
+                # print("Precomputing template node representations with shape:", h.shape)
+                # print("Precomputing template edge representations with shape:", e.shape)
+                # print(self.node_dim, self.edge_dim)
+                # print(template_data.x.size(1), edge_features.size(1))
+                # print(template_data.x.size(0), edge_features.size(0))
+                # exit()
                 for mp, bn in zip(self.mp_layers, self.bns):
-                    h_new = mp(h, template_data.edge_index, h_edges)
-                    h = h + h_new
+                    h = mp(h, template_data.edge_index, e)
                     h = bn(h)
                     h = self.elu(h)
                 self.register_buffer('template_node_repr', h)
@@ -296,89 +332,33 @@ class BondGraphNetDecoder(nn.Module):
         self.register_buffer('template_edge_index', template_data.edge_index.clone())
 
         # ---------- Build combinatorial sets (bonds, angles, dihedrals) ----------
-        self._build_topology_sets(template_data)
+        # self._build_topology_sets(template_data)
 
         # ---------- Prediction heads ----------
         bond_in = 2 * hidden_dim + latent_dim
         angle_in = 3 * hidden_dim + latent_dim
         dihedral_in = 4 * hidden_dim + latent_dim
 
-        def head(in_dim):
-            return nn.Sequential(
-                nn.Linear(in_dim, hidden_dim),
-                nn.ELU(),
-                nn.Dropout(dropout_mlp),
-                nn.Linear(hidden_dim, 1)
-            )
+        def head(in_dim, n_layers=2):
+            layers = []
+            for _ in range(n_layers):
+                layers.append(nn.Linear(in_dim, hidden_dim))
+                layers.append(nn.ELU())
+                layers.append(nn.Dropout(dropout_mlp))
+                in_dim = hidden_dim
+            layers.append(nn.Linear(hidden_dim, 1))
+            return nn.Sequential(*layers)
 
-        self.bond_head = head(bond_in)
-        self.angle_head = head(angle_in)
-        self.dih_cos_head = head(dihedral_in)
-        self.dih_sin_head = head(dihedral_in)
+        self.bond_head = head(bond_in, final_mlp_layers)
+        self.angle_head = head(angle_in, final_mlp_layers)
+        self.dih_cos_head = head(dihedral_in, final_mlp_layers)
+        self.dih_sin_head = head(dihedral_in, final_mlp_layers)
 
     # ------------------------------------------------------------------
     def _rbf_embed(self, distances: Tensor) -> Tensor:
         # distances: (E,)
         diff = distances.unsqueeze(-1) - self.rbf_centers  # (E, rbf_dim)
         return torch.exp(-self.rbf_gamma * diff * diff)
-
-    def _build_topology_sets(self, template_data):
-        edge_index = template_data.edge_index
-        edge_attr = template_data.edge_attr
-        # Identify real bonds (exclude virtual). virtual index assumed last of 5 one-hot positions
-        real_mask = edge_attr[:, 4] < 0.5  # (E,)
-        bonds_set = set()
-        for e in range(edge_index.size(1)):
-            if not real_mask[e]:
-                continue
-            i = int(edge_index[0, e])
-            j = int(edge_index[1, e])
-            if i == j:
-                continue
-            a, b = (i, j) if i < j else (j, i)
-            bonds_set.add((a, b))
-        bonds_list = sorted(list(bonds_set))
-        self.register_buffer('bond_index_pairs', torch.tensor(bonds_list, dtype=torch.long) if bonds_list else torch.empty((0, 2), dtype=torch.long))
-
-        # Build adjacency from real bonds
-        adj = {i: set() for i in range(template_data.x.size(0))}
-        for (a, b) in bonds_list:
-            adj[a].add(b)
-            adj[b].add(a)
-
-        # Angles: i-j-k with bonds (i,j) and (j,k), i<k to avoid dup
-        angles = []
-        for j in range(template_data.x.size(0)):
-            neigh = sorted(list(adj[j]))
-            ln = len(neigh)
-            for u in range(ln):
-                for v in range(u + 1, ln):
-                    i = neigh[u]; k = neigh[v]
-                    if i == k:
-                        continue
-                    if i < k:
-                        angles.append((i, j, k))
-                    else:
-                        angles.append((k, j, i))
-        angles = sorted(list(set(angles)))
-        self.register_buffer('angle_index_triples', torch.tensor(angles, dtype=torch.long) if angles else torch.empty((0,3), dtype=torch.long))
-
-        # Dihedrals: i-j-k-l with bonds (i,j),(j,k),(k,l), ensure uniqueness (i<l)
-        dihedrals = set()
-        for (j, k) in bonds_list:
-            # consider j<k already ensured by bonds_list
-            lefts = [i for i in adj[j] if i != k]
-            rights = [l for l in adj[k] if l != j]
-            for i in lefts:
-                for l in rights:
-                    if len({i, j, k, l}) < 4:
-                        continue
-                    if i < l:
-                        dihedrals.add((i, j, k, l))
-                    else:
-                        dihedrals.add((l, k, j, i))  # canonical reverse
-        dih_list = sorted(list(dihedrals))
-        self.register_buffer('dihedral_index_quads', torch.tensor(dih_list, dtype=torch.long) if dih_list else torch.empty((0,4), dtype=torch.long))
 
     # ------------------------------------------------------------------
     def _compute_template_repr(self, device):
@@ -405,12 +385,12 @@ class BondGraphNetDecoder(nn.Module):
         template_h = self._compute_template_repr(device)  # (N, H)
 
         # Bonds
-        bond_idx = self.bond_index_pairs.to(device)
-        angle_idx = self.angle_index_triples.to(device)
-        dih_idx = self.dihedral_index_quads.to(device)
+        bond_idx = self.bond_index
+        angle_idx = self.angle_index
+        dih_idx = self.torsion_index
 
         preds = {}
-        if bond_idx.numel() > 0:
+        if bond_idx.size > 0:
             h_bi = template_h[bond_idx[:,0]]
             h_bj = template_h[bond_idx[:,1]]
             bond_feat = torch.cat([h_bi, h_bj], dim=-1)  # (Nb, 2H)
@@ -423,7 +403,7 @@ class BondGraphNetDecoder(nn.Module):
         preds[self.out_labels[0]] = bond_out
 
         # Angles
-        if angle_idx.numel() > 0:
+        if angle_idx.size > 0:
             h_i = template_h[angle_idx[:,0]]
             h_j = template_h[angle_idx[:,1]]
             h_k = template_h[angle_idx[:,2]]
@@ -437,7 +417,7 @@ class BondGraphNetDecoder(nn.Module):
         preds[self.out_labels[1]] = angle_out
 
         # Dihedrals
-        if dih_idx.numel() > 0:
+        if dih_idx.size > 0:
             h_i = template_h[dih_idx[:,0]]
             h_j = template_h[dih_idx[:,1]]
             h_k = template_h[dih_idx[:,2]]
@@ -461,8 +441,10 @@ def bgne_parse_args():
     parser = argparse.ArgumentParser(description=desc)
 
     # Encoder args
-    parser.add_argument('--in_features', type=int, default=3, help='Number of scalar node features (default 3 for bond nodes)')
-    parser.add_argument('--edge_dim', type=int, default=3, help='Edge feature dimension (default 3: angle one-hot + value)')
+    parser.add_argument('--node_feat', type=int, default=3, help='Number of scalar node features (default 3 for bond nodes)')
+    parser.add_argument('--edge_feat', type=int, default=3, help='Edge feature dimension (default 3: angle one-hot + value)')
+    parser.add_argument('--enc_node_embed_dim', type=int, default=10, help='Node embedding size per scalar feature')
+    parser.add_argument('--enc_edge_embed_dim', type=int, default=2, help='Edge embedding size per scalar feature')
     parser.add_argument('--enc_hidden_dim', type=int, default=128, help='Hidden embedding size')
     parser.add_argument('--enc_num_layers', type=int, default=4, help='Number of message passing layers (L)')
     parser.add_argument('--enc_heads', type=int, default=4, help='Attention heads')
@@ -471,11 +453,15 @@ def bgne_parse_args():
     parser.add_argument('--enc_dropout', type=float, default=0.0, help='Dropout applied to attention coefficients')
 
     # Decoder args
+    parser.add_argument('--template_khop', type=int, default=2, help='k-hop neighborhood for template graph')
+    parser.add_argument('--dec_node_embed_dim', type=int, default=10, help='Node embedding size per scalar feature for decoder')
+    parser.add_argument('--dec_edge_embed_dim', type=int, default=2, help='Edge embedding size per scalar feature for decoder')
     parser.add_argument('--dec_hidden_dim', type=int, default=128, help='Hidden embedding size for decoder')
     parser.add_argument('--dec_num_layers', type=int, default=4, help='Number of message passing layers (L) for decoder')
     parser.add_argument('--dec_heads', type=int, default=4, help='Attention heads for decoder')
     parser.add_argument('--dec_dropout_mp', type=float, default=0.0, help='Dropout applied to attention coefficients in decoder')
     parser.add_argument('--dec_dropout_mlp', type=float, default=0.0, help='Dropout applied in MLP heads of decoder')
+    parser.add_argument('--final_mlp_layers', type=int, default=3, help='Number of layers in final MLP heads of decoder')
 
     parser.add_argument('--rbf_dim', type=int, default=16, help='Number of radial basis functions for distance embedding')
     parser.add_argument('--rbf_min', type=float, default=0.0, help='Minimum distance for RBFs')
@@ -485,7 +471,7 @@ def bgne_parse_args():
     parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate for the training')
     parser.add_argument('--weight_decay', type=float, default=1e-3, help='Weights regularization for the training')
     parser.add_argument('--normalize_inputs', dest='normIn', action='store_true', help='Whether to normalize the input features')
-    parser.add_argument('--scheduler_gamma', type=float, default=0.1, help='Learning rate scheduler gamma')
+    parser.add_argument('--scheduler', action='store_true', help='Whether to use learning rate scheduler')
 
     args, _ = parser.parse_known_args()
 
@@ -508,20 +494,26 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
     """
     def __init__(
         self,
-        in_features: int = 3, ### ENCODER ARGS
-        edge_dim: int = 3,
+        node_feat: int = 3, ### ENCODER ARGS
+        edge_feat: int = 3,
+        enc_node_embed_dim: int = 10,
+        enc_edge_embed_dim: int = 2,
         enc_hidden_dim: int = 128,
         enc_num_layers: int = 4,
         enc_heads: int = 4,
         set2set_steps: int = 3,
-        latent_dim: int = 256,
         enc_dropout: float = 0.0,
-        template_data = None,  ### DECODER ARGS
+        latent_dim: int = 256,
+        datasetobject: Optional[Dataset] = None,  ### DECODER ARGS
+        template_khop: int = 2,
+        dec_node_embed_dim: int = 10,
+        dec_edge_embed_dim: int = 2,
         dec_hidden_dim: int = 128,
         dec_num_layers: int = 4,
         dec_heads: int = 4,
         dec_dropout_mp: float = 0.0,
         dec_dropout_mlp: float = 0.0,
+        final_mlp_layers: int = 3,
         rbf_dim: int = 16,
         rbf_min: float = 0.0,
         rbf_max: float = 4.0,
@@ -530,36 +522,44 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         lr: float = 1e-4,       ### OPTIMIZER ARGS
         weight_decay: float = 0.0,
         normIn: bool = False,
-        scheduler_gamma: Optional[float] = None,
+        scheduler: bool = False,
         loss: Optional[nn.Module] = None,
         loss_weights: Optional[List[float]] = None,
         out_labels: List[str] = ['bond_dist', 'angle', 'dihedral_cos', 'dihedral_sin'],
     ):
         super().__init__()
-        assert template_data is not None, "template_data must be provided"
+        assert datasetobject is not None, "datasetobject must be provided"
+        template_data = datasetobject.get_template_graph(k=template_khop)
+        bond_index, angle_index, torsion_index = datasetobject.get_label_indices()
         assert len(out_labels) == 4, "out_labels must be a list of 4 strings"
         assert loss_weights is None or len(loss_weights) == 4, "loss_weights must be None or a list of 4 floats"
         if loss_weights is None:
             loss_weights = [1.0, 1.0, 1.0, 1.0]
         self.loss_weights = loss_weights
         gnn_enc_kwargs = {
-            "in_features": in_features,
-            "edge_dim": edge_dim,
+            "node_feat": node_feat,
+            "edge_feat": edge_feat,
+            "node_embed_dim": enc_node_embed_dim,
+            "edge_embed_dim": enc_edge_embed_dim,
             "hidden_dim": enc_hidden_dim,
             "num_layers": enc_num_layers,
             "heads": enc_heads,
             "set2set_steps": set2set_steps,
-            "latent_dim": latent_dim,
             "dropout": enc_dropout,
+            "latent_dim": latent_dim,
         }
         gnn_dec_kwargs = {
             "template_data": template_data,
+            "label_indices": (bond_index, angle_index, torsion_index),
             "latent_dim": latent_dim,
+            "node_embed_dim": dec_node_embed_dim,
+            "edge_embed_dim": dec_edge_embed_dim,
             "hidden_dim": dec_hidden_dim,
             "num_layers": dec_num_layers,
             "heads": dec_heads,
             "dropout_mp": dec_dropout_mp,
             "dropout_mlp": dec_dropout_mlp,
+            "final_mlp_layers": final_mlp_layers,
             "rbf_dim": rbf_dim,
             "rbf_min": rbf_min,
             "rbf_max": rbf_max,
@@ -567,7 +567,7 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
             "precompute": precompute,
             "out_labels": out_labels,
         }
-        self.save_hyperparameters(ignore=["loss"])
+        self.save_hyperparameters(ignore=["loss", "datasetobject"])
         self.gnn_enc = BondGraphNetEncoder(**gnn_enc_kwargs)
         self.gnn_dec = BondGraphNetDecoder(**gnn_dec_kwargs)
         self.loss_fn = loss if loss is not None else nn.MSELoss()
@@ -575,8 +575,8 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         self.normIn = normIn
         self.normSet = False
         # Register buffers for feature-wise mean/range; sized by encoder input features
-        self.register_buffer('Mean', torch.zeros(in_features + edge_dim))
-        self.register_buffer('Range', torch.ones(in_features + edge_dim))
+        self.register_buffer('Mean', torch.zeros(node_feat + edge_feat))
+        self.register_buffer('Range', torch.ones(node_feat + edge_feat))
 
     def set_norm(self):
         if not self.trainer.datamodule:
@@ -584,10 +584,10 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         with torch.no_grad():
             Mean = torch.tensor(self.trainer.datamodule.get_scaler_mean(), device=self.device)
             Range = torch.tensor(self.trainer.datamodule.get_scaler_scale(), device=self.device)
-            assert Mean.size(0) == self.hparams.in_features + self.hparams.edge_dim, \
-                f"Mean size {Mean.size(0)} does not match expected {(self.hparams.in_features + self.hparams.edge_dim)}"
-            assert Range.size(0) == self.hparams.in_features + self.hparams.edge_dim, \
-                f"Range size {Range.size(0)} does not match expected {(self.hparams.in_features + self.hparams.edge_dim)}"
+            assert Mean.size(0) == self.hparams.node_feat + self.hparams.edge_feat, \
+                f"Mean size {Mean.size(0)} does not match expected {(self.hparams.node_feat + self.hparams.edge_feat)}"
+            assert Range.size(0) == self.hparams.node_feat + self.hparams.edge_feat, \
+                f"Range size {Range.size(0)} does not match expected {(self.hparams.node_feat + self.hparams.edge_feat)}"
             Range = Range.clone()
             Range[Range == 0.0] = 1.0
             print(f"[{type(self).__name__}] Setting normalization for inputs.")
@@ -611,8 +611,8 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         if getattr(data, '_normalized', False):
             return data
 
-        node_dim = self.hparams.in_features
-        edge_dim = self.hparams.edge_dim
+        node_dim = self.hparams.node_feat
+        edge_dim = self.hparams.edge_feat
         mean_node = self.Mean[:node_dim]
         range_node = self.Range[:node_dim]
         mean_edge = self.Mean[node_dim:node_dim+edge_dim]
@@ -657,8 +657,8 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         if not getattr(data, '_normalized', False):
             return data
 
-        node_dim = self.hparams.in_features
-        edge_dim = self.hparams.edge_dim
+        node_dim = self.hparams.node_feat
+        edge_dim = self.hparams.edge_feat
         mean_node = self.Mean[:node_dim]
         range_node = self.Range[:node_dim]
         mean_edge = self.Mean[node_dim:node_dim+edge_dim]
@@ -687,113 +687,35 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         data = self.normalize(data)
         latent = self.gnn_enc(data)
         pred = self.gnn_dec(latent)
+        # pred = self.denormalize(pred)
         return pred
 
     def extract_labels(self, batch):
-        """Compute target geometric labels from batched graph coordinates.
-
-        Expects batch.pos (N_total, 3) containing 3D coordinates for all graphs
-        concatenated, and batch.batch (N_total,) with graph indices.
-        Uses the template index buffers (bond/angle/dihedral) defined in decoder;
-        assumes every graph in batch shares the same topology as template.
-        Returns dict mapping each out_label to a (B, count) tensor.
-        Missing topology yields empty tensors with correct batch dimension.
+        """extract target labels from a batch.
         """
-        if not hasattr(batch, 'pos'):
-            raise AttributeError("Batch must have 'pos' attribute with node coordinates.")
-        pos = batch.pos  # (N_total, 3)
-        if pos.dim() != 2 or pos.size(-1) != 3:
-            raise ValueError("batch.pos must have shape (N_total, 3)")
-        graph_idx = getattr(batch, 'batch', None)
-        if graph_idx is None:
-            # Single graph - fabricate batch indices
-            graph_idx = pos.new_zeros(pos.size(0), dtype=torch.long)
-        B = int(graph_idx.max().item()) + 1
 
-        dec = self.gnn_dec
-        device = pos.device
-        # Retrieve index buffers
-        bond_idx = dec.bond_index_pairs  # (Nb, 2)
-        angle_idx = dec.angle_index_triples  # (Na, 3)
-        dih_idx = dec.dihedral_index_quads  # (Nd, 4)
-
-        def gather(node_indices: torch.Tensor) -> torch.Tensor:
-            # node_indices: (K, m) referencing per-graph node indices
-            # We assume node ordering per graph matches template ordering.
-            # Build an expanded (B, K, m) tensor of global indices.
-            if node_indices.numel() == 0:
-                return pos.new_empty((B, node_indices.size(0), 0, 3))
-            # For each graph g, offset = index where graph_idx == g starts.
-            # Faster: precompute per-graph node list assuming equal node count.
-            counts = torch.bincount(graph_idx, minlength=B)
-            if counts.unique().numel() != 1:
-                raise ValueError("All graphs must have identical node count to use shared template indices.")
-            n_per = counts[0].item()
-            # global index = g*n_per + local_index
-            g = torch.arange(B, device=device).view(B, 1, 1)
-            ni = node_indices.to(device).view(1, *node_indices.shape).expand(B, -1, -1)
-            global_idx = g * n_per + ni  # (B, K, m)
-            return pos[global_idx]  # (B, K, m, 3)
-
+        num_graphs = batch.batch.max().item() + 1
+        
         labels = {}
 
-        # Bonds: distances
-        if bond_idx.numel() > 0:
-            pts = gather(bond_idx)  # (B, Nb, 2, 3)
-            diffs = pts[:, :, 0, :] - pts[:, :, 1, :]
-            bond_dist = diffs.norm(dim=-1)  # (B, Nb)
-        else:
-            bond_dist = pos.new_empty((B, 0))
-        labels[self.hparams['out_labels'][0]] = bond_dist
-
-        # Angles: angle between vectors (j->i) and (j->k)
-        if angle_idx.numel() > 0:
-            pts = gather(angle_idx)  # (B, Na, 3, 3) order (i,j,k)
-            v1 = pts[:, :, 0] - pts[:, :, 1]  # (B, Na, 3)
-            v2 = pts[:, :, 2] - pts[:, :, 1]
-            v1_n = F.normalize(v1, dim=-1)
-            v2_n = F.normalize(v2, dim=-1)
-            cos_ang = (v1_n * v2_n).sum(dim=-1).clamp(-1.0, 1.0)
-            angle = torch.acos(cos_ang)
-        else:
-            angle = pos.new_empty((B, 0))
-        labels[self.hparams['out_labels'][1]] = angle
-
-        # Dihedrals: compute torsion angle i-j-k-l; output cos and sin
-        if dih_idx.numel() > 0:
-            pts = gather(dih_idx)  # (B, Nd, 4, 3) order (i,j,k,l)
-            p0 = pts[:, :, 0]
-            p1 = pts[:, :, 1]
-            p2 = pts[:, :, 2]
-            p3 = pts[:, :, 3]
-            b0 = p1 - p0
-            b1 = p2 - p1
-            b2 = p3 - p2
-            # Normalize b1 for stability
-            b1n = F.normalize(b1, dim=-1)
-            # Build normals
-            n0 = torch.cross(b0, b1, dim=-1)
-            n1 = torch.cross(b1, b2, dim=-1)
-            n0 = F.normalize(n0, dim=-1)
-            n1 = F.normalize(n1, dim=-1)
-            m1 = torch.cross(n0, b1n, dim=-1)
-            x = (n0 * n1).sum(dim=-1)
-            y = (m1 * n1).sum(dim=-1)
-            dih = torch.atan2(y, x)
-            dih_cos = torch.cos(dih)
-            dih_sin = torch.sin(dih)
-        else:
-            dih_cos = pos.new_empty((B, 0))
-            dih_sin = pos.new_empty((B, 0))
-        labels[self.hparams['out_labels'][2]] = dih_cos
-        labels[self.hparams['out_labels'][3]] = dih_sin
+        labels[self.hparams['out_labels'][0]] = batch.y_bonds.view(num_graphs, -1)
+        labels[self.hparams['out_labels'][1]] = batch.y_angles.view(num_graphs, -1)
+        labels[self.hparams['out_labels'][2]] = batch.y_torsions_cos.view(num_graphs, -1)
+        labels[self.hparams['out_labels'][3]] = batch.y_torsions_sin.view(num_graphs, -1)
 
         return labels
-
 
     def step(self, batch, stage: str):
         pred = self.forward(batch)
         labels = self.extract_labels(batch)
+
+        # print("PREDICTIONS:")
+        # for k, v in pred.items():
+        #     print(f"{k}: Shape {v.shape}")
+        # print("LABELS:")
+        # for k, v in labels.items():
+        #     print(f"{k}: Shape {v.shape}")
+        # exit()
 
         loss = self.loss_fn(pred[self.hparams['out_labels'][0]], labels[self.hparams['out_labels'][0]]) * self.loss_weights[0], \
                self.loss_fn(pred[self.hparams['out_labels'][1]], labels[self.hparams['out_labels'][1]]) * self.loss_weights[1], \
@@ -806,13 +728,14 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
                   (torch.abs(pred[self.hparams['out_labels'][2]] - labels[self.hparams['out_labels'][2]]).mean() if labels[self.hparams['out_labels'][2]].numel() > 0 else torch.tensor(0.0, device=loss.device)), \
                   (torch.abs(pred[self.hparams['out_labels'][3]] - labels[self.hparams['out_labels'][3]]).mean() if labels[self.hparams['out_labels'][3]].numel() > 0 else torch.tensor(0.0, device=loss.device))
 
+        batch_size = self.trainer.datamodule.hparams.batch_size if self.trainer and self.trainer.datamodule else None
         for i in range(len(self.hparams['out_labels'])):
-            self.log(f"{stage}_{self.hparams['out_labels'][i]}_mae", mae[i], prog_bar=False, on_epoch=True)  
-            self.log(f"{stage}_{self.hparams['out_labels'][i]}_loss", loss[i], prog_bar=False, on_step=(stage=="train"), on_epoch=True)
+            self.log(f"{stage}_{self.hparams['out_labels'][i]}_mae", mae[i], prog_bar=False, on_epoch=True, batch_size=batch_size)  
+            self.log(f"{stage}_{self.hparams['out_labels'][i]}_loss", loss[i], prog_bar=False, on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
         mae = sum(mae) / len(mae)
-        self.log(f"{stage}_mae", mae, prog_bar=(stage!="train"), on_epoch=True)
+        self.log(f"{stage}_mae", mae, prog_bar=(stage!="train"), on_epoch=True, batch_size=batch_size)
         loss = sum(loss)
-        self.log(f"{stage}_loss", loss, prog_bar=(stage=="train"), on_step=(stage=="train"), on_epoch=True)
+        self.log(f"{stage}_loss", loss, prog_bar=(stage=="train"), on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -829,8 +752,12 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay)
-        if self.hparams.scheduler_gamma is not None:
-            sched = torch.optim.lr_scheduler.ExponentialLR(opt, gamma=self.hparams.scheduler_gamma)
+        if self.hparams.scheduler:
+            sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 
+                                                            mode='min', 
+                                                           factor=0.7, 
+                                                           patience=5, 
+                                                           min_lr=1e-6)
             return {"optimizer": opt, "lr_scheduler": sched, "monitor": "val_loss"}
         return opt
 

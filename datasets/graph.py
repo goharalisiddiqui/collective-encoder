@@ -9,8 +9,6 @@ import torch
 from torch import Tensor
 from torch_geometric.data import Data, Dataset
 
-torch.set_default_dtype(torch.float64)
-
 def bond_type_one_hot(kind: str) -> List[float]:
     # single, double, triple, aromatic, virtual
     mapping = {"single": 0, "double": 1, "triple": 2, "aromatic": 3, "virtual": 4}
@@ -31,7 +29,6 @@ def _dihedral(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) ->
     x = np.dot(v, w)
     y = np.dot(np.cross(b1n, v), w)
     return float(np.arctan2(y, x))
-
 
 class graphDataset(Dataset):
     """Graph dataset where nodes are bonds and edges connect bonds via angles or torsions.
@@ -71,6 +68,12 @@ class graphDataset(Dataset):
             n_atoms0 = len(structures[0])
             for (i, j) in self.bond_indices:
                 assert 0 <= i < n_atoms0 and 0 <= j < n_atoms0, f"Bond index out of range: ({i},{j}) for n_atoms={n_atoms0}"
+        self.calculate_indices()
+    
+    def get_label_indices(self) -> List[int]:
+        """Return list of atom indices of labels."""
+        return self.bond_index, self.angle_index, self.torsion_index
+        
     # ---------------------------------------------------------------------
     # Bond / feature construction helpers
     # ---------------------------------------------------------------------
@@ -102,6 +105,7 @@ class graphDataset(Dataset):
 
         pos = atoms.get_positions()
         # Build adjacency: atom -> bonds containing it
+        # atom_to_bonds[atom_index] = list of bond indices
         atom_to_bonds: Dict[int, List[int]] = {}
         for b_idx, (i, j, _) in enumerate(bonds):
             atom_to_bonds.setdefault(i, []).append(b_idx)
@@ -110,18 +114,20 @@ class graphDataset(Dataset):
         edge_index_src = []
         edge_index_dst = []
         edge_attr = []
+        angle_atoms = []
+        torsion_atoms = []
 
         # Angle edges (adjacent bonds sharing one atom)
         if self.add_angles:
             for shared_atom, bond_list in atom_to_bonds.items():
                 m = len(bond_list)
-                if m < 2:
+                if m < 2: # need at least two bonds to form an angle
                     continue
                 # For every unordered pair of bonds sharing this atom
                 for a_i in range(m):
                     bi = bond_list[a_i]
                     ai1, ai2, _ = bonds[bi]
-                    other_i = ai1 if ai2 == shared_atom else ai2
+                    other_i = ai1 if ai2 == shared_atom else ai2 
                     for a_j in range(a_i + 1, m):
                         bj = bond_list[a_j]
                         aj1, aj2, _ = bonds[bj]
@@ -140,6 +146,7 @@ class graphDataset(Dataset):
                             edge_index_src.append(s)
                             edge_index_dst.append(t)
                             edge_attr.append([1.0, 0.0, angle])
+                            angle_atoms.append([other_i, shared_atom, other_j])
 
         # Torsion edges (bonds separated by exactly one bond: i-j and k-l with j-k bond existing)
         if self.add_torsion:
@@ -174,6 +181,7 @@ class graphDataset(Dataset):
                             edge_index_src.append(s)
                             edge_index_dst.append(t)
                             edge_attr.append([0.0, 1.0, angle])
+                            torsion_atoms.append([i, j, k, l])
 
         if len(edge_index_src) == 0:
             edge_index = torch.empty((2, 0), dtype=torch.long)
@@ -182,25 +190,40 @@ class graphDataset(Dataset):
             edge_index = torch.tensor([edge_index_src, edge_index_dst], dtype=torch.long)
             edge_attr_t = torch.tensor(edge_attr)
 
-        return edge_index, edge_attr_t, bond_index_map
+        return edge_index, edge_attr_t, bond_index_map, angle_atoms, torsion_atoms
 
     # ------------------------------------------------------------------
     def len(self) -> int:  # for PyG Dataset compatibility
         return len(self.structures)
+
+    def calculate_indices(self):
+        atoms = self.structures[0]
+        bonds = self._assemble_bonds(atoms)
+        edge_index, edge_attr, _, angle_atoms, torsion_atoms = self._angle_and_torsion_edges(atoms, bonds)
+        # Store bond <-> atom mapping
+        self.bond_index = [[i, j] for (i, j, _) in bonds]
+        self.angle_index = angle_atoms
+        self.torsion_index = torsion_atoms
 
     def get(self, idx: int) -> Data:  # for PyG Dataset compatibility
         atoms = self.structures[idx]
         label = self.labels[idx]
         bonds = self._assemble_bonds(atoms)
         x = self._bond_node_features(atoms, bonds)
-        edge_index, edge_attr, _ = self._angle_and_torsion_edges(atoms, bonds)
+        edge_index, edge_attr, _, angle_atoms, torsion_atoms = self._angle_and_torsion_edges(atoms, bonds)
         # Store bond <-> atom mapping
-        bond_atoms = torch.tensor([[i, j] for (i, j, _) in bonds], dtype=torch.long)
+        # bond_atoms = torch.tensor([[i, j] for (i, j, _) in bonds], dtype=torch.long)
+        # angle_atoms = torch.tensor(angle_atoms, dtype=torch.long)
+        # torsion_atoms = torch.tensor(torsion_atoms, dtype=torch.long)
         positions = torch.tensor(atoms.get_positions())
-        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, bond_index=bond_atoms, pos=positions)
-        if label is not None:
-            y = torch.tensor([label])
-            data.y = y
+        data = Data(x=x, 
+                    edge_index=edge_index, 
+                    edge_attr=edge_attr, 
+                    pos=positions)
+        data.y_bonds = torch.tensor([b[2] for b in bonds])
+        data.y_angles = torch.tensor([edge_attr[i, 2] for i in range(edge_attr.size(0)) if edge_attr[i, 0] == 1.0])
+        data.y_torsions_sin = torch.tensor([math.sin(edge_attr[i, 2]) for i in range(edge_attr.size(0)) if edge_attr[i, 1] == 1.0])
+        data.y_torsions_cos = torch.tensor([math.cos(edge_attr[i, 2]) for i in range(edge_attr.size(0)) if edge_attr[i, 1] == 1.0])
         data.num_nodes = x.size(0)
         return data
 
