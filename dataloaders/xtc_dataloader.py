@@ -1,3 +1,4 @@
+from glob import glob
 import os
 import argparse
 from typing import List, Dict
@@ -53,8 +54,10 @@ def xtcdatset_args():
     parser = argparse.ArgumentParser(description=desc)
 
 
-    parser.add_argument('--xtcfile', required=True, type=str,
+    parser.add_argument('--xtcfile', required=False, type=str,
                         help='Input compressed coordinate file')
+    parser.add_argument('--multicoord', type=str, default=None, 
+                        help='Glob for multiple coordinate files.')
     parser.add_argument('--tprfile', required=True, type=str,
                         help='Input binary file containing the topology')
     parser.add_argument('--selection', required=True, type=str,
@@ -67,7 +70,7 @@ def xtcdatset_args():
     parser.add_argument('--norm_type', dest="norm_type",
                         type=str, default='standard', choices=['standard', 'minmax'],
                         help='Normalization type to use')
-    
+
     parser.add_argument('--dataset_type', type=str, default='DEFAULT', 
                         help='Type of dataset to use', 
                         choices=['DEFAULT','DISTANCES', 'GRAPH'])
@@ -113,9 +116,10 @@ XTC_args = xtcdatset_args
 
 class XtcDataset(pl.LightningDataModule):
     def __init__(self,
-                 xtcfile : str,
                  tprfile : str,
                  selection : str,
+                 xtcfile : str = None,
+                 multicoord : str = None,
                  dataset_size : int = None,
                  train_prop : float = 0.8,
                  validation_prop : float = 0.2,
@@ -134,17 +138,25 @@ class XtcDataset(pl.LightningDataModule):
         super().__init__()
         print(f"\n\n[Initializing {type(self).__name__} Module]") if verbose else None
         print("==========================================") if verbose else None
-        print(
-            f"Loading coordinates from file {xtcfile} and topology from file {tprfile}") if verbose else None
-        if not os.path.exists(xtcfile):
-            raise FileNotFoundError(f"File {xtcfile} not found")
+        print(f"Loading coordinates from file {xtcfile if xtcfile else multicoord} and topology from file {tprfile}") if verbose else None
+
         if not os.path.exists(tprfile):
             raise FileNotFoundError(f"File {tprfile} not found")
         
         dataset_args = {k: eval(v) for k, v in (arg.split('=') for arg in dataset_args)}
         
         # Load the trajectory
-        u = mda.Universe(tprfile, xtcfile)
+        assert any([a != None for a in [xtcfile, multicoord]]), "Either xtcfile or multicoord must be provided"
+        assert not all([a != None for a in [xtcfile, multicoord]]), "Only one of xtcfile or multicoord can be provided"
+        if multicoord:
+            xtcfiles = glob(multicoord)
+            if not xtcfiles:
+                raise FileNotFoundError(f"No files found for pattern {multicoord}")
+            u = mda.Universe(tprfile, *xtcfiles)
+        else:
+            if not os.path.exists(xtcfile):
+                raise FileNotFoundError(f"File {xtcfile} not found")
+            u = mda.Universe(tprfile, xtcfile)
 
         # Checks
         if dataset_size:

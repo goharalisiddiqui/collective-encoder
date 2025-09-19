@@ -108,6 +108,11 @@ class VAE(AEBase):
         self.init_network()
 
         self.C_default = 1e-6
+    
+    def print_hparams(self):
+        super().print_hparams()
+        print("- C_max \t=", self.hparams.C_max)
+        print("- D \t=", self.hparams.D)
 
         if use_bond_deviation_loss:
             self.bond_indices = datamodule.get_bond_indices()
