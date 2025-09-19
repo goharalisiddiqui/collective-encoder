@@ -504,7 +504,7 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         set2set_steps: int = 3,
         enc_dropout: float = 0.0,
         latent_dim: int = 256,
-        datasetobject: Optional[Dataset] = None,  ### DECODER ARGS
+        datamodule = None,  ### DECODER ARGS
         template_khop: int = 2,
         dec_node_embed_dim: int = 10,
         dec_edge_embed_dim: int = 2,
@@ -526,9 +526,11 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         loss: Optional[nn.Module] = None,
         loss_weights: Optional[List[float]] = None,
         out_labels: List[str] = ['bond_dist', 'angle', 'dihedral_cos', 'dihedral_sin'],
+        outname: str = './BGE_untitled/BGE_',
     ):
         super().__init__()
-        assert datasetobject is not None, "datasetobject must be provided"
+        assert datamodule is not None, "datamodule must be provided"
+        datasetobject = datamodule.get_dataset()
         template_data = datasetobject.get_template_graph(k=template_khop)
         bond_index, angle_index, torsion_index = datasetobject.get_label_indices()
         assert len(out_labels) == 4, "out_labels must be a list of 4 strings"
@@ -572,6 +574,8 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         self.gnn_dec = BondGraphNetDecoder(**gnn_dec_kwargs)
         self.loss_fn = loss if loss is not None else nn.MSELoss()
         # Normalization flag & statistics (avoid name clash with method normalize())
+        # self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
+        # self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
         self.normIn = normIn
         self.normSet = False
         # Register buffers for feature-wise mean/range; sized by encoder input features
@@ -593,6 +597,7 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
             print(f"[{type(self).__name__}] Setting normalization for inputs.")
             self.Mean = Mean
             self.Range = Range
+            # self.normSet = torch.tensor(True, dtype=torch.bool)
             self.normSet = True
     
     def normalize(self, data):
@@ -688,7 +693,7 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         latent = self.gnn_enc(data)
         pred = self.gnn_dec(latent)
         # pred = self.denormalize(pred)
-        return pred
+        return pred, latent
 
     def extract_labels(self, batch):
         """extract target labels from a batch.
@@ -706,7 +711,7 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         return labels
 
     def step(self, batch, stage: str):
-        pred = self.forward(batch)
+        pred, latent = self.forward(batch)
         labels = self.extract_labels(batch)
 
         # print("PREDICTIONS:")
@@ -716,6 +721,18 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         # for k, v in labels.items():
         #     print(f"{k}: Shape {v.shape}")
         # exit()
+
+        loss_latent = torch.tensor(0.0, device=latent.device)
+        # To make dynamics in the latent space more "modellable" (For this to work, points in a batch must be sequentially related)
+        if latent.size(0) > 1:
+            batch_dist = torch.norm(latent[1:] - latent[:-1], dim=1)
+            # 1. We try to make the subsequent latent space points in a batch close to each other
+            loss_latent = torch.mean(batch_dist)
+        if latent.size(0) > 2:
+            # 2. We try to keep the subsequent latent space points in a batch equidistant
+            loss_latent += torch.var(batch_dist)
+
+        self.log(f"{stage}_loss_latent", loss_latent, prog_bar=False, on_step=(stage=="train"), on_epoch=True)
 
         loss = self.loss_fn(pred[self.hparams['out_labels'][0]], labels[self.hparams['out_labels'][0]]) * self.loss_weights[0], \
                self.loss_fn(pred[self.hparams['out_labels'][1]], labels[self.hparams['out_labels'][1]]) * self.loss_weights[1], \
@@ -736,7 +753,8 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         self.log(f"{stage}_mae", mae, prog_bar=(stage!="train"), on_epoch=True, batch_size=batch_size)
         loss = sum(loss)
         self.log(f"{stage}_loss", loss, prog_bar=(stage=="train"), on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
-        return loss
+
+        return loss + 1e-3 * loss_latent
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, "train")
@@ -762,7 +780,11 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         return opt
 
     def get_latent(self, data):
+        data = self.normalize(data)
         return self.gnn_enc(data)
+
+    def get_decoded(self, latent):
+        return self.gnn_dec(latent)
 
 __all__ = ["BondGraphNetEncoderDecoder"]
 

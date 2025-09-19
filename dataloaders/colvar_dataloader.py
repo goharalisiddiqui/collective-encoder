@@ -41,7 +41,7 @@ COLVAR_args = colvardatset_args
 class ColvarDataset(pl.LightningDataModule):
     def __init__(self,
                  colvarfile : str,
-                 train_prop : int = 0.6,
+                 train_prop : int = 0.8,
                  batch_size : int = -1,
                  batch_prop : float = 0.1,
                  label_list : list = [],

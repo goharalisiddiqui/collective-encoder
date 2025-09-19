@@ -176,7 +176,7 @@ class graphDataset(Dataset):
                         b_right = bond_index_map[(k, l)]
                         # dihedral i-j-k-l
                         angle = _dihedral(pos[i], pos[j], pos[k], pos[l])
-                        angle = 0.5 + math.cos(angle - 1.25) # Following https://doi.org/10.1073/pnas.1600917113
+                        # angle = 0.5 + math.cos(angle - 1.25) # Following https://doi.org/10.1073/pnas.1600917113
                         for s, t in [(b_left, b_right), (b_right, b_left)]:
                             edge_index_src.append(s)
                             edge_index_dst.append(t)

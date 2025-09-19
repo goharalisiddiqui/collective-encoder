@@ -27,83 +27,83 @@ def parse_args():
     desc = "Autoencoder neural network for enhanced sampling MD"
     parser = argparse.ArgumentParser(description=desc)
 
-    ## Type of Data
-    parser.add_argument('--datatype', type=str, default='COLVAR', help='Input file for training', choices=['COLVAR', 'KMC', 'MD17', 'XTC', 'XYZ'])
-    parser.add_argument('--dataset', type=str, default='DEFAULT', help='Type of dataset to use', choices=['DEFAULT', 'DISTANCES', 'GRAPH'])
-    parser.add_argument('--dataset_args', metavar="KEY=VALUE", nargs='+', help='Key-value pairs of arguments for the dataset', default=[])  
+    ## Run types
+    parser.add_argument('--datatype', required=True, type=str,
+                        help='Input file for training', 
+                        choices=['COLVAR', 'KMC', 'MD17', 'XTC', 'XYZ'])
+    parser.add_argument('--networktype', required=True, type=str,
+                        help='Type of the model', 
+                        choices=['AE', 'VAE', 'DVAE', 'EDVAE', 'EDVAEGAN', 
+                                 'GMVAE', 'VAEGAN', 'VAECGAN', 'VAECGAN', 
+                                 'VAEC_mse', 'VAEC', 'GRAPH_ENCODER'])
+    parser.add_argument('--debug', action="store_true", 
+                        help='Run in debug mode')
+    
+    # Run parameters
+    parser.add_argument('--nepochs', type=int, required=True, 
+                        help='Number of epochs to run')
+    parser.add_argument('--nogpu', action="store_true", 
+                        help='Do not use gpu acceleration even if available')
+    parser.add_argument('--export_latent', action="store_true", 
+                        help='Export latent space values on the data')
 
     # Output Settings
-    parser.add_argument('--outpath', required=True, type=str, help='Output folder for saving the training output')
-    parser.add_argument('--outfolder', type=str, default='ce_training', help='Stem of the folder name to save the output')
-    parser.add_argument('--nexp', required=False, default=1, type=int, help='Experiment number for output names')
-    parser.add_argument('--tblogger', action="store_true", help='Log to Tensorboard logger')
-    parser.add_argument('--overwrite', action="store_true", help='Overwrite output folder')
-    parser.add_argument('--output_to_file', action="store_true", help='Also store output in a file')
-    parser.add_argument('--output_traj', action="store_true", help='Print trajectory of the training data')
+    parser.add_argument('--outpath', required=True, type=str, 
+                        help='Output folder for saving the training output')
+    parser.add_argument('--outfolder', type=str, default='ce_training', 
+                        help='Stem of the folder name to save the output')
+    parser.add_argument('--nexp', required=False, default=1, type=int, 
+                        help='Experiment number for output names')
+    parser.add_argument('--tblogger', action="store_true", 
+                        help='Log to Tensorboard logger')
+    parser.add_argument('--overwrite', action="store_true", 
+                        help='Overwrite output folder')
+    parser.add_argument('--output_to_file', action="store_true", 
+                        help='Also store output in a file')
+    parser.add_argument('--output_traj', action="store_true", 
+                        help='Print trajectory of the training data')
 
     # Logging
-    parser.add_argument('--wandb', action="store_true", help='Log to WandB logger')
-    parser.add_argument('--wandb_project', type=str, default='Collective_encoder', help='WandB project name')
+    parser.add_argument('--wandb', action="store_true", 
+                        help='Log to WandB logger')
+    parser.add_argument('--wandb_project', type=str, 
+                        default='Collective_encoder', help='WandB project name')
 
     # Save and/or Load Model
-    parser.add_argument('--save_checkpoint', action="store_true", help='Save Checkpoint')
-    parser.add_argument('--save_serial_model', action="store_true", help='Save Model')
-    parser.add_argument('--save_serial_model_path', default=".", type=str, help='Output folder for saving the model')
-    parser.add_argument('--load_model', default=None, type=str, help='Load model from checkpoint')
-
-    # Run parameters
-    parser.add_argument('--nogpu', action="store_true", help='Do not use gpu acceleration even if available')
-    # parser.add_argument('--plot_every', type=int, default=0, help='Number of epochs to run')
-    # parser.add_argument('--bondrestrict', action="store_true",
-    #                     help='Add bond deviation loss to the training')
-    # parser.add_argument('--stericloss', action="store_true",
-    #                     help='Add steric loss to the training')
-
-    # parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
-    # parser.add_argument('--scheduler', action="store_true", help='Use learning rate scheduler')
-    # parser.add_argument('--scheduler_gamma', type=float, default=0.1, help='Learning rate scheduler gamma')
-    # parser.add_argument('--weight_decay', type=float, default=1e-3, help='Weights regularization for the training')
-    # parser.add_argument('--nobatchnorm', action="store_false", help='Disable batch normalization in the network')
-
-    parser.add_argument('--networktype', type=str, default='VAE', help='Type of the Autoencoder, AE, VAE_mse, VAE_elbo')
-    # parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
-    parser.add_argument('--nepochs', type=int, help='Number of epochs to run')
-
-    parser.add_argument('--export_latent', action="store_true", help='Export latent space values on the data')
-    # parser.add_argument('--no_plotdata', action="store_true", help='Do not export plot data as numpy objects')
+    parser.add_argument('--save_checkpoint', action="store_true", 
+                        help='Save Checkpoint')
+    parser.add_argument('--save_serial_model', action="store_true", 
+                        help='Save Model')
+    parser.add_argument('--save_serial_model_path', default=".", type=str, 
+                        help='Output folder for saving the model')
+    parser.add_argument('--load_model', default=None, type=str, 
+                        help='Load model from checkpoint')
 
 
     args, _ = parser.parse_known_args()
 
     return args
 
-
 args = parse_args()
 
 
+if args.debug:
+    args.nepochs = 2
+    args.nexp = 0
+    args.outfolder = "debug"
+    args.overwrite = True
+    args.wandb = False
+    print("Running in debug mode")
 
 overwrite = args.overwrite
 export_latent = args.export_latent
 odir = args.outpath + "/" + args.outfolder + "_"
 nntype = args.networktype
 nexp = args.nexp
-# Input directory and columns
-# Output file
 output_to_file = args.output_to_file
 output_to_terminal = True
-# Load pre-trained model
-# Train model
-# hidden_nodes = args.network # NN hidden layers
 num_epochs = args.nepochs
-# plot_every = args.plot_every
 train = True if num_epochs > 0 else False
-# Optimization
-# lrate = args.lrate  # Learning rate
-# weight_decay = args.weight_decay  # Weights regularization
-
-
-
-
 
 ##################################
 # Importing Lightning Modules
@@ -160,14 +160,10 @@ elif args.datatype == 'XYZ':
     from dataloaders.xyz_dataloader import XyzLoader as main_dl
     from dataloaders.xyz_dataloader import XYZ_args as data_nested_args
 
-
-
-
 ##################################
 # Output directory
 ##################################
 odir_name = odir+str(nexp)
-
 
 if not overwrite:
     while True:
@@ -198,7 +194,6 @@ if output_to_file:
     os.dup2(tee.stdin.fileno(), sys.stdout.fileno())
     os.dup2(tee.stdin.fileno(), sys.stderr.fileno())
 
-
 print("Using Pytorch", torch.__version__)
 
 ##################################
@@ -207,66 +202,28 @@ print("Using Pytorch", torch.__version__)
 outname = odir_name+"/"+nntype+"_"
 
 datamodargs = {}
-if args.datatype in ["COLVAR", "KMC"]:
-    datamodargs['train_prop'] = 0.8
-    datamodargs['batch_prop'] = 0.1
-
 data_nested_args = data_nested_args()
-
 datamodargs = datamodargs | vars(data_nested_args)
 
-if args.dataset != 'DEFAULT':
-    if args.dataset == 'DISTANCES':
-        from datasets.distances_dataset import distancesDataset as dataset
-    elif args.dataset == 'GRAPH':
-        from datasets.graph import graphDataset as dataset
-    else:
-        raise ValueError("Unknown dataset type")
-    datamodargs['dataset_type'] = dataset
-    datamodargs['dataset_args'] = parse_vars(args.dataset_args)
+if args.debug:
+    datamodargs['dataset_size'] = 50
+    datamodargs['sequential'] = True
+    datamodargs['batch_size'] = 4
+    datamodargs['val_batch_size'] = 4
+
 
 colvardata = main_dl(**datamodargs)
 if args.datatype == 'MD17':
     colvardata.prepare_data()
-
     colvardata.setup(stage="fit")
-
 
 ##################################
 # Setting up the NN
 ##################################
 netargs = {}
-if nntype in ["GRAPH_ENCODER"]:
-    netargs['datasetobject'] = colvardata.get_dataset()
-else:
-    netargs['lr'] = lrate
-    netargs['l2_reg'] = args.weight_decay
-    netargs['outname'] = outname
-    netargs['batch_norm'] = args.nobatchnorm
-    netargs['plot_every'] = args.plot_every
-    netargs['saveplotdata'] = not args.no_plotdata
-    netargs['lr_scheduler'] = args.scheduler_gamma  
+netargs['datamodule'] = colvardata
+netargs['outname'] = outname
 
-    nodes = [int(x) for x in hidden_nodes.split(",")]
-    nodes.insert(0, colvardata.num_inputs)
-
-    if nntype != "GMVAE":
-        netargs['l'] = nodes
-    else:
-        netargs['n_x'] = nodes[0]
-        netargs['n_z'] = nodes[-1]
-
-if nntype in ["EDVAE", "EDVAEGAN"]:
-    netargs['datapoint_shape'] = colvardata.get_datapoint_shape()
-    if args.bondrestrict:
-        netargs['use_bond_deviation_loss'] = True
-        netargs['bond_indices'] = colvardata.get_bond_indices()
-        netargs['atomic_numbers'] = colvardata.get_atns()
-    if args.stericloss:
-        netargs['use_steric_loss'] = True
-        if 'atomic_numbers' not in netargs.keys():
-            netargs['atomic_numbers'] = colvardata.get_atns()
-        
 nn_nested_args = nn_nested_args()
 netargs = netargs | vars(nn_nested_args)
 
@@ -298,10 +255,7 @@ if args.tblogger:
 # trainargs["gradient_clip_val"] = 0.5
 # trainargs["gradient_clip_algorithm"] = "norm"
 
-
-
 trainer = pl.Trainer(**trainargs)
-
 
 if train:
     # trainer.tune(model, datamodule=colvardata) # To auto find the lr
@@ -310,13 +264,10 @@ if train:
 if not train and args.load_model == None:
     print("WARNING! Model neither loaded nor trained!")
 
-
-
 ##################################
 # Analysing a loaded model
 ##################################
 # model.print_fve(colvardata)
-
 if args.output_traj:
     colvardata.output_trajectory(f"{odir_name}/data_trajectory.pdb")
     if not args.datatype in ["XTC"]:
@@ -328,7 +279,6 @@ if args.output_traj:
 #####################################
 # Output latent space of the dataset
 #####################################
-
 if export_latent:
     model.export_latent(next(iter(colvardata.test_dataloader())))
 
@@ -342,7 +292,6 @@ if args.save_serial_model:
 if args.save_checkpoint and train:
     trainer.save_checkpoint(f"{outname}checkpoint")
     print(f"@@ checkpoint saved as: {outname}checkpoint")
-
 
 ##################################
 trainer.test(model, datamodule=colvardata)

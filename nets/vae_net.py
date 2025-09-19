@@ -2,6 +2,7 @@ from nets.ae_base import AEBase
 import pandas as pd
 import argparse
 import numpy as np
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
@@ -24,24 +25,37 @@ EPSILON = 1e-9
 
 torch.set_printoptions(threshold=10_000)
 
-
 def vae_parse_args():
     desc = "VAE NN for enhanced sampling MD"
     parser = argparse.ArgumentParser(description=desc)
 
+    # Network architecture
+    parser.add_argument('--network', type=str, default= '500,100,10,2', help='Architecture of the Autoencoder')
+    parser.add_argument('--nobatchnorm', action="store_true", help='Disable batch normalization in the network')
+    parser.add_argument('--use_steric_loss', action="store_true",
+                        help='Add steric loss to the training')
+    parser.add_argument('--use_bond_deviation_loss', action="store_true",
+                        help='Add bond deviation loss to the training')
+    # Trainer Settings
+    parser.add_argument('--lrate', type=float, default=1e-4, help='Learning rate for the training')
+    parser.add_argument('--weight_decay', type=float, default=1e-3, help='Weights regularization for the training')
+    parser.add_argument('--scheduler', action="store_true", help='Use learning rate scheduler')
+
+    # Output Settings
+    parser.add_argument('--plot_every', type=int, default=0, help='Number of epochs to run')
+    parser.add_argument('--no_plotdata', action="store_true", help='Do not export plot data as numpy objects')
+
+    # Information Bottleneck parameters
     parser.add_argument('--beta', required=True, type=float,
                         help='beta for the beta-VAE')
-
     parser.add_argument('--cauto', action='store_true', dest='C_auto', 
                         help='Activate automatic C scheduler for information control in Beta-VAE')
-    
     parser.add_argument('--cmax', type=float, default=0.0, dest='C_max',
                         help='Maximum C for information control in Beta-VAE')
     parser.add_argument('--cstart', type=int, default=0, dest='C_start',
                         help='Epoch where C start to increase for information control in Beta-VAE')
     parser.add_argument('--cend', type=int, default=0, dest='C_end',
                         help='Epoch where C stops to increase for information control in Beta-VAE')
-
     parser.add_argument('--dvalue', dest='D', default=0.0, type=float,
                         help='D value for the beta-VAE')
 
@@ -55,62 +69,61 @@ VAE_args = vae_parse_args
 
 class VAE(AEBase):
     def __init__(self,
-                 l: list,
-                 lr: float = 0.01,
-                 l2_reg: float = 1e-7,
-                 beta: float = 1.0,
-                 batch_norm: bool = True,
-                 lr_scheduler: bool = True,
+                 datamodule,
+                 network: List[int],
+                 nobatchnorm: bool = True,
+                 use_steric_loss = False,
+                 use_bond_deviation_loss = False,
+                 lrate: float = 0.01,
+                 weight_decay: float = 1e-7,
+                 scheduler: bool = True,
                  plot_every: int = 0,
+                 no_plotdata: bool = False,
+                 beta: float = 1.0,
                  C_max: float = 0.0,
                  C_start: int = 0,
                  C_end: int = 0,
                  C_auto: bool = False,
                  D: float = 0.0,
-                 atomic_numbers = None,
-                 bond_indices = None,
-                 use_steric_loss = False,
-                 use_bond_deviation_loss = False,
-                 saveplotdata: bool = False,
                  outname: str = './VAE_untitled/VAE_',
                  ):
-        super().__init__(dim_data=l[0],
-                         dim_latent=l[-1],
-                         lr=lr,
-                         l2_reg=l2_reg,
-                         lr_scheduler=lr_scheduler,
+        # Checks
+        assert len(network.split(",")) >= 3, "Network must have at least 2 layers (input, hidden, output)"
+        nodes = [int(x) for x in network.split(",")]
+        nodes.insert(0, datamodule.num_inputs)
+        assert any([a == 0.0 for a in [C_max, D]]), "Atleast one of C_max and D should be zero"
+        assert not all([C_max != 0.0, C_auto == True]), "C_max and C_auto are incompatible, choose one of them"
+        assert C_start <= C_end, "C_start must be less than or equal to C_end"
+
+        super().__init__(dim_data=nodes[0],
+                         dim_latent=nodes[-1],
+                         lr=lrate,
+                         l2_reg=weight_decay,
+                         lr_scheduler=scheduler,
                          outname=outname,
                          plot_every=plot_every,
-                         saveplotdata=saveplotdata)
-        assert len(l) >= 3
-        self.save_hyperparameters()
-        assert any([a == 0.0 for a in [C_max, D]]), "Atleast one of C_max and D should be zero" 
+                         saveplotdata=not no_plotdata,)
         
         #### Setting up the layers of the netwrok ####
         self.init_network()
 
-        # Arguments Checks
-        assert not all([C_max != 0.0, C_auto == True]), "C_max and C_auto are incompatible, choose one of them"
-        assert C_start <= C_end, "C_start must be less than or equal to C_end"
-
         self.C_default = 1e-6
+
         if use_bond_deviation_loss:
-            if bond_indices is None or atomic_numbers is None:
-                raise ValueError(
-                    "Bond indices and atomic numbers must be provided for bond deviation loss")
+            self.bond_indices = datamodule.get_bond_indices()
+            self.atomic_numbers = datamodule.get_atns()
         if use_steric_loss:
-            if atomic_numbers is None:
-                raise ValueError(
-                    "Atomic numbers must be provided for steric loss")
-        if atomic_numbers is not None:
-            cov_radii = [covalent_radii[el] for el in atomic_numbers]
+            self.atomic_numbers = datamodule.get_atns()
+
+        if self.atomic_numbers is not None:
+            cov_radii = [covalent_radii[el] for el in self.atomic_numbers]
             cov_radii = torch.tensor(cov_radii).float()
             cov_radii = cov_radii.unsqueeze(0)
             cd_t = cov_radii.transpose(0, 1)
             cov_mat = cov_radii.unsqueeze(0) + cd_t.unsqueeze(1)
             self.cov_mat = cov_mat.squeeze(1)
-            # print(self.cov_mat)
-            # exit()
+
+        self.save_hyperparameters(ignore=['datamodule'])
 
     def init_network(self):
         print(f"[Initializing {type(self).__name__} Module]")
@@ -275,7 +288,7 @@ class VAE(AEBase):
         return loss_mae
     
     def bond_deviation_loss(self, recon_x):
-        bonded_indices = self.hparams.bond_indices
+        bonded_indices = self.bond_indices
         
        
         coordinates = recon_x.view(recon_x.shape[0], -1, 3)

@@ -45,7 +45,7 @@ class KmcDataset(pl.LightningDataModule):
                  framefile : str,
                  labelfile : str,
                  labelnames : list,
-                 train_prop : int = 0.6,
+                 train_prop : int = 0.8,
                  batch_size : int = -1,
                  batch_prop : float = 0.1,
                  standardize_inputs : bool = True):

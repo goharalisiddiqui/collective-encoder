@@ -21,8 +21,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch_geometric.loader import DataLoader as GeoDataLoader
 import pytorch_lightning as pl
 
-from datasets.distances_dataset import distancesDataset
-from datasets.graph import graphDataset
+
 
 class XtcData(Dataset):
     """XTC dataset"""
@@ -68,6 +67,13 @@ def xtcdatset_args():
     parser.add_argument('--norm_type', dest="norm_type",
                         type=str, default='standard', choices=['standard', 'minmax'],
                         help='Normalization type to use')
+    
+    parser.add_argument('--dataset_type', type=str, default='DEFAULT', 
+                        help='Type of dataset to use', 
+                        choices=['DEFAULT','DISTANCES', 'GRAPH'])
+    parser.add_argument('--dataset_args', metavar="KEY=VALUE", nargs='+', 
+                        help='Key-value pairs of arguments for the dataset', 
+                        default=[])
     
     parser.add_argument('--train_prop', dest='train_prop', type=float, default=0.8,
                         help='Proportion of the data to use for training')
@@ -119,14 +125,14 @@ class XtcDataset(pl.LightningDataModule):
                  num_workers : int = 1,
                  sequential : bool = False,
                  verbose : bool = True,
-                 dataset_type : Dataset = XtcData,
-                 dataset_args : Dict = {},
+                 dataset_type : str = 'DEFAULT',
+                 dataset_args : List[str] = [],
                  label_distance : str = None,
                  label_dihedrals : str = None,
                  norm_type : str = 'standard',
                  ):
         super().__init__()
-        print(f"\n\n[Initializing XtcDataset Module]") if verbose else None
+        print(f"\n\n[Initializing {type(self).__name__} Module]") if verbose else None
         print("==========================================") if verbose else None
         print(
             f"Loading coordinates from file {xtcfile} and topology from file {tprfile}") if verbose else None
@@ -134,6 +140,8 @@ class XtcDataset(pl.LightningDataModule):
             raise FileNotFoundError(f"File {xtcfile} not found")
         if not os.path.exists(tprfile):
             raise FileNotFoundError(f"File {tprfile} not found")
+        
+        dataset_args = {k: eval(v) for k, v in (arg.split('=') for arg in dataset_args)}
         
         # Load the trajectory
         u = mda.Universe(tprfile, xtcfile)
@@ -198,7 +206,7 @@ class XtcDataset(pl.LightningDataModule):
         
         # Extract the bonds information
         self.bonds = mol.get_connections('bonds', outside=False).indices
-        for i in range(len(self.bonds)):
+        for i in range(len(self.bonds)): # remap to mol atoms indices (without hydrogens)
             self.bonds[i] = (np.where(mol.atoms.indices == self.bonds[i][0])[0][0], np.where(mol.atoms.indices == self.bonds[i][1])[0][0])
 
         # Read the trajectory and store the frames
@@ -261,19 +269,26 @@ class XtcDataset(pl.LightningDataModule):
         
         self.mol_traj = mol_traj
 
-        if dataset_type == distancesDataset:
+        if dataset_type == 'DEFAULT':
+            dataset_class = XtcData
+        elif dataset_type == 'DISTANCES':
+            from datasets.distances_dataset import distancesDataset as dataset_class
             dataset_args['atm_ids'] = atm_ids
-        if dataset_type == graphDataset:
+        elif dataset_type == 'GRAPH':
+            from datasets.graph import graphDataset as dataset_class
             dataset_args['bond_indices'] = self.bonds
-        self.xtcData_full = dataset_type(
+        else:
+            raise ValueError(f"Unknown dataset type: {dataset_type}")
+
+        self.xtcData_full = dataset_class(
                 structures=mol_traj,
                 labels=labels,
                 **dataset_args
                 )
         
         self.target_scaler = None
-        
-        if dataset_type == graphDataset:
+
+        if dataset_type == 'GRAPH':
             print(f"Loaded graph dataset with {len(self.xtcData_full)} graphs") if verbose else None
             print(f"Number of bonds (nodes): {len(self.bonds)}") if verbose else None
             print(f"Node feature size: {self.xtcData_full[0].x.shape[1]}") if verbose else None
@@ -299,20 +314,28 @@ class XtcDataset(pl.LightningDataModule):
 
     def setup(self, stage):  # Called on every GPU/TPU in distributed
         # Assign train/val datasets for use in dataloaders
-        self.mddata_train, self.mddata_val, self.mddata_test, _ = \
-            torch.utils.data.random_split(
-                self.xtcData_full,
-                [
-                    self.train_size,
-                    self.validation_size,
-                    self.test_size,
-                    len(self.xtcData_full) - self.train_size -
-                    self.validation_size - self.test_size
-                ])
+        if self.hparams.sequential:
+            self.mddata_train = torch.utils.data.Subset(
+                self.xtcData_full, list(range(0, self.train_size)))
+            self.mddata_val = torch.utils.data.Subset(
+                self.xtcData_full, list(range(self.train_size, self.train_size + self.validation_size)))
+            self.mddata_test = torch.utils.data.Subset(
+                self.xtcData_full, list(range(self.train_size + self.validation_size, self.train_size + self.validation_size + self.test_size)))
+        else:
+            self.mddata_train, self.mddata_val, self.mddata_test, _ = \
+                torch.utils.data.random_split(
+                    self.xtcData_full,
+                    [
+                        self.train_size,
+                        self.validation_size,
+                        self.test_size,
+                        len(self.xtcData_full) - self.train_size -
+                        self.validation_size - self.test_size
+                    ])
     
     def get_atns(self):
-        return self.loatn
-    
+        return self.atoms
+
     def get_bond_indices(self):
         return self.bonds
     
@@ -326,11 +349,11 @@ class XtcDataset(pl.LightningDataModule):
         else:
             raise ValueError(f"Normalization type {self.hparams.norm_type} not supported")
 
-        if self.hparams.dataset_type in [XtcData, distancesDataset]:
+        if self.hparams.dataset_type in ['DEFAULT', 'DISTANCES']:
             self.num_inputs = self.xtcData_full.num_inputs
             self.datapoint_shape = tuple(self.xtcData_full[0][0].shape)
             self.target_scaler.fit(self.xtcData_full.get_data()[0])
-        elif self.hparams.dataset_type == graphDataset:
+        elif self.hparams.dataset_type == 'GRAPH':
             data_to_normalize = [] 
             for g in self.xtcData_full:
                 node_feat = g.x.numpy()
@@ -355,7 +378,7 @@ class XtcDataset(pl.LightningDataModule):
             frame.write(output_file, append = True)
 
     def get_full_batch(self):
-        dl = self.test_dataloader()
+        dl = self.full_dataloader()
         return next(iter(dl))
     
     def get_dataset(self):
@@ -363,49 +386,49 @@ class XtcDataset(pl.LightningDataModule):
 
         # called on every process in DDP
     def train_dataloader(self):
-        if self.hparams.dataset_type == graphDataset:
+        if self.hparams.dataset_type == 'GRAPH':
             # For graph dataset we use pyg DataLoader
             return GeoDataLoader(
                 self.mddata_train,
                 batch_size=self.hparams.batch_size,
-                shuffle=True,
+                shuffle=not self.hparams.sequential,
                 drop_last=True,
                 num_workers=self.hparams.num_workers,
                 pin_memory=True)
         return DataLoader(
             self.mddata_train,
             batch_size=self.hparams.batch_size,
-            shuffle=True,
+            shuffle=not self.hparams.sequential,
             drop_last=True,
             num_workers=self.hparams.num_workers,
             pin_memory=True)
 
     def val_dataloader(self):
-        if self.hparams.dataset_type == graphDataset:
+        if self.hparams.dataset_type == 'GRAPH':
             # For graph dataset we use pyg DataLoader
             return GeoDataLoader(
                 self.mddata_val,
                 batch_size=self.hparams.val_batch_size,
-                shuffle=False,
+                shuffle=not self.hparams.sequential,
                 drop_last=True,
                 num_workers=self.hparams.num_workers,
                 pin_memory=True)
         return DataLoader(
             self.mddata_val,
             batch_size=self.hparams.val_batch_size,
-            shuffle=False,
+            shuffle=not self.hparams.sequential,
             drop_last=True,
             num_workers=self.hparams.num_workers,
             pin_memory=True)
 
     def test_dataloader(self):
-        if self.hparams.dataset_type == graphDataset:
+        if self.hparams.dataset_type == 'GRAPH':
             # For graph dataset we use pyg DataLoader
             return GeoDataLoader(
                 self.mddata_test,
                 batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size not in [None, 0] else len(
                     self.mddata_test),
-                shuffle=False,
+                shuffle=not self.hparams.sequential,
                 drop_last=True,
                 num_workers=self.hparams.num_workers,
                 pin_memory=True)
@@ -413,20 +436,20 @@ class XtcDataset(pl.LightningDataModule):
             self.mddata_test,
             batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size not in [None, 0] else len(
                 self.mddata_test),
-            shuffle=False,
+            shuffle=not self.hparams.sequential,
             drop_last=True,
             num_workers=self.hparams.num_workers,
             pin_memory=True)
 
     def full_dataloader(self):
         mddata_test = self.xtcData_full
-        if self.hparams.dataset_type == graphDataset:
+        if self.hparams.dataset_type == 'GRAPH':
             # For graph dataset we use pyg DataLoader
             return GeoDataLoader(
                 mddata_test,
                 batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size is not None else len(
                     mddata_test),
-                shuffle=False,
+                shuffle=not self.hparams.sequential,
                 drop_last=True,
                 num_workers=self.hparams.num_workers,
                 pin_memory=True)
@@ -434,7 +457,7 @@ class XtcDataset(pl.LightningDataModule):
             mddata_test,
             batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size is not None else len(
                 mddata_test),
-            shuffle=False,
+            shuffle=not self.hparams.sequential,
             drop_last=True,
             num_workers=self.hparams.num_workers,
             pin_memory=True)
