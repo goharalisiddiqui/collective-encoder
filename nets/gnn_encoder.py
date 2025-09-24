@@ -469,6 +469,7 @@ def bgne_parse_args():
     parser.add_argument('--rbf_gamma', type=float, default=10.0, help='Width parameter for RBFs')
 
     parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate for the training')
+    parser.add_argument('--loss_latent_weight', type=float, default=1e-3, help='Weight for latent loss term if used')
     parser.add_argument('--weight_decay', type=float, default=1e-3, help='Weights regularization for the training')
     parser.add_argument('--normalize_inputs', dest='normIn', action='store_true', help='Whether to normalize the input features')
     parser.add_argument('--scheduler', action='store_true', help='Whether to use learning rate scheduler')
@@ -525,6 +526,7 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         scheduler: bool = False,
         loss: Optional[nn.Module] = None,
         loss_weights: Optional[List[float]] = None,
+        loss_latent_weight: float = 1e-3,
         out_labels: List[str] = ['bond_dist', 'angle', 'dihedral_cos', 'dihedral_sin'],
         outname: str = './BGE_untitled/BGE_',
     ):
@@ -754,7 +756,7 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         loss = sum(loss)
         self.log(f"{stage}_loss", loss, prog_bar=(stage=="train"), on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
 
-        return loss + 1e-3 * loss_latent
+        return loss + self.hparams.loss_latent_weight * loss_latent
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, "train")
@@ -775,7 +777,7 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
                                                             mode='min', 
                                                            factor=0.7, 
                                                            patience=5, 
-                                                           min_lr=1e-6)
+                                                           min_lr=1e-9)
             return {"optimizer": opt, "lr_scheduler": sched, "monitor": "val_loss"}
         return opt
 

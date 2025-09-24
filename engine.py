@@ -13,6 +13,7 @@ import torch
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
+from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 
 from utils import parse_vars
 
@@ -251,6 +252,9 @@ if args.wandb:
 if args.tblogger:
     tblogger = TensorBoardLogger(version=odir_name, save_dir=args.outpath)
     trainargs["logger"] = tblogger
+
+lr_monitor = LearningRateMonitor(logging_interval='epoch')
+trainargs["callbacks"] = [lr_monitor]
 
 # trainargs["gradient_clip_val"] = 0.5
 # trainargs["gradient_clip_algorithm"] = "norm"
