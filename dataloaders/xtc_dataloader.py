@@ -31,10 +31,8 @@ class XtcData(Dataset):
         self,
         structures: List[ase.Atoms],
         labels: List[int],
-        dtype=torch.float32,
     ):
-        self.positions = [torch.tensor(
-            s.positions, dtype=dtype) for s in structures]
+        self.positions = [torch.tensor(s.positions).flatten() for s in structures]
         self.num_inputs = len(self.positions[0])
 
     def __len__(self):
@@ -49,71 +47,6 @@ class XtcData(Dataset):
         return np.array([d.numpy() for d in self.positions])
 
 
-def xtcdatset_args():
-    desc = "Xtc Dataset Arguments"
-    parser = argparse.ArgumentParser(description=desc)
-
-
-    parser.add_argument('--xtcfile', required=False, type=str,
-                        help='Input compressed coordinate file')
-    parser.add_argument('--multicoord', type=str, default=None, 
-                        help='Glob for multiple coordinate files.')
-    parser.add_argument('--tprfile', required=True, type=str,
-                        help='Input binary file containing the topology')
-    parser.add_argument('--selection', required=True, type=str,
-                        help='Selection string of mdanalysis')
-    parser.add_argument('--datasize', dest="dataset_size",
-                        type=int, default=None, help='Size of the dataset to use')
-    parser.add_argument('--sequential', dest="sequential",
-                        action='store_true', 
-                        help='Weather the trajectory should be sequential or not')
-    parser.add_argument('--norm_type', dest="norm_type",
-                        type=str, default='standard', choices=['standard', 'minmax'],
-                        help='Normalization type to use')
-
-    parser.add_argument('--dataset_type', type=str, default='DEFAULT', 
-                        help='Type of dataset to use', 
-                        choices=['DEFAULT','DISTANCES', 'GRAPH'])
-    parser.add_argument('--dataset_args', metavar="KEY=VALUE", nargs='+', 
-                        help='Key-value pairs of arguments for the dataset', 
-                        default=[])
-    
-    parser.add_argument('--train_prop', dest='train_prop', type=float, default=0.8,
-                        help='Proportion of the data to use for training')
-    parser.add_argument('--validation_prop', dest='validation_prop', type=float, default=0.2,
-                        help='Proportion of the data to use for validation')
-    parser.add_argument('--batch_size', dest='batch_size', type=int, default=None,
-                        help='Batch size for training')
-    parser.add_argument('--val_batch_size', dest='val_batch_size', type=int, default=None,
-                        help='Batch size for validation')
-    parser.add_argument('--test_batch_size', dest='test_batch_size', type=int, default=None,
-                        help='Batch size for testing')
-    parser.add_argument('--num_workers', dest='num_workers', type=int, default=1,
-                        help='Number of workers for data loading')
-    parser.add_argument('--verbose', dest='verbose', action='store_true',
-                        help='Whether to print information about the dataset loading')
-
-    label_group = parser.add_mutually_exclusive_group()
-    label_group.add_argument('--label_distance', dest='label_distance', 
-                             type=str, default=None, 
-                             help='Selection string for md analysis. ' \
-                             'Must select exactly 2 atoms. ' \
-                             'Distance between these atoms will be used as a label.')
-    label_group.add_argument('--label_dihedrals', dest='label_dihedrals', 
-                             type=str, default=None, 
-                             help='Comma separated list of DIH_RESID ' \
-                             'e.g. "phi_1" will compute the phi dihedral angle ' \
-                             'for residue 1 and use it as a label')
-    # parser.add_argument('--labels', dest = 'label_list', nargs='+', help='Label columns in the data file')
-
-    args, _ = parser.parse_known_args()
-
-    return args
-
-
-XTC_args = xtcdatset_args
-
-
 class XtcDataset(pl.LightningDataModule):
     def __init__(self,
                  tprfile : str,
@@ -121,8 +54,8 @@ class XtcDataset(pl.LightningDataModule):
                  xtcfile : str = None,
                  multicoord : str = None,
                  dataset_size : int = None,
-                 train_prop : float = 0.8,
-                 validation_prop : float = 0.2,
+                 train_size : int = 0,
+                 validation_size : int = 0,
                  batch_size : int = None,
                  val_batch_size : int = None,
                  test_batch_size : int = None,
@@ -131,8 +64,8 @@ class XtcDataset(pl.LightningDataModule):
                  verbose : bool = True,
                  dataset_type : str = 'DEFAULT',
                  dataset_args : List[str] = [],
-                 label_distance : str = None,
-                 label_dihedrals : str = None,
+                 label_distance : List[str] = [],
+                 label_dihedrals : List[str] = [],
                  norm_type : str = 'standard',
                  ):
         super().__init__()
@@ -187,17 +120,17 @@ class XtcDataset(pl.LightningDataModule):
         atm_ids = [at.id + 1 for at in mol.atoms]
         
         # Get the labels to add to the dataset
-        if label_distance is not None:
+        if len(label_distance) > 0:
             print(f"Using label distance: {label_distance}") if verbose else None
             label_atoms = u.select_atoms(label_distance)
             if len(label_atoms) != 2:
                 raise ValueError(f"Label distance selection {label_distance} must select exactly 2 atoms, found {len(label_atoms)}")
             self.label_list = ["Distance between " + label_atoms[0].name + " and " + label_atoms[1].name]
-        elif label_dihedrals is not None: 
+        elif len(label_dihedrals) > 0: 
             print(f"Using label dihedrals: {label_dihedrals}") if verbose else None
             label_atoms = []
             self.label_list = []
-            for res in label_dihedrals.split(','):
+            for res in label_dihedrals:
                 res = res.strip()
                 assert len(res) > 4, f"Label dihedral {res} must be at least 5 characters long"
                 if res[:4] not in ['phi_', 'psi_']:
@@ -226,6 +159,7 @@ class XtcDataset(pl.LightningDataModule):
         mol_traj = []
         if dataset_size is None:
             dataset_size = len(u.trajectory)
+        assert dataset_size >= (train_size + validation_size), f"Dataset size {dataset_size} must be greater than or equal to train_size + validation_size = {train_size + validation_size}"
         if sequential:
             s = random.randint(0, len(u.trajectory) - dataset_size)
             e = dataset_size + s
@@ -253,9 +187,9 @@ class XtcDataset(pl.LightningDataModule):
             mol_traj.append(structure)
 
             # Get the labels
-            if label_distance is not None:
+            if len(label_distance) > 0:
                 labels.append(np.linalg.norm(label_atoms.positions[1] - label_atoms.positions[0]))
-            elif label_dihedrals is not None:
+            elif len(label_dihedrals) > 0:
                 dih = []
                 for dih_group in label_atoms:
                     res = calc_dihedrals(
@@ -273,9 +207,8 @@ class XtcDataset(pl.LightningDataModule):
         
         
         FRAMES = len(mol_traj)
-        assert train_prop + validation_prop <= 1.0
-        self.train_size = int(FRAMES * train_prop)
-        self.validation_size = int(FRAMES * validation_prop)
+        self.train_size = train_size
+        self.validation_size = validation_size
         self.test_size = FRAMES - self.train_size - self.validation_size
         print(f"Train size: {self.train_size}, Validation size: {self.validation_size}, Test size: {self.test_size}") if verbose else None
         
@@ -308,6 +241,12 @@ class XtcDataset(pl.LightningDataModule):
             print(f"Total number of edges: {self.xtcData_full[0].edge_index.shape[1]}") if verbose else None
             self.num_inputs = len(self.bonds)
             self.datapoint_shape = (len(self.bonds), self.xtcData_full[0].x.shape[1])
+        else:
+            self.num_inputs = self.xtcData_full.num_inputs
+            self.datapoint_shape = tuple(self.xtcData_full[0][0].shape)
+            print(f"Loaded dataset with {len(self.xtcData_full)} frames") if verbose else None
+            print(f"Number of atoms: {self.num_inputs}") if verbose else None
+            print(f"Datapoint shape: {self.datapoint_shape}") if verbose else None
 
         self.save_hyperparameters()
 
@@ -434,6 +373,8 @@ class XtcDataset(pl.LightningDataModule):
             pin_memory=True)
 
     def test_dataloader(self):
+        if self.test_size == 0:
+            raise ValueError("Test size is 0, cannot create test dataloader")
         if self.hparams.dataset_type == 'GRAPH':
             # For graph dataset we use pyg DataLoader
             return GeoDataLoader(
@@ -455,20 +396,24 @@ class XtcDataset(pl.LightningDataModule):
 
     def full_dataloader(self):
         mddata_test = self.xtcData_full
+        if self.hparams.test_batch_size not in [None, 0]:
+            batch_size = self.hparams.test_batch_size
+        elif self.hparams.batch_size not in [None, 0]:
+            batch_size = self.hparams.batch_size
+        else:
+            batch_size = len(mddata_test)
         if self.hparams.dataset_type == 'GRAPH':
             # For graph dataset we use pyg DataLoader
             return GeoDataLoader(
                 mddata_test,
-                batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size is not None else len(
-                    mddata_test),
+                batch_size=batch_size,
                 shuffle=not self.hparams.sequential,
                 drop_last=True,
                 num_workers=self.hparams.num_workers,
                 pin_memory=True)
         return DataLoader(
             mddata_test,
-            batch_size=self.hparams.test_batch_size if self.hparams.test_batch_size is not None else len(
-                mddata_test),
+            batch_size=batch_size,
             shuffle=not self.hparams.sequential,
             drop_last=True,
             num_workers=self.hparams.num_workers,

@@ -4,8 +4,8 @@
 #SBATCH -n 1
 #SBATCH -c 8
 #SBATCH -p gpucloud
-#SBATCH --mem=32G
-#SBATCH --gres=shard:8
+#SBATCH --mem=4G
+#SBATCH --gres=shard:1
 #SBATCH --time=100:00:00
 #SBATCH --export=ALL
 #SBATCH -o ./slurm_logs/slurm-%J.out
@@ -26,44 +26,16 @@ else
     pref=''
 fi
 
-                    # --wandb \
-                    # --wandb_project "GraphEncoder" \
-                    # --output_to_file \
-$pref python collective_encoder/engine.py \
-                    --datatype XTC \
-                    --xtcfile ./data_generation/ala2/ala2_100ns/md.xtc \
-                    --tprfile ./data_generation/ala2/ala2_100ns/md.tpr \
-                    --selection "(resname ALA or resname ACE or resname NME) and not element H" \
-                    --dataset GRAPH \
-                    --datasize 50 --sequential \
-                    --norm_type standard \
-                    --batch_size 8 \
-                    --train_prop 0.8 \
-                    --validation_prop 0.1 \
-                    --val_batch_size 9 \
-                    --verbose \
-                    --outpath ./run_test \
-                    --outfolder "test" --nexp 1 --overwrite \
-                    --save_checkpoint \
-                    --networktype "GRAPH_ENCODER" \
-                    --nepochs 100 \
-                    --enc_node_embed_dim 10 \
-                    --enc_edge_embed_dim 2 \
-                    --enc_hidden_dim 128 \
-                    --enc_num_layers 5 \
-                    --enc_heads 8 \
-                    --set2set_steps 3 \
-                    --enc_dropout 0.0 \
-                    --latent_dim 256 \
-                    --template_khop 2 \
-                    --dec_node_embed_dim 10 \
-                    --dec_edge_embed_dim 2 \
-                    --dec_hidden_dim 128 \
-                    --dec_num_layers 5 \
-                    --dec_heads 4 \
-                    --dec_dropout_mp 0.0 \
-                    --dec_dropout_mlp 0.1 \
-                    --lr 0.0001 \
-                    --weight_decay 0.001 \
-                    --normalize_inputs \
-                    --scheduler \
+#Read command line arguments
+while getopts d flag
+do
+    case "${flag}" in
+        d) debug=1;;
+    esac
+done
+
+if [ "$debug" == 1 ]; then
+    $pref python engine.py --config config.yaml --debug
+else
+    $pref python engine.py --config config.yaml
+fi

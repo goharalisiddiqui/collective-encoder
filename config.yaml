@@ -1,0 +1,47 @@
+debug: True
+outpath: ./train_runs
+outfolder: run
+overwrite: True
+nexp: 1
+output_to_file: True
+save_checkpoint: True
+save_serial_model: False
+# output_traj: True
+# load_model: <path_to_model>
+
+# Trainer Settings
+nepochs: 1000
+weight_decay: 0.0
+nogpu: False
+export_latent: False
+wandb: False
+wandb_project: CollectiveEncoder
+wandb_entity: goharalisiddiqui-tum
+scheduler: True
+lrate: 0.001
+
+data_name: XTC
+data_args:
+    tprfile: ./data/ala2_300K_100ns/md.tpr
+    selection: "(resname ALA or resname ACE or resname NME) and not element H"
+    xtcfile: ./data/ala2_300K_100ns/md.xtc
+    dataset_size: 150
+    sequential: False
+    train_size : 80
+    batch_size : 8
+    validation_size : 20
+    val_batch_size : 5
+    dataset_type : "DISTANCES"
+    num_workers : 4
+    norm_type : "minmax"
+    label_dihedrals : 
+      - phi_2
+      - psi_2
+
+network_name: DVAE
+network_args:
+    network: [256, 64, 8]
+    beta: 1.0
+    batch_norm: True
+
+

@@ -22,7 +22,6 @@ class distancesDataset(Dataset):
         self,
         structures: List[ase.Atoms],
         labels: List[float],
-        dtype=torch.float32,
         group1 : str = "0",
         group2 : str = "0",
         atm_ids : List[int] =  None
@@ -48,9 +47,9 @@ class distancesDataset(Dataset):
             for i, j in pairs:
                 dist = np.linalg.norm(positions[i] - positions[j])
                 distances.append(dist)
-            self.distances.append(torch.tensor(distances, dtype=dtype))
-        
-        self.labels = [torch.tensor(d, dtype=torch.float32) for d in labels]
+            self.distances.append(torch.tensor(distances))
+
+        self.labels = [torch.tensor(d) for d in labels]
         self.num_inputs = len(pairs)
         
         if atm_ids is not None:

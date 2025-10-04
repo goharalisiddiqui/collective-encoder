@@ -1,0 +1,173 @@
+import torch
+
+# def print_fve(self, datamodule):
+#         dl = datamodule.test_dataloader()
+#         flag = self.training
+#         self.training = False
+#         with torch.no_grad():
+#             data = next(iter(dl))[0].float()
+#             output, _ = self(data)
+#             target = self.normalize(data)
+#             sub = torch.sub(target, output)
+#             ss_err = torch.sum(torch.pow(sub, 2), dim=0)
+#             meann = torch.mean(target, dim=0, keepdim=True)
+#             sub_meann = torch.sub(target, meann)
+#             ss_tot = torch.sum(torch.pow(sub_meann, 2), dim=0)
+#             fve = 1 - torch.div(ss_err, ss_tot)
+#             fve_mean = torch.mean(fve).detach().cpu().numpy() # This calculates FVE for each input dim and mean it
+
+#             ss_err = torch.sum(torch.pow(sub, 2))
+#             ss_tot = torch.sum(torch.pow(sub_meann, 2))
+#             fve_sum = 1 - torch.div(ss_err, ss_tot).detach().cpu().numpy() # This calculates one FVE by taking inner product of vectors instead of square
+#         print("\n\n=======================================")
+#         print("Fraction of Variation Explined (FVE)")
+#         print("=======================================")
+#         # print("FVE_mean = ", fve_mean)
+#         print("FVE = ", fve_sum)
+#         print("=======================================\n\n")
+#         self.training = flag
+#         return fve_mean
+
+def print_labels_latent_correlations(self, latent, labels = None):
+    # Calculates and prints correlation between labels+latent_space
+    if labels is None:
+        data_df = pd.DataFrame(latent, columns=["Latent Dimension %d"%i for i in range(latent.shape[1])])
+    else:
+        all_data = np.concatenate((latent, labels), axis=1)
+        all_column_headers = ["Latent Dimension %d"%i for i in range(latent.shape[1])] 
+        all_column_headers = all_column_headers + self.trainer.datamodule.label_list
+        data_df = pd.DataFrame(all_data, columns=all_column_headers)
+    print("\n\n=======================================")
+    print("Correlation of latent space and labels (if present)")
+    print("=======================================")
+    print(data_df.corr())
+    print("=======================================\n\n")
+
+    fig = plt.figure(figsize=(19, 15))
+    plt.matshow(data_df.corr().abs(), fignum=fig.number)
+    plt.xticks(range(data_df.columns.shape[0]), data_df.columns.tolist(), fontsize=14, rotation=45)
+    plt.yticks(range(data_df.columns.shape[0]), data_df.columns.tolist(), fontsize=14)
+    cb = plt.colorbar()
+    cb.ax.tick_params(labelsize=14)
+    self.log_tbimage("Correlation", fig)
+
+
+
+@torch.no_grad()
+def export_serial_model(self, model_path = None):
+    print(f"[Exporting the serialized {type(self).__name__} model]")
+
+    fake_loader = self.trainer.datamodule.test_dataloader()
+    fake_input = next(iter(fake_loader))[0].float()
+
+    if model_path == None:
+        model_path = '.'
+    if not os.path.isdir(model_path):
+            os.makedirs(model_path)
+
+    self.metaD = True
+    torch.jit.save(self.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{model_path}/encoder.pt")
+    self.metaD = False
+    print(f"[{type(self).__name__} model serialized at: {model_path}/encoder.pt]")
+
+
+@torch.no_grad()
+def export_latent(self, latents, labels = None):
+    filename_stem = f"{self.hparams.outname}{self.current_epoch}_"
+
+    if not isinstance(latents, tuple):
+        latents = (latents,)
+    latent_names = self.get_latent_names()
+    assert len(latents) == len(latent_names), f"Latent names and latents do not match. {len(latents)} != {len(latent_names)}"
+    for i in range(len(latents)):
+        np.save(filename_stem + f"{latent_names[i]}.npy", latents[i])
+            
+    if labels is not None:
+        np.save(filename_stem + f"labels.npy", labels)
+
+@torch.no_grad()
+def plot_latent(self, latents, labels = None, plot_func : callable = None, tag = None):
+    if labels is not None:
+        label_list = self.trainer.datamodule.label_list
+        
+    latent_len = len(latents) if isinstance(latents, tuple) else 1
+    plot_len = latents[0].shape[0] if isinstance(latents, tuple) else latents.shape[0]
+
+    if plot_len > self.plot_points_limit:
+        print(f"[WARNING] Limiting plot to {self.plot_points_limit} points")
+        index = np.random.choice(plot_len, self.plot_points_limit, replace=False)
+        if latent_len > 1:
+            latents = tuple([latent[index] for latent in latents])
+        else:
+            latents = latents[index]
+        if labels is not None:
+            labels = labels[index]
+
+
+    n_fig = 10
+    k = 0
+    n_hidden = self.dim_latent
+    n_cols = labels.shape[1] if labels is not None else 1
+    while (n_hidden > 0):
+        n_rows = n_hidden if n_hidden > 2 else 1
+        if n_rows > n_fig:
+            n_rows = n_fig
+        fig, axes = plt.subplots(n_rows, n_cols, squeeze=False, figsize=(6 * n_cols, 6 * n_rows))
+
+        for i in range(0, axes.shape[0]):
+            for j in range(n_cols):
+                self.plot_latent_axis(fig, axes[i][j], latents, labels[:,j] if labels is not None else None, i, j, label_list[j] if labels is not None else None, plot_func)
+        n_hidden -= n_rows
+        if n_hidden == 1:
+            n_hidden = 0
+        plt.tight_layout()
+        if tag is None:
+            tag = "latent_space"
+        if k == 0 and n_hidden == 0:
+            figoname = f"{self.hparams.outname}{self.current_epoch}_{tag}.png"
+
+        else:
+            figoname = f"{self.hparams.outname}{self.current_epoch}_{tag}_{k+1}.png"
+        fig.savefig(figoname, dpi=150)
+        self.log_tbimage(f"{tag}" if k == 0 and n_hidden == 0 else f"{tag}-{k+1}", fig)
+        plt.close()
+        k += 1
+
+@torch.no_grad()
+def plot_latent_axis(self, fig, ax, latents, train_y, i, j, label, plot_func):
+    ax.set_title(f"{type(self).__name__} Latent-space-"+str(i))
+
+    if train_y is not None:
+        cm = plt.get_cmap('jet')
+        cNorm = matplotlib.colors.Normalize(vmin=min(train_y), vmax=max(train_y))
+        scalarMap = matplotlib.cm.ScalarMappable(norm=cNorm, cmap=cm)
+    else:
+        scalarMap = None
+
+    latent = latents[0] if isinstance(latents, tuple) else latents
+
+    yaxis = (i+1) if (i+1) < latent.shape[1] else 0
+
+    if plot_func is not None:
+        plot_func(fig, ax, latents, train_y, i, yaxis, label, scalarMap)
+        ax.set_xlabel(f"Latent Dimension {i}")
+    else:
+        if i == yaxis: # When only one latent dimension is plotted
+            ax.scatter(train_y if train_y is not None else range(len(latent[:, i])), latent[:, i], c=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.3)
+            ax.set_xlabel("Index" if train_y is None else label if label else f"Label-{j}")
+        else:
+            ax.scatter(latent[:, i], latent[:, yaxis], c=scalarMap.to_rgba(train_y) if train_y is not None else None, label="Whole dataset", alpha=0.3)
+            ax.set_xlabel(f"Latent Dimension {i}")
+    ax.set_ylabel(f"Latent Dimension {yaxis}")
+    
+    if train_y is not None:
+        scalarMap.set_array(train_y)
+        cb = fig.colorbar(scalarMap, ax=ax)
+        cb.set_label(label if label else "Label-"+str(j))
+
+
+
+def LDplotter(data, latent, pred, meta, logger, outstem="./untitled_"):
+    print("[Plotting latent space with LDplotter]")
+    # plot_latent(data, latent, labels = meta.get('labels', None), plot_func = None, tag = "LDplotter")
+    return
