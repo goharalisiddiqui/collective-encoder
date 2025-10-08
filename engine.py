@@ -53,17 +53,18 @@ if config['debug']:
     config['outpath'] = "train_runs"
     config['outfolder'] = "debug"
     config['overwrite'] = True
-    config['wand'] = False
+    config['wandb'] = False
     config['output_to_file'] = True
     config['nogpu'] = True
     config['export_latent'] = False
 
-    config['data_args']['dataset_size'] = 100
+    config['data_args']['dataset_size'] = 50
     config['data_args']['sequential'] = True
     config['data_args']['train_size'] = 40
     config['data_args']['batch_size'] = 4
     config['data_args']['validation_size'] = 10
     config['data_args']['val_batch_size'] = 4
+    config['data_args']['test_full_dataset'] = True
     config['data_args']['dataset_type'] = "DEFAULT"
     config['data_args']['num_workers'] = 1
     print("Running in debug mode")
@@ -184,6 +185,8 @@ if not config['nogpu']:
     trainargs["devices"] = 'auto'
 if config['wandb']:
     wandb_logger = WandbLogger(project=config['wandb_project'],
+                             entity=config['wandb_entity'],
+                             save_dir=run_dir,
                              name=run_dir.strip(".").strip("/").replace("/", "_"),
                              log_model=False)
     trainargs["logger"] = wandb_logger
@@ -235,6 +238,53 @@ if config['save_checkpoint'] and config['nepochs'] > 0:
 ##################################
 trainer.test(model, datamodule=colvardata)
 
+#####################################
+# Save metatomic model
+#####################################
+if config.get('save_metatomic', False):
+    try:
+        from mtomic.wrapper import MetatomicCV
+        from metatomic.torch import (
+            AtomisticModel,
+            ModelCapabilities,
+            ModelMetadata,
+            ModelOutput,
+        )
+    except ImportError:
+        raise ImportError("metatomic is not installed. Please install it with `pip install metatomic`")
+
+    dataprocessor = colvardata.get_dataset().get_metatomic_dataprocessor()
+    metamodel = model.get_metatomic_model()
+    metatomic_model = MetatomicCV(dataprocessor, metamodel)
+    metadata = ModelMetadata(
+        name="ml-collective-variable",
+        description="A collective variable learned using collective-encoder",
+        authors=["SNE"],
+        references={
+        },
+    )
+    outputs = {
+        "features": ModelOutput(quantity="", unit="none", per_atom=False),
+    }
+
+    capabilities = ModelCapabilities(
+        outputs=outputs,
+        atomic_types=[a for a in range(1, 119)],  # all elements
+        interaction_range=torch.inf,
+        length_unit="nanometer",
+        supported_devices=["cpu"],
+        dtype="float64",
+    )
+
+    metatomic_module = AtomisticModel(
+        module=metatomic_model.eval(),
+        metadata=metadata,
+        capabilities=capabilities,
+    )
+    metatomic_model_file = os.path.join(run_dir, "metatomic_model.pt")
+    metatomic_module.save(metatomic_model_file)
+
+    print(f"@@ metatomic model saved as: {metatomic_model_file}")
 
 
 

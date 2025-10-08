@@ -1,23 +1,70 @@
-import os
-import argparse
-from typing import List, Dict
-from tqdm import tqdm
-import random
+from typing import List, Optional, Dict
+from xml.parsers.expat import model
 
 import numpy as np
 import ase
 
 from utils import parse_slice
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 import torch
 from torch.utils.data import Dataset
-import pytorch_lightning as pl
+from torch.nn.functional import pairwise_distance
 
-DOUBLE_PRECISION = False
+from metatensor.torch import Labels, TensorBlock, TensorMap
 
-class distancesDataset(Dataset):
+from metatomic.torch import (
+    AtomisticModel,
+    ModelCapabilities,
+    ModelMetadata,
+    ModelOutput,
+    System,
+)
+
+class MetatomicDistanceDataset(torch.nn.Module):
+    def __init__(self, pairs: List[tuple]):
+        super().__init__()
+        self.pairs = pairs
+
+        mask_i = []
+        mask_j = []
+        for i, j in self.pairs:
+            mask_i.append(i)
+            mask_j.append(j)
+        self.register_buffer("mask_i", torch.tensor(mask_i, dtype=torch.long))
+        self.register_buffer("mask_j", torch.tensor(mask_j, dtype=torch.long))
+
+    def forward(
+        self,
+        systems: List[System],
+        outputs: Dict[str, ModelOutput],
+        selected_atoms: Optional[Labels] = None,
+    ) -> torch.Tensor:
+
+        positions = systems[0].positions
+        positions = positions.view(-1, 3)
+
+        pd = pairwise_distance(positions[self.mask_i], positions[self.mask_j])
+
+        return pd
+
+
+class DistancesDataset(Dataset):
+    ''' Dataset for pairwise distances between two groups of atoms.
+
+    The groups can be specified using python slice notation, e.g. "0:3" for the first three atoms.
+    The dataset returns the distances between all pairs of atoms in the two groups for each structure.
+
+    Args:
+        structures (List[ase.Atoms]): List of ASE Atoms objects representing the structures.
+        labels (List[float]): List of labels (e.g. energies) corresponding to each structure.
+        group1 (str): Slice notation for the first group of atoms (default: "0").
+        group2 (str): Slice notation for the second group of atoms (default: "0").
+        atm_ids (List[int], optional): List of atom IDs corresponding to the atoms in the structures. If provided, will print the atom IDs for each distance pair.
+    
+    Returns:
+        distances (torch.Tensor): Tensor of shape (num_structures, num_pairs) containing the distances.
+        labels (torch.Tensor): Tensor of shape (num_structures,) containing the labels.
+    '''
     def __init__(
         self,
         structures: List[ase.Atoms],
@@ -33,6 +80,7 @@ class distancesDataset(Dataset):
         atns = structures[0].get_atomic_numbers()
         group1_indices = list(range(*group1.indices(len(atns))))
         group2_indices = list(range(*group2.indices(len(atns))))
+
         
         pairs = []
         for i in group1_indices:
@@ -40,6 +88,7 @@ class distancesDataset(Dataset):
                 if j > i:
                     pairs.append((i, j))
         self.data_shape = (len(pairs),)
+        self.pairs = pairs
         self.distances = []
         for s in structures:
             distances = []
@@ -70,3 +119,6 @@ class distancesDataset(Dataset):
     
     def get_data(self):
         return np.array([d.numpy() for d in self.distances]), np.array([l.numpy() for l in self.labels])
+
+    def get_metatomic_dataprocessor(self):
+        return MetatomicDistanceDataset(self.pairs)

@@ -32,15 +32,18 @@ data_args:
     validation_size : 20
     val_batch_size : 5
     dataset_type : "DISTANCES"
+    dataset_args:
+        group1 : "0:2"
+        group2 : "2:5"
     num_workers : 4
     norm_type : "minmax"
     label_dihedrals : 
       - phi_2
       - psi_2
 
-network_name: DVAE
+network_name: VAE
 network_args:
-    network: [256, 64, 8]
+    network: [256, 64, 3]
     beta: 1.0
     batch_norm: True
 

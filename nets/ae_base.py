@@ -1,5 +1,6 @@
 from abc import ABC
 import os
+from typing import List, Tuple, Union, Dict, Optional
 
 import numpy as np
 
@@ -25,6 +26,36 @@ from statistics import mean as list_mean
 
 from scipy.stats import multivariate_normal
 
+class MetatomicModelAE(torch.nn.Module):
+    def __init__(self, 
+                 encoder: torch.nn.Module,
+                 normIn: bool = False,
+                 dmean: torch.Tensor = torch.zeros(1), 
+                 drange: torch.Tensor = torch.ones(1),
+                 ):
+        super().__init__()
+        self.encoder = encoder
+
+        self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
+        self.register_buffer('Mean', dmean)
+        self.register_buffer('Range', drange)
+
+    def forward(
+        self,
+        x: torch.Tensor
+    ) -> torch.Tensor:
+
+        if self.normIn:
+            # TorchScript-compatible broadcasting
+            # Reshape Mean and Range to match x dimensions for broadcasting
+            mean_expanded = self.Mean.view(1, -1).expand_as(x)
+            range_expanded = self.Range.view(1, -1).expand_as(x)
+            
+            return (x - mean_expanded) / range_expanded
+        latent, _ = self.encoder(x)
+        mean, logvar = latent
+        return mean
+
 class AEBase(pl.LightningModule, ABC):
     def __init__(self,
                  dim_data : int,
@@ -36,6 +67,7 @@ class AEBase(pl.LightningModule, ABC):
                  scheduler_args : dict = {},
                  outname : str = './untitled/untitled_',
                  test_plotter : str = None,
+                 export_latent : bool = False,
                  ):
         super().__init__()
 
@@ -56,47 +88,48 @@ class AEBase(pl.LightningModule, ABC):
         self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
         self.register_buffer('Mean', torch.zeros(dim_data))
         self.register_buffer('Range', torch.ones(dim_data))
+        self.metatomic_model_cls = MetatomicModelAE
         self.save_hyperparameters()
 
-    def set_norm(self, Mean: torch.Tensor, Range: torch.Tensor):
-        if not self.trainer.datamodule:
-            raise RuntimeError("Trainer datamodule not found; cannot compute normalization.")
-        with torch.no_grad():
-            Mean = torch.tensor(self.trainer.datamodule.get_scaler_mean(), device=self.device)
-            Range = torch.tensor(self.trainer.datamodule.get_scaler_scale(), device=self.device)
-            Range = Range.clone()
-            Range[Range == 0.0] = 1.0
-            print(f"\n[{type(self).__name__}] Setting normalization for inputs.")
-            self.Mean = Mean
-            self.Range = Range
-            self.normSet = torch.tensor(True, dtype=torch.bool)
+    def set_norm(self):
+        if hasattr(self, 'trainer'):
+            if not self.trainer.datamodule:
+                raise RuntimeError("Trainer datamodule not found; cannot compute normalization.")
+            with torch.no_grad():
+                Mean = torch.tensor(self.trainer.datamodule.get_scaler_mean(), device=self.device)
+                Range = torch.tensor(self.trainer.datamodule.get_scaler_scale(), device=self.device)
+                Range = Range.clone()
+                Range[Range == 0.0] = 1.0
+                print(f"\n[{type(self).__name__}] Setting normalization for inputs.")
+                self.Mean = Mean
+                self.Range = Range
+                self.normSet = torch.tensor(True, dtype=torch.bool)
 
-    def normalize(self, x: Variable):
+    def normalize(self, x: torch.Tensor):
         if not self.normIn:
             return x
-        if not self.normSet:
+        elif not self.normSet:
             self.set_norm()
-        batch_size = x.size(0)
-        x_size = x.size()[1:]
-
-        Mean = self.Mean.unsqueeze(0).expand(batch_size, *x_size)
-        Range = self.Range.unsqueeze(0).expand(batch_size, *x_size)
         
-        return x.sub(Mean).div(Range)
+        # TorchScript-compatible broadcasting
+        # Reshape Mean and Range to match x dimensions for broadcasting
+        mean_expanded = self.Mean.view(1, -1).expand_as(x)
+        range_expanded = self.Range.view(1, -1).expand_as(x)
+        
+        return (x - mean_expanded) / range_expanded
 
-    def denormalize(self, x: Variable):
+    def denormalize(self, x: torch.Tensor):
         if not self.normIn:
             return x
         if not self.normSet:
             self.set_norm()
 
-        batch_size = x.size(0)
-        x_size = x.size()[1:]
+        # TorchScript-compatible broadcasting
+        # Reshape Mean and Range to match x dimensions for broadcasting
+        mean_expanded = self.Mean.view(1, -1).expand_as(x)
+        range_expanded = self.Range.view(1, -1).expand_as(x)
 
-        Mean = self.Mean.unsqueeze(0).expand(batch_size, *x_size)
-        Range = self.Range.unsqueeze(0).expand(batch_size, *x_size)
-
-        return x.mul(Range).add(Mean)
+        return x * range_expanded + mean_expanded
 
     def reparametrize(self, mu, logvar): # Drawing a random sample from the normal distribution mu, logvar
         std = torch.exp(0.5*logvar)
@@ -173,21 +206,29 @@ class AEBase(pl.LightningModule, ABC):
 
     def latent_to_decoder_input(self, latent):
         return latent, {}
-    
-    def get_metad_output(self, latent, meta):
+
+    def get_metad_output(self, latent: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], meta: Dict[str, torch.Tensor]) -> torch.Tensor:
         return latent
 
-    def forward(self, x):
+    def metad(self, x: torch.Tensor) -> torch.Tensor:
+        if self.normIn:
+            x = x - self.Mean.view(1, -1).expand_as(x)
+            x = x / self.Range.view(1, -1).expand_as(x)
+
+        latent, _ = self.encoder(x)
+        return latent
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         meta = {}
         x = self.normalize(x)
         latent, meta_latent = self.encoder(x)
-
-        latent, meta_sample = self.latent_to_decoder_input(latent)
 
         if self.metaD:
             meta.update(meta_latent)
             return self.get_metad_output(latent, meta)
 
+        latent, meta_sample = self.latent_to_decoder_input(latent)
+        
         pred, meta_dec = self.decoder(latent)
         meta.update(meta_latent)
         meta.update(meta_dec)
@@ -236,18 +277,22 @@ class AEBase(pl.LightningModule, ABC):
         mae = torch.mean(mae)
         return mae, {}
 
-    def plotter(self, data, latent, pred, meta):
+    def plotter(self, data, latent, pred, labels, meta):
         if self.hparams.test_plotter is None:
             return
         if self.hparams.test_plotter == "LDplotter":
             from plotters.latent_space_plotter import LDplotter
-            LDplotter(data, latent, pred, meta, logger=self.logger.experiment, outstem=self.hparams.outname)
+            labels_names = self.trainer.datamodule.label_list
+            assert len(labels_names) == labels.shape[1], f"Labels names and labels do not match. {len(labels_names)} != {labels.shape[1]}"
+            labels_dict = {labels_names[i]: labels[:,i] for i in range(labels.shape[1])}
+            LDplotter(data, latent, pred, labels_dict, meta, logger=self.logger.experiment, outstem=self.hparams.outname)
         else:
             raise ValueError(f"Unknown plotter: {self.hparams.test_plotter}")
         return
 
     def test_step(self, test_batch, batch_idx):
         data = test_batch[0]
+        labels = test_batch[1] if len(test_batch) > 1 else None
         latent, pred, meta = self(data)
         batch_size = self.trainer.datamodule.hparams.test_batch_size if self.trainer and self.trainer.datamodule else None
 
@@ -259,7 +304,9 @@ class AEBase(pl.LightningModule, ABC):
                     self.log(f"test_{key}", value, prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
             meta.update(metric_meta)
         if self.hparams.test_plotter is not None:
-            self.plotter(data, latent, pred, meta)
+            self.plotter(data, latent, pred, labels, meta)
+        if self.hparams.export_latent:
+            self.export_latent(latent, labels)
         return
 
     def plot_extra(self, data_x, data_y, latents):
@@ -274,3 +321,35 @@ class AEBase(pl.LightningModule, ABC):
 
     def get_latent_names(self):
         return "latent"
+    
+    @torch.no_grad()
+    def export_serial_model(self, model_path = None):
+        print(f"[Exporting the serialized {type(self).__name__} model]")
+
+        fake_loader = self.trainer.datamodule.test_dataloader()
+        fake_input = next(iter(fake_loader))[0].float()
+
+        if model_path == None:
+            model_path = '.'
+        if not os.path.isdir(model_path):
+                os.makedirs(model_path)
+
+        self.metaD = True
+        torch.jit.save(self.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{model_path}/encoder.pt")
+        self.metaD = False
+        print(f"[{type(self).__name__} model serialized at: {model_path}/encoder.pt]")
+
+    @torch.no_grad()
+    def export_latent(self, latents, labels = None):
+        if not isinstance(latents, tuple):
+            latents = (latents,)
+        latent_names = self.get_latent_names()
+        assert len(latents) == len(latent_names), f"Latent names and latents do not match. {len(latents)} != {len(latent_names)}"
+        for i in range(len(latents)):
+            np.save(self.hparams.outname + f"{latent_names[i]}.npy", latents[i])
+                
+        if labels is not None:
+            np.save(self.hparams.outname + f"labels.npy", labels)
+    
+    def get_metatomic_model(self):
+        raise NotImplementedError("This function must be implemented in child class")

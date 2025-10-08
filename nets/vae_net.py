@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union, Dict
 
 import torch
 import torch.nn.functional as F
@@ -12,6 +12,37 @@ from nets.ae_base import AEBase
 from nets.encoders.variational_encoder import VariationalNN
 
 COMPATIBLE_DATAMODULES = ["DEFAULT", "DISTANCES"]
+EPSILON = 1e-7
+
+class MetatomicModelVAE(torch.nn.Module):
+    def __init__(self, 
+                 encoder: torch.nn.Module,
+                 normIn: bool = False,
+                 dmean: torch.Tensor = torch.zeros(1), 
+                 drange: torch.Tensor = torch.ones(1),
+                 ):
+        super().__init__()
+        self.encoder = encoder
+
+        self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
+        self.register_buffer('Mean', dmean)
+        self.register_buffer('Range', drange)
+
+    def forward(
+        self,
+        x: torch.Tensor
+    ) -> torch.Tensor:
+
+        if self.normIn:
+            # TorchScript-compatible broadcasting
+            # Reshape Mean and Range to match x dimensions for broadcasting
+            mean_expanded = self.Mean.view(1, -1).expand_as(x)
+            range_expanded = self.Range.view(1, -1).expand_as(x)
+            
+            return (x - mean_expanded) / range_expanded
+        latent = self.encoder(x)
+        mean, logvar = latent
+        return mean
 
 class VAE(AEBase):
     def __init__(self,
@@ -24,6 +55,7 @@ class VAE(AEBase):
                  scheduler_args : dict = {},
                  outname: str = './VAE_untitled/VAE_',
                  test_plotter : str = "LDplotter",
+                 export_latent : bool = False,
                  beta: float = 1.0,
                  batch_norm: bool = True,
                  C_reg: Optional[Tuple[float, int, int]] = None,
@@ -56,7 +88,10 @@ class VAE(AEBase):
                          scheduler=scheduler,
                          scheduler_args=scheduler_args,
                          outname=outname,
-                         test_plotter=test_plotter,)
+                         test_plotter=test_plotter,
+                         export_latent=export_latent,
+                         )
+        self.metatomic_model_cls = MetatomicModelVAE
 
         #### Setting up the layers of the network ####
         self.network = nodes
@@ -89,9 +124,32 @@ class VAE(AEBase):
 
         self.save_hyperparameters(ignore=['datamodule'])
     
+    def get_metatomic_model(self):
+        model = self.metatomic_model_cls(
+            encoder=self.encoder_net,
+            normIn=self.hparams.normIn,
+            dmean=self.Mean,
+            drange=self.Range,
+        )
+        return model
+
     def compatible_datamodules(self):
         # This can be overloaded in child classes if needed
         return COMPATIBLE_DATAMODULES
+
+    def get_metad_output(self, latent: Tuple[torch.Tensor, torch.Tensor], meta: Dict[str, torch.Tensor]) -> torch.Tensor:
+        # For metaD we use only use the mean of the latent distribution
+        mean, logvar = latent
+        return mean
+
+    def forwards_metad(self, x: torch.Tensor) -> torch.Tensor:
+        if self.normIn:
+            x = x - self.Mean.view(1, -1).expand_as(x)
+            x = x / self.Range.view(1, -1).expand_as(x)
+
+        latent, _ = self.encoder(x)
+        mean, logvar = latent
+        return mean
 
     def print_hparams(self):
         super().print_hparams()
@@ -128,7 +186,7 @@ class VAE(AEBase):
 
         return x_out, {"mu_x" : mu_x, "logvar_x" : logvar_x}
 
-    def latent_to_decoder_input(self, latent):
+    def latent_to_decoder_input(self, latent: Tuple[torch.Tensor, torch.Tensor]):
         mu_latent, logvar_latent = latent
         z = self.reparametrize_multivariate(mu_latent, logvar_latent)
         return z, {"mu_latent": mu_latent, "logvar_latent": logvar_latent, "z_sample": z}
