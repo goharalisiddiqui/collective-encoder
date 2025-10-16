@@ -1,0 +1,166 @@
+from typing import List, Optional, Dict
+
+import ase
+
+import torch
+from torch.utils.data import Dataset
+
+import featomic.torch
+import metatensor.torch as mts
+import metatensor
+import metatomic.torch as mta
+
+class MetatomicSOAPDataset(torch.nn.Module):
+    def __init__(self, spex, selected_keys, selected_atoms=None):
+        super().__init__()
+
+        self.spex = spex
+        self.selected_keys = selected_keys
+        self.selected_atoms = selected_atoms
+    
+    def get_atomic_types(self):
+        return [a for a in range(0, 119)],  # all elements
+
+    def get_interaction_range(self):
+        return torch.inf
+
+    def get_length_unit(self):
+        return "nanometer"
+
+    def forward(
+        self,
+        systems: List[mta.System],
+        outputs: Dict[str, mta.ModelOutput],
+        selected_atoms: Optional[mts.Labels],
+    ) -> torch.Tensor:
+
+        if selected_atoms is None:
+            selected_atoms = mts.Labels(
+                "atom", torch.tensor(self.selected_atoms).reshape(-1, 1)
+            )
+        else:
+            assert list(selected_atoms.names) == ["atom"], "selected_atoms must be a Labels with name 'atom'" 
+
+        # computes the spherical expansion
+        spex = self.spex(
+            systems, selected_samples=selected_atoms, selected_keys=self.selected_keys
+        )
+
+        # then manipulate the tensormap to remove some of the sparsity
+        spex = mts.remove_dimension(spex, axis="keys", name="o3_sigma")
+        spex = spex.keys_to_properties("neighbor_type")
+        spex = spex.keys_to_samples("center_type")
+
+        # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
+
+        atom_desc = []
+        for atom in self.selected_atoms:
+            desc_block = []
+            for block in mts.slice(
+                                spex,
+                                axis="samples",
+                                selection=mts.Labels(
+                                    "atom", torch.tensor([atom]).reshape(-1, 1)
+                                ),
+                            ).blocks():
+                desc = block.values
+                desc_block.append(desc)
+            atom_desc.append(torch.concatenate(desc_block, dim=-2))
+        descriptors = torch.concatenate([d.unsqueeze(1) for d in atom_desc], dim=1)
+
+        descriptors = descriptors.reshape(descriptors.shape[0], -1) #FIXME: flatten for now
+
+
+        return descriptors
+
+class SOAPDataset(Dataset):
+    def __init__(
+        self,
+        structures: List[ase.Atoms],
+        selected_atoms: List[int],
+        labels: List[float],
+        cutoff: float,
+        angular_list: List[int] = [4],
+        smoothing_width: float = 1.5,
+        gaussian_width: float = 1.0,
+        n_radial: int = 4,
+    ):
+        print(f"\n\n[{type(self).__name__}]")
+        print("="*80)
+        self.max_angular = max(angular_list)
+        self.selected_atoms = selected_atoms
+        # initialize and store the featomic calculator inside the class
+        self.spex = featomic.torch.SphericalExpansion(
+            **{
+                "cutoff": {
+                    "radius": cutoff,
+                    "smoothing": {"type": "ShiftedCosine", "width": smoothing_width},
+                },
+                "density": {"type": "Gaussian", "width": gaussian_width},
+                "basis": {
+                    "type": "TensorProduct",
+                    "max_angular": self.max_angular,
+                    "radial": {"type": "Gto", "max_radial": n_radial},
+                },
+            }
+        )
+        self.at_types = structures[0].get_atomic_numbers()
+
+        self.selected_keys = mts.Labels(
+            # These represent the degree of the spherical harmonics
+            "o3_lambda",
+            torch.tensor(angular_list).reshape(-1, 1),
+        )
+
+        # Precompute all the systems
+        systems = featomic.torch.systems_to_torch(structures)
+        selected_atoms_label = mts.Labels(
+            "atom", torch.tensor(selected_atoms).reshape(-1, 1)
+        )
+        descriptors = self.spex(
+            systems, selected_samples=selected_atoms_label, selected_keys=self.selected_keys
+        )
+        descriptors = mts.remove_dimension(descriptors, axis="keys", name="o3_sigma")
+        descriptors = descriptors.keys_to_properties("neighbor_type")
+        descriptors = descriptors.keys_to_samples("center_type")
+
+
+        # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
+
+        
+        atom_desc = []
+        for atom in selected_atoms:
+            desc_block = []
+            for block in mts.slice(
+                                descriptors,
+                                axis="samples",
+                                selection=mts.Labels(
+                                    "atom", torch.tensor([atom]).reshape(-1, 1)
+                                ),
+                            ).blocks():
+                desc = block.values
+                desc_block.append(desc)
+            atom_desc.append(torch.concatenate(desc_block, dim=-2))
+        descriptors = torch.concatenate([d.unsqueeze(1) for d in atom_desc], dim=1)
+
+        # descriptors shape: (n_structures, n_selected_atoms, sum of (2l+1) over l in angular_list), radial components * no of species
+        self.descriptors = descriptors
+        self.labels = [torch.tensor(d) for d in labels]
+        print(f"[{type(self).__name__}]: Loaded {self.descriptors.shape[1]} data points with {self.descriptors.shape[1]} selected atoms each and descriptor dimension {self.descriptors.shape[2:]}.")
+
+        self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1) # flatten the last two dimensions
+        self.num_inputs = self.descriptors.shape[-1]
+        print(f"[{type(self).__name__}]: Each data point has input dimension {self.num_inputs}.")
+        print("="*80)
+        
+    def __len__(self):
+        return self.descriptors.shape[0]
+
+    def __getitem__(self, index):
+        return self.descriptors[index], self.labels[index]
+    
+    def get_data(self):
+        return self.descriptors, self.labels
+
+    def get_metatomic_dataprocessor(self):
+        return MetatomicSOAPDataset(self.spex, self.selected_keys, self.selected_atoms)

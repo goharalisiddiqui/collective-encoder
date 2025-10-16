@@ -11,7 +11,9 @@ from ase.data import covalent_radii
 from nets.ae_base import AEBase
 from nets.encoders.variational_encoder import VariationalNN
 
-COMPATIBLE_DATAMODULES = ["DEFAULT", "DISTANCES"]
+from metatomic.torch import ModelOutput
+
+COMPATIBLE_DATAMODULES = ["DEFAULT", "DISTANCES", "SOAP"]
 EPSILON = 1e-7
 
 class MetatomicModelVAE(torch.nn.Module):
@@ -27,6 +29,9 @@ class MetatomicModelVAE(torch.nn.Module):
         self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
         self.register_buffer('Mean', dmean)
         self.register_buffer('Range', drange)
+    
+    def get_output(self):
+        return {"features": ModelOutput(quantity="cv", unit="none", per_atom=False),}
 
     def forward(
         self,
@@ -39,7 +44,7 @@ class MetatomicModelVAE(torch.nn.Module):
             mean_expanded = self.Mean.view(1, -1).expand_as(x)
             range_expanded = self.Range.view(1, -1).expand_as(x)
             
-            return (x - mean_expanded) / range_expanded
+            x = (x - mean_expanded) / range_expanded
         latent = self.encoder(x)
         mean, logvar = latent
         return mean

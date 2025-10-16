@@ -32,6 +32,15 @@ class MetatomicDistanceDataset(torch.nn.Module):
             mask_j.append(j)
         self.register_buffer("mask_i", torch.tensor(mask_i, dtype=torch.long))
         self.register_buffer("mask_j", torch.tensor(mask_j, dtype=torch.long))
+    
+    def get_atomic_types(self):
+        return [a for a in range(0, 119)],  # all elements
+
+    def get_interaction_range(self):
+        return torch.inf
+
+    def get_length_unit(self):
+        return "nanometer"
 
     def forward(
         self,
@@ -40,12 +49,11 @@ class MetatomicDistanceDataset(torch.nn.Module):
         selected_atoms: Optional[Labels] = None,
     ) -> torch.Tensor:
 
-        positions = systems[0].positions
-        positions = positions.view(-1, 3)
-
-        pd = pairwise_distance(positions[self.mask_i], positions[self.mask_j])
-
-        return pd
+        pd_batch = torch.stack(
+            [pairwise_distance(systems[i].positions.view(-1,3)[self.mask_i], 
+                               systems[i].positions.view(-1,3)[self.mask_j]) 
+            for i in range(len(systems))], dim=0)
+        return pd_batch
 
 
 class DistancesDataset(Dataset):

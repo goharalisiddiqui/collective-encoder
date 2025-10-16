@@ -1,6 +1,9 @@
-from glob import glob
 import os
-import argparse
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) #FIXME: This is weird hack to import from parent dir. Need to write a proper package
+
+from glob import glob
 from typing import List, Dict, Union
 from tqdm import tqdm
 import random
@@ -21,9 +24,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch_geometric.loader import DataLoader as GeoDataLoader
 import pytorch_lightning as pl
-
-
-
 
 
 class XtcData(Dataset):
@@ -221,11 +221,14 @@ class XtcDataset(pl.LightningDataModule):
         if dataset_type == 'DEFAULT':
             dataset_class = XtcData
         elif dataset_type == 'DISTANCES':
-            from datasets.distances_dataset import DistancesDataset as dataset_class
+            print(os.getcwd())
+            from datasets.distances import DistancesDataset as dataset_class
             dataset_args['atm_ids'] = atm_ids
         elif dataset_type == 'GRAPH':
-            from datasets.graph import graphDataset as dataset_class
+            from datasets.bondgraph import BondGraphDataset as dataset_class
             dataset_args['bond_indices'] = self.bonds
+        elif dataset_type == 'SOAP':
+            from datasets.soap import SOAPDataset as dataset_class
         else:
             raise ValueError(f"Unknown dataset type: {dataset_type}")
 
@@ -289,7 +292,7 @@ class XtcDataset(pl.LightningDataModule):
                     ])
     
     def get_atns(self):
-        return self.atoms
+        return self.atns
 
     def get_bond_indices(self):
         return self.bonds
@@ -430,6 +433,8 @@ class XtcDataset(pl.LightningDataModule):
 
     def get_scaler_mean(self):
         self.fit_target_scaler()
+        if self.hparams.norm_type == 'minmax':
+            return self.target_scaler.data_min_
         return self.target_scaler.mean_
 
     def get_scaler_var(self):

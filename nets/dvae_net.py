@@ -49,9 +49,6 @@ class DVAE(VAE):
             use_bond_deviation_loss=use_bond_deviation_loss,
         )
 
-        self.losses = {
-            "rec_loss": self.loss_mse,
-        }
 
     def init_network(self):
         print(f"[Initializing {type(self).__name__} Module]")
@@ -68,9 +65,10 @@ class DVAE(VAE):
         z = self.decoder_net(z)
         return z, {}
 
-    def recon_loss(self, tru_x, recon_x):
-        loss_rec = F.mse_loss(recon_x, tru_x, reduction='none')
+    def recon_loss(self, x, latent, pred, meta):
+        loss_rec = F.mse_loss(pred, x, reduction='none')
         loss_rec = torch.mean(loss_rec, dim = 1)
+        loss_rec = torch.mean(loss_rec)
 
         return loss_rec, {}
 

@@ -128,6 +128,9 @@ def plot_2dline(x, labels = None):
 
 
 def LDplotter(data, latent, pred, labels, meta, logger, outstem="./untitled_"):
+    if labels is not None:
+        for k in labels.keys():
+            labels[k] = labels[k].cpu().numpy()
     # print("[Plotting latent space with LDplotter]")
     # print("Latent shape: ", latent.shape)
     # print("Data shape: ", data.shape)
@@ -138,6 +141,7 @@ def LDplotter(data, latent, pred, labels, meta, logger, outstem="./untitled_"):
     #     print(f"{k}: {v.shape}")
     mu_latent = meta.get('mu_latent', None)
     if mu_latent is not None:
+        mu_latent = mu_latent.cpu().numpy()
         nld = mu_latent.shape[1]
         if nld == 1:
             fig = plot_2dline(mu_latent[:, 0], labels=labels, tag="LDplotter")

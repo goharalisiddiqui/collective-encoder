@@ -65,7 +65,7 @@ if config['debug']:
     config['data_args']['validation_size'] = 10
     config['data_args']['val_batch_size'] = 4
     config['data_args']['test_full_dataset'] = True
-    config['data_args']['dataset_type'] = "DEFAULT"
+    # config['data_args']['dataset_type'] = "DEFAULT"
     config['data_args']['num_workers'] = 1
     print("Running in debug mode")
 
@@ -191,8 +191,22 @@ if config['wandb']:
                              log_model=False)
     trainargs["logger"] = wandb_logger
 
+callbacks = []
+# Learning rate monitor
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
-trainargs["callbacks"] = [lr_monitor]
+callbacks.append(lr_monitor)
+# Early stopping
+if 'early_stopping' in config and config['early_stopping']:
+    early_stop_callback = pl.callbacks.EarlyStopping(
+        monitor='val_loss',
+        min_delta=0.00,
+        patience=20,
+        verbose=True,
+        mode='min'
+    )
+    callbacks.append(early_stop_callback)
+
+trainargs["callbacks"] = callbacks
 
 # trainargs["gradient_clip_val"] = 0.5
 # trainargs["gradient_clip_algorithm"] = "norm"
@@ -200,7 +214,6 @@ trainargs["callbacks"] = [lr_monitor]
 trainer = pl.Trainer(**trainargs)
 
 if config['nepochs'] > 0:
-    # trainer.tune(model, datamodule=colvardata) # To auto find the lr
     trainer.fit(model, datamodule=colvardata)
 
 if config['nepochs'] == 0 and load_model == None:
@@ -249,6 +262,8 @@ if config.get('save_metatomic', False):
             ModelCapabilities,
             ModelMetadata,
             ModelOutput,
+            System,
+            ModelEvaluationOptions,
         )
     except ImportError:
         raise ImportError("metatomic is not installed. Please install it with `pip install metatomic`")
@@ -257,30 +272,52 @@ if config.get('save_metatomic', False):
     metamodel = model.get_metatomic_model()
     metatomic_model = MetatomicCV(dataprocessor, metamodel)
     metadata = ModelMetadata(
-        name="ml-collective-variable",
-        description="A collective variable learned using collective-encoder",
-        authors=["SNE"],
-        references={
-        },
+        name=config.get('metatomic_metadata', {}).get('name', 'unknown'),
+        description=config.get('metatomic_metadata', {}).get('description', 'unknown'),
+        authors=config.get('metatomic_metadata', {}).get('authors', []),
+        references=config.get('metatomic_metadata', {}).get('references', {}),
     )
-    outputs = {
-        "features": ModelOutput(quantity="", unit="none", per_atom=False),
-    }
-
     capabilities = ModelCapabilities(
-        outputs=outputs,
-        atomic_types=[a for a in range(1, 119)],  # all elements
-        interaction_range=torch.inf,
-        length_unit="nanometer",
-        supported_devices=["cpu"],
+        outputs={"features": ModelOutput(quantity="", unit="none", per_atom=False),},
+        atomic_types=dataprocessor.get_atomic_types(),
+        interaction_range=dataprocessor.get_interaction_range(),
+        length_unit=dataprocessor.get_length_unit(),
+        supported_devices=["cpu", "cuda"],
         dtype="float64",
     )
-
     metatomic_module = AtomisticModel(
         module=metatomic_model.eval(),
         metadata=metadata,
         capabilities=capabilities,
     )
+    # Sanity checks of the model
+    at_types = colvardata.get_atns()
+    fake_systems = [
+        System(
+            types=torch.tensor(at_types, dtype=torch.long),
+            positions=torch.randn(len(at_types), 3, dtype=torch.float64),
+            cell=torch.eye(3, dtype=torch.float64),
+            pbc=torch.tensor([True, True, True]),),
+        System(
+            types=torch.tensor(at_types, dtype=torch.long),
+            positions=torch.randn(len(at_types), 3, dtype=torch.float64),
+            cell=torch.eye(3, dtype=torch.float64),
+            pbc=torch.tensor([True, True, True]),)
+        ]
+    fake_options = ModelEvaluationOptions(
+        length_unit="nanometer",
+        outputs={"features": ModelOutput(quantity="", unit="none", per_atom=False),},
+        selected_atoms=None,
+    )
+        
+    # Run inference
+    try:
+        with torch.no_grad():
+            output = metatomic_module(fake_systems, fake_options, False)
+    except Exception as e:
+        raise RuntimeError("metatomic model failed the sanity check: "+str(e))
+
+
     metatomic_model_file = os.path.join(run_dir, "metatomic_model.pt")
     metatomic_module.save(metatomic_model_file)
 

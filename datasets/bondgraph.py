@@ -9,6 +9,21 @@ import torch
 from torch import Tensor
 from torch_geometric.data import Data, Dataset
 
+class MetatomicBondGraphDataset(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+     
+
+    def forward(
+        self,
+        systems: List[System],
+        outputs: Dict[str, ModelOutput],
+        selected_atoms: Optional[Labels] = None,
+    ) -> torch.Tensor:
+
+        pass
+
 def bond_type_one_hot(kind: str) -> List[float]:
     # single, double, triple, aromatic, virtual
     mapping = {"single": 0, "double": 1, "triple": 2, "aromatic": 3, "virtual": 4}
@@ -30,7 +45,7 @@ def _dihedral(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) ->
     y = np.dot(np.cross(b1n, v), w)
     return float(np.arctan2(y, x))
 
-class graphDataset(Dataset):
+class BondGraphDataset(Dataset):
     """Graph dataset where nodes are bonds and edges connect bonds via angles or torsions.
 
     Node (bond) feature vector (length 3):
