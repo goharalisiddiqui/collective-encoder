@@ -13,7 +13,7 @@ from nets.encoders.variational_encoder import VariationalNN
 
 from metatomic.torch import ModelOutput
 
-COMPATIBLE_DATAMODULES = ["DEFAULT", "DISTANCES", "SOAP"]
+COMPATIBLE_DATAMODULES = ["DEFAULT", "DISTANCES", "SOAP", "SOAP_PS"]
 EPSILON = 1e-7
 
 class MetatomicModelVAE(torch.nn.Module):
@@ -30,7 +30,7 @@ class MetatomicModelVAE(torch.nn.Module):
         self.register_buffer('Mean', dmean)
         self.register_buffer('Range', drange)
     
-    def get_output(self):
+    def get_metatomic_outputs(self):
         return {"features": ModelOutput(quantity="cv", unit="none", per_atom=False),}
 
     def forward(

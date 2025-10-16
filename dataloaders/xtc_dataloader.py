@@ -229,6 +229,8 @@ class XtcDataset(pl.LightningDataModule):
             dataset_args['bond_indices'] = self.bonds
         elif dataset_type == 'SOAP':
             from datasets.soap import SOAPDataset as dataset_class
+        elif dataset_type == 'SOAP_PS':
+            from datasets.soap_ps import SoapPowerSpectrumDataset as dataset_class
         else:
             raise ValueError(f"Unknown dataset type: {dataset_type}")
 
@@ -447,3 +449,21 @@ class XtcDataset(pl.LightningDataModule):
 
     def get_datapoint_shape(self):
         return self.datapoint_shape
+    
+    def get_fake_systems(self):
+        at_types = self.atns
+        from metatomic.torch import System
+        fake_systems = [
+            System(
+                types=torch.tensor(at_types, dtype=torch.long),
+                positions=torch.randn(len(at_types), 3, dtype=torch.float64),
+                cell=torch.eye(3, dtype=torch.float64),
+                pbc=torch.tensor([True, True, True]),),
+            System(
+                types=torch.tensor(at_types, dtype=torch.long),
+                positions=torch.randn(len(at_types), 3, dtype=torch.float64),
+                cell=torch.eye(3, dtype=torch.float64),
+                pbc=torch.tensor([True, True, True]),)
+            ]
+
+        return fake_systems

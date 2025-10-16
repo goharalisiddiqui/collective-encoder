@@ -278,7 +278,7 @@ if config.get('save_metatomic', False):
         references=config.get('metatomic_metadata', {}).get('references', {}),
     )
     capabilities = ModelCapabilities(
-        outputs={"features": ModelOutput(quantity="", unit="none", per_atom=False),},
+        outputs=metamodel.get_metatomic_outputs(),
         atomic_types=dataprocessor.get_atomic_types(),
         interaction_range=dataprocessor.get_interaction_range(),
         length_unit=dataprocessor.get_length_unit(),
@@ -290,23 +290,13 @@ if config.get('save_metatomic', False):
         metadata=metadata,
         capabilities=capabilities,
     )
-    # Sanity checks of the model
-    at_types = colvardata.get_atns()
-    fake_systems = [
-        System(
-            types=torch.tensor(at_types, dtype=torch.long),
-            positions=torch.randn(len(at_types), 3, dtype=torch.float64),
-            cell=torch.eye(3, dtype=torch.float64),
-            pbc=torch.tensor([True, True, True]),),
-        System(
-            types=torch.tensor(at_types, dtype=torch.long),
-            positions=torch.randn(len(at_types), 3, dtype=torch.float64),
-            cell=torch.eye(3, dtype=torch.float64),
-            pbc=torch.tensor([True, True, True]),)
-        ]
+    ##################################
+    # Sanity check of the model
+    ##################################
+    fake_systems = colvardata.get_fake_systems()
     fake_options = ModelEvaluationOptions(
-        length_unit="nanometer",
-        outputs={"features": ModelOutput(quantity="", unit="none", per_atom=False),},
+        length_unit=dataprocessor.get_length_unit(),
+        outputs=metamodel.get_metatomic_outputs(),
         selected_atoms=None,
     )
         
@@ -316,7 +306,6 @@ if config.get('save_metatomic', False):
             output = metatomic_module(fake_systems, fake_options, False)
     except Exception as e:
         raise RuntimeError("metatomic model failed the sanity check: "+str(e))
-
 
     metatomic_model_file = os.path.join(run_dir, "metatomic_model.pt")
     metatomic_module.save(metatomic_model_file)

@@ -10,12 +10,11 @@ import metatensor.torch as mts
 import metatensor
 import metatomic.torch as mta
 
-class MetatomicSOAPDataset(torch.nn.Module):
-    def __init__(self, spex, selected_keys, selected_atoms=None):
+class MetatomicSoapPowerSpectrumDataset(torch.nn.Module):
+    def __init__(self, spex, selected_atoms=None):
         super().__init__()
 
         self.spex = spex
-        self.selected_keys = selected_keys
         self.selected_atoms = selected_atoms
     
     def get_atomic_types(self):
@@ -43,12 +42,12 @@ class MetatomicSOAPDataset(torch.nn.Module):
 
         # computes the spherical expansion
         spex = self.spex(
-            systems, selected_samples=selected_atoms, selected_keys=self.selected_keys
+            systems, selected_samples=selected_atoms
         )
 
         # then manipulate the tensormap to remove some of the sparsity
-        spex = mts.remove_dimension(spex, axis="keys", name="o3_sigma")
-        spex = spex.keys_to_properties("neighbor_type")
+        spex = spex.keys_to_properties("neighbor_1_type")
+        spex = spex.keys_to_properties("neighbor_2_type")
         spex = spex.keys_to_samples("center_type")
 
         # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
@@ -73,24 +72,24 @@ class MetatomicSOAPDataset(torch.nn.Module):
 
         return descriptors
 
-class SOAPDataset(Dataset):
+class SoapPowerSpectrumDataset(Dataset):
     def __init__(
         self,
         structures: List[ase.Atoms],
         selected_atoms: List[int],
         labels: List[float],
         cutoff: float,
-        angular_list: List[int] = [4],
+        max_angular: int = 6,
         smoothing_width: float = 1.5,
         gaussian_width: float = 1.0,
         n_radial: int = 4,
     ):
         print(f"\n\n[{type(self).__name__}]")
         print("="*80)
-        self.max_angular = max(angular_list)
+        self.max_angular = max_angular
         self.selected_atoms = selected_atoms
         # initialize and store the featomic calculator inside the class
-        self.spex = featomic.torch.SphericalExpansion(
+        self.spex = featomic.torch.SoapPowerSpectrum(
             **{
                 "cutoff": {
                     "radius": cutoff,
@@ -106,28 +105,20 @@ class SOAPDataset(Dataset):
         )
         self.at_types = structures[0].get_atomic_numbers()
 
-        self.selected_keys = mts.Labels(
-            # These represent the degree of the spherical harmonics
-            "o3_lambda",
-            torch.tensor(angular_list).reshape(-1, 1),
-        )
-
         # Precompute all the systems
         systems = featomic.torch.systems_to_torch(structures)
         selected_atoms_label = mts.Labels(
             "atom", torch.tensor(selected_atoms).reshape(-1, 1)
         )
         descriptors = self.spex(
-            systems, selected_samples=selected_atoms_label, selected_keys=self.selected_keys
+            systems, selected_samples=selected_atoms_label
         )
-        descriptors = mts.remove_dimension(descriptors, axis="keys", name="o3_sigma")
-        descriptors = descriptors.keys_to_properties("neighbor_type")
+
+        descriptors = descriptors.keys_to_properties("neighbor_1_type")
+        descriptors = descriptors.keys_to_properties("neighbor_2_type")
         descriptors = descriptors.keys_to_samples("center_type")
 
-
         # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
-
-        
         atom_desc = []
         for atom in selected_atoms:
             desc_block = []
@@ -163,4 +154,4 @@ class SOAPDataset(Dataset):
         return self.descriptors, self.labels
 
     def get_metatomic_dataprocessor(self):
-        return MetatomicSOAPDataset(self.spex, self.selected_keys, self.selected_atoms)
+        return MetatomicSoapPowerSpectrumDataset(self.spex, self.selected_atoms)
