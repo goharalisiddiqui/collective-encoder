@@ -118,6 +118,9 @@ class SoapPowerSpectrumDataset(Dataset):
         descriptors = descriptors.keys_to_properties("neighbor_2_type")
         descriptors = descriptors.keys_to_samples("center_type")
 
+        print(descriptors)
+        print(descriptors.blocks()[0])
+
         # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
         atom_desc = []
         for atom in selected_atoms:

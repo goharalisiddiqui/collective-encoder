@@ -31,7 +31,7 @@ class MetatomicModelVAE(torch.nn.Module):
         self.register_buffer('Range', drange)
     
     def get_metatomic_outputs(self):
-        return {"features": ModelOutput(quantity="cv", unit="none", per_atom=False),}
+        return {"features": ModelOutput(quantity="", unit="none", per_atom=False),}
 
     def forward(
         self,
