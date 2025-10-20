@@ -34,7 +34,7 @@ class SimpleNN(nn.Module):
     def init_encoder_output(self):
         l = self.layers
         self.encoder_output = nn.Linear(l[-2], l[-1])
-        print(l[1], " --> ", l[0], end=" ")
+        print(l[-2], " --> ", l[-1], end=" ")
         print("(feature space)")
 
     def forward(self, x):

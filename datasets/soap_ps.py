@@ -24,7 +24,7 @@ class MetatomicSoapPowerSpectrumDataset(torch.nn.Module):
         return torch.inf
 
     def get_length_unit(self):
-        return "nanometer"
+        return "angstrom"
 
     def forward(
         self,
@@ -88,6 +88,8 @@ class SoapPowerSpectrumDataset(Dataset):
         print("="*80)
         self.max_angular = max_angular
         self.selected_atoms = selected_atoms
+        if any([atom >= len(structures[0]) for atom in selected_atoms]):
+            raise ValueError(f"Selected atom indices {selected_atoms} are out of bounds for structure with {len(structures[0])} atoms.")
         # initialize and store the featomic calculator inside the class
         self.spex = featomic.torch.SoapPowerSpectrum(
             **{
@@ -117,9 +119,6 @@ class SoapPowerSpectrumDataset(Dataset):
         descriptors = descriptors.keys_to_properties("neighbor_1_type")
         descriptors = descriptors.keys_to_properties("neighbor_2_type")
         descriptors = descriptors.keys_to_samples("center_type")
-
-        print(descriptors)
-        print(descriptors.blocks()[0])
 
         # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
         atom_desc = []

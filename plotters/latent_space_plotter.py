@@ -1,3 +1,4 @@
+import os
 import torch
 
 import numpy as np
@@ -7,6 +8,7 @@ import scipy
 from scipy.special import comb
 
 import matplotlib.pyplot as plt
+import wandb
 
 def combinations(n, r):
     # Generate all combinations of n items taken r at a time
@@ -78,13 +80,16 @@ def print_labels_latent_correlations(self, latent, labels = None):
 '''
 
 
-
 @torch.no_grad()
-def plot_2dscatter(x, y, labels = None, tag = None):
+def plot_2dscatter(x, y, xerr=None, yerr=None, labels = None, tag = None):
     assert x.shape == y.shape, "x, y must have the same shape"
     assert len(x.shape) == 1, "x, y must be 1D arrays"
     if labels is None or len(labels) == 0:
         raise ValueError("Labels must be provided for 2D scatter plot")
+    if xerr is not None:
+        assert yerr is not None, "If xerr is provided, yerr must also be provided"
+        assert xerr.shape == x.shape, "xerr must have the same shape as x"
+        assert yerr.shape == y.shape, "yerr must have the same shape as y"
     ncols = len(labels)
     fig, axes = plt.subplots(nrows=1, ncols=ncols, figsize=(8 * ncols, 6))
     if ncols == 1:
@@ -95,6 +100,8 @@ def plot_2dscatter(x, y, labels = None, tag = None):
         if len(label.shape) != 1 or label.shape[0] != x.shape[0]:
             raise ValueError(f"Label {label_name} must be a 1D array with the same length as x and y")
         scatter = ax.scatter(x, y, c=label, cmap='viridis', alpha=0.7)
+        if xerr is not None:
+            ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt='o', c='gray', alpha=0.5, ecolor='lightgray', elinewidth=1, capsize=2)
         ax.set_xlabel(f"$LD_{tag.split('_')[0]}$")
         ax.set_ylabel(f"$LD_{tag.split('_')[1]}$")
         fig.colorbar(scatter, ax=ax, label=label_name)
@@ -125,9 +132,42 @@ def plot_2dline(x, labels = None):
     plt.tight_layout()
     return fig
 
+def plot_latent(latent, labels, errors = None, name = "mu_latent", outstem="./untitled_", logger = None):
+    nld = latent.shape[1]
+    if nld == 1:
+        fig = plot_2dline(latent[:, 0], labels=labels, tag="LDplotter")
+        # logger.add_figure("LDplotter/mu_latent", fig)
+        log_image(logger, f"{name}", fig, outstem=outstem)
+        # fig.savefig(f"{outstem}LDplotter_{name}.png", dpi=150)
+    elif nld == 2:
+        if errors is not None:
+            fig = plot_2dscatter(latent[:, 0], latent[:, 1], xerr=errors[:, 0], yerr=errors[:, 1], labels=labels, tag="0_1")
+        else:
+            fig = plot_2dscatter(latent[:, 0], latent[:, 1], labels=labels, tag="0_1")
+        # logger.add_figure("LDplotter/mu_latent", fig)
+        log_image(logger, f"{name}", fig, outstem=outstem)
+        # fig.savefig(f"{outstem}LDplotter_{name}.png", dpi=150)
+    else:
+        combs = combinations(nld, 2)
+        for (i, j) in combs:
+            if errors is not None:
+                fig = plot_2dscatter(latent[:, i], latent[:, j], xerr=errors[:, i], yerr=errors[:, j], labels=labels, tag=f"{i}_{j}")
+            else:
+                fig = plot_2dscatter(latent[:, i], latent[:, j], labels=labels, tag=f"{i}_{j}")
+            # logger.add_figure(f"LDplotter/mu_latent_{i}_{j}", fig)
+            log_image(logger, f"{name}_{i}_{j}", fig, outstem=outstem)
+            # fig.savefig(f"{outstem}LDplotter_{name}_{i}_{j}.png", dpi=150)
 
+def log_image(logger, tag, fig, outstem):
+    fn = os.path.join(outstem, f"{tag}.png")
+    fig.savefig(fn, dpi=150)
+    if logger is not None and isinstance(logger, wandb.sdk.wandb_run.Run):
+        logger.log({f"[LDplotter] {tag}": wandb.Image(fn)})
+        print(f"[LDplotter] Logged figure {tag} to wandb logger")
 
 def LDplotter(data, latent, pred, labels, meta, logger, outstem="./untitled_"):
+    outstem = os.path.join(outstem, "LDplotter/")
+    os.makedirs(outstem, exist_ok=True)
     if labels is not None:
         for k in labels.keys():
             labels[k] = labels[k].cpu().numpy()
@@ -141,22 +181,12 @@ def LDplotter(data, latent, pred, labels, meta, logger, outstem="./untitled_"):
     #     print(f"{k}: {v.shape}")
     mu_latent = meta.get('mu_latent', None)
     if mu_latent is not None:
-        mu_latent = mu_latent.cpu().numpy()
-        nld = mu_latent.shape[1]
-        if nld == 1:
-            fig = plot_2dline(mu_latent[:, 0], labels=labels, tag="LDplotter")
-            # logger.add_figure("LDplotter/mu_latent", fig)
-            fig.savefig(f"{outstem}LDplotter_mu_latent.png", dpi=150)
-        elif nld == 2:
-            fig = plot_2dscatter(mu_latent[:, 0], mu_latent[:, 1], labels=labels, tag="0_1")
-            # logger.add_figure("LDplotter/mu_latent", fig)
-            fig.savefig(f"{outstem}LDplotter_mu_latent.png", dpi=150)
-        else:
-            combs = combinations(nld, 2)
-            for (i, j) in combs:
-                fig = plot_2dscatter(mu_latent[:, i], mu_latent[:, j], labels=labels, tag=f"{i}_{j}")
-                # logger.add_figure(f"LDplotter/mu_latent_{i}_{j}", fig)
-                fig.savefig(f"{outstem}LDplotter_mu_latent_{i}_{j}.png", dpi=150)
-
-    # plot_latent(data, latent, labels = meta.get('labels', None), plot_func = None, tag = "LDplotter")
+        mu_latent = mu_latent.detach().cpu().numpy()
+        plot_latent(mu_latent, labels = labels, name = "mu_latent", outstem=outstem, logger=logger)
+    logvar_latent = meta.get('logvar_latent', None)
+    if logvar_latent is not None:
+        logvar_latent = logvar_latent.detach().cpu().numpy()
+        std_latent = np.sqrt(np.exp(logvar_latent))
+        plot_latent(mu_latent, errors = std_latent, labels = labels, name = "std_latent", outstem=outstem, logger=logger)
+        
     return  

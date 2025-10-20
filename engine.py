@@ -188,7 +188,8 @@ if config['wandb']:
                              entity=config['wandb_entity'],
                              save_dir=run_dir,
                              name=run_dir.strip(".").strip("/").replace("/", "_"),
-                             log_model=False)
+                             log_model=False,)
+    # wandb_logger.watch(model, log_graph=True)
     trainargs["logger"] = wandb_logger
 
 callbacks = []
@@ -198,15 +199,16 @@ callbacks.append(lr_monitor)
 # Early stopping
 if 'early_stopping' in config and config['early_stopping']:
     early_stop_callback = pl.callbacks.EarlyStopping(
-        monitor='val_loss',
-        min_delta=0.00,
-        patience=20,
-        verbose=True,
-        mode='min'
+        monitor=config.get('early_stopping_args', {}).get('monitor', 'val_loss'),
+        min_delta=config.get('early_stopping_args', {}).get('min_delta', 0.00),
+        patience=config.get('early_stopping_args', {}).get('patience', 20),
+        verbose=config.get('early_stopping_args', {}).get('verbose', True),
+        mode=config.get('early_stopping_args', {}).get('mode', 'min')
     )
     callbacks.append(early_stop_callback)
 
 trainargs["callbacks"] = callbacks
+# trainargs["num_sanity_val_steps"] = 0
 
 # trainargs["gradient_clip_val"] = 0.5
 # trainargs["gradient_clip_algorithm"] = "norm"
@@ -269,6 +271,7 @@ if config.get('save_metatomic', False):
         raise ImportError("metatomic is not installed. Please install it with `pip install metatomic`")
 
     dataprocessor = colvardata.get_dataset().get_metatomic_dataprocessor()
+    # FIXME: Remove wandb hooks to avoid issues during serialization
     metamodel = model.get_metatomic_model()
     metatomic_model = MetatomicCV(dataprocessor, metamodel)
     metadata = ModelMetadata(
@@ -302,11 +305,13 @@ if config.get('save_metatomic', False):
         
     # Run inference
     try:
+        print("Running sanity check of the metatomic model...")
         with torch.no_grad():
             output = metatomic_module(fake_systems, fake_options, False)
     except Exception as e:
         raise RuntimeError("metatomic model failed the sanity check: "+str(e))
 
+    print("metatomic model passed the sanity check.\nSerializing the model...")
     metatomic_model_file = os.path.join(run_dir, "metatomic_model.pt")
     metatomic_module.save(metatomic_model_file)
 

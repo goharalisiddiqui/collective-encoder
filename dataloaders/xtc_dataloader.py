@@ -17,6 +17,7 @@ from MDAnalysis.analysis import align
 from MDAnalysis.analysis.rms import rmsd
 from MDAnalysis.lib.distances import calc_dihedrals
 import MDAnalysis.transformations as trans
+from MDAnalysis.exceptions import NoDataError
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -70,7 +71,8 @@ class XtcDataset(pl.LightningDataModule):
                  label_distance : List[str] = [],
                  label_dihedrals : List[str] = [],
                  norm_type : str = 'standard',
-                 test_full_dataset : bool = False
+                 test_full_dataset : bool = False,
+                 type_to_elements : List[int] = None,
                  ):
         super().__init__()
         print(f"\n\n[Initializing {type(self).__name__} Module]") if verbose else None
@@ -114,7 +116,17 @@ class XtcDataset(pl.LightningDataModule):
         u.trajectory.add_transformations(*transforms)
     
         # Extract the atomic numbers
-        at_elements = [at.element for at in mol]
+        try:
+            at_elements = [at.element for at in mol]
+        except NoDataError:
+            if type_to_elements is None:
+                raise ValueError("Atom elements not found in trajectory. Please provide type_to_elements mapping.")
+            at_elements = []
+            for at in mol.atoms:
+                type_index = int(at.type) - 1
+                if type_index < 0 or type_index >= len(type_to_elements):
+                    raise ValueError(f"Atom type {at.type} is out of bounds for provided type_to_elements mapping")
+                at_elements.append(type_to_elements[type_index])
         self.atns = []
         for elem in at_elements:
             assert elem in atomic_numbers, f"Atom {elem} not found in atomic numbers dictionary"
@@ -175,17 +187,38 @@ class XtcDataset(pl.LightningDataModule):
             read_frame_seq.sort()
             print(f"Reading trajectory of {len(read_frame_seq)} random frames...") if verbose else None
 
+        top_warn_flags = [False, False, False]  # resname, resid, atomname
         for idx in tqdm(read_frame_seq, disable=not verbose):
             u.trajectory[idx]
             # Create the ASE structure
-            structure = ase.Atoms(numbers=self.atns, positions=mol.atoms.positions)
+            structure = ase.Atoms(numbers=self.atns, 
+                                  positions=mol.atoms.positions,
+                                  cell=mol.dimensions[:3],)
+            if not np.all(mol.dimensions[:3] == 0):
+                structure.set_pbc([True, True, True])
 
-            # Retain topology information
-            residues = [str(r.residue.resname) for r in mol.atoms]
-            resids = [r.residue.resid for r in mol.atoms]
-            atomnames = [str(a.name) for a in mol.atoms]
-            structure.set_array('residuenumbers', np.array(resids))
+            # Retain topology information if available
+            try:
+                residues = [str(r.residue.resname) for r in mol.atoms]
+            except NoDataError:
+                print(f"[{type(self).__name__}] Warning: Residue names not found in trajectory. Using UNK for all") if verbose and not top_warn_flags[0] else None
+                top_warn_flags[0] = True
+                residues = ['UNK' for _ in mol.atoms]
+            try:
+                resids = [r.residue.resid for r in mol.atoms]
+            except NoDataError:
+                print(f"[{type(self).__name__}] Warning: Residue IDs not found in trajectory. Using 0 for all") if verbose and not top_warn_flags[1] else None
+                top_warn_flags[1] = True
+                resids = [0 for _ in mol.atoms]
+            try:
+                atomnames = [str(a.name) for a in mol.atoms]
+            except NoDataError:
+                print(f"[{type(self).__name__}] Warning: Atom names not found in trajectory. Using element names.") if verbose and not top_warn_flags[2] else None
+                top_warn_flags[2] = True
+                atomnames = at_elements
+
             structure.set_array('residuenames', np.array(residues))
+            structure.set_array('residuenumbers', np.array(resids))
             structure.set_array('atomtypes', np.array(atomnames))
 
             mol_traj.append(structure)
@@ -206,7 +239,7 @@ class XtcDataset(pl.LightningDataModule):
                     dih.append(res)
                 labels.append(dih)
             else:
-                labels.append(0.0)
+                labels.append([0.0])
         print(f"Finished reading trajectory.") if verbose else None
         
         
@@ -221,7 +254,6 @@ class XtcDataset(pl.LightningDataModule):
         if dataset_type == 'DEFAULT':
             dataset_class = XtcData
         elif dataset_type == 'DISTANCES':
-            print(os.getcwd())
             from datasets.distances import DistancesDataset as dataset_class
             dataset_args['atm_ids'] = atm_ids
         elif dataset_type == 'GRAPH':
@@ -233,6 +265,21 @@ class XtcDataset(pl.LightningDataModule):
             from datasets.soap_ps import SoapPowerSpectrumDataset as dataset_class
         else:
             raise ValueError(f"Unknown dataset type: {dataset_type}")
+        
+        # To enable selecting specific atoms for SOAP descriptors using MDAnalysis selections
+        if 'SOAP' in dataset_type:
+            if dataset_args.get('atoms_selections', None) is not None:
+                selected_indices = []
+                for selection in dataset_args['atoms_selections']:
+                    sel_atoms = u.select_atoms(selection)
+                    assert sel_atoms.n_atoms == 1, f"Selection {selection} must select exactly one atom, found {sel_atoms.n_atoms}"
+                    for at in sel_atoms:
+                        mol_index = np.where(mol.atoms.indices == at.index)[0]
+                        if len(mol_index) == 0:
+                            raise ValueError(f"Atom {at.index} in selection {selection} not found in selected molecule atoms")
+                        selected_indices.append(int(mol_index[0]))
+                dataset_args['selected_atoms'] = dataset_args.get('selected_atoms', []) + selected_indices
+                dataset_args.pop('atoms_selections')
 
         self.xtcData_full = dataset_class(
                 structures=mol_traj,
@@ -309,7 +356,7 @@ class XtcDataset(pl.LightningDataModule):
         else:
             raise ValueError(f"Normalization type {self.hparams.norm_type} not supported")
 
-        if self.hparams.dataset_type in ['DEFAULT', 'DISTANCES']:
+        if self.hparams.dataset_type in ['DEFAULT', 'DISTANCES', 'SOAP', 'SOAP_PS']:
             self.num_inputs = self.xtcData_full.num_inputs
             self.datapoint_shape = tuple(self.xtcData_full[0][0].shape)
             self.target_scaler.fit(self.xtcData_full.get_data()[0])
@@ -456,13 +503,13 @@ class XtcDataset(pl.LightningDataModule):
         fake_systems = [
             System(
                 types=torch.tensor(at_types, dtype=torch.long),
-                positions=torch.randn(len(at_types), 3, dtype=torch.float64),
-                cell=torch.eye(3, dtype=torch.float64),
+                positions=torch.tensor(self.mol_traj[0].positions, dtype=torch.float64),
+                cell=torch.tensor(self.mol_traj[0].get_cell(), dtype=torch.float64),
                 pbc=torch.tensor([True, True, True]),),
             System(
                 types=torch.tensor(at_types, dtype=torch.long),
-                positions=torch.randn(len(at_types), 3, dtype=torch.float64),
-                cell=torch.eye(3, dtype=torch.float64),
+                positions=torch.tensor(self.mol_traj[1].positions, dtype=torch.float64),
+                cell=torch.tensor(self.mol_traj[1].get_cell(), dtype=torch.float64),
                 pbc=torch.tensor([True, True, True]),)
             ]
 

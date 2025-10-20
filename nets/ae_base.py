@@ -82,6 +82,9 @@ class AEBase(pl.LightningModule, ABC):
         self.test_metrics = {
             "mae": self.metric_mae,
         }
+        self.val_metrics = {
+            "mae": self.metric_mae,
+        }
 
         self.metaD = False
         self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
@@ -193,10 +196,10 @@ class AEBase(pl.LightningModule, ABC):
         return losses
 
     def training_step(self, train_batch, batch_idx):
-        self.step(train_batch, "train")
+        return self.step(train_batch, "train")
     
     def validation_step(self, val_batch, batch_idx):
-        self.step(val_batch, "val")
+        return self.step(val_batch, "val")
 
     def encoder(self, x):
         raise NotImplementedError("This function must be implemented in child class")
@@ -207,16 +210,18 @@ class AEBase(pl.LightningModule, ABC):
     def latent_to_decoder_input(self, latent):
         return latent, {}
 
-    def get_metad_output(self, latent: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], meta: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def get_metad_output(self, 
+                         latent: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], 
+                         meta: Dict[str, torch.Tensor]) -> torch.Tensor:
         return latent
 
-    def metad(self, x: torch.Tensor) -> torch.Tensor:
-        if self.normIn:
-            x = x - self.Mean.view(1, -1).expand_as(x)
-            x = x / self.Range.view(1, -1).expand_as(x)
+    # def metad(self, x: torch.Tensor) -> torch.Tensor:
+    #     if self.normIn:
+    #         x = x - self.Mean.view(1, -1).expand_as(x)
+    #         x = x / self.Range.view(1, -1).expand_as(x)
 
-        latent, _ = self.encoder(x)
-        return latent
+    #     latent, _ = self.encoder(x)
+    #     return latent
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         meta = {}
@@ -230,10 +235,12 @@ class AEBase(pl.LightningModule, ABC):
         latent, meta_sample = self.latent_to_decoder_input(latent)
         
         pred, meta_dec = self.decoder(latent)
+        pred = self.denormalize(pred)
+
         meta.update(meta_latent)
         meta.update(meta_dec)
         meta.update(meta_sample)
-        pred = self.denormalize(pred)
+    
         return latent, pred, meta
 
     def loss_mse(self, x, latent, pred, meta):
@@ -245,7 +252,7 @@ class AEBase(pl.LightningModule, ABC):
         return loss, { "mae": mae.item() }
 
     def aggregate_losses(self, losses):
-        return torch.sum(losses)
+        return torch.sum(torch.stack(list(losses.values())))
 
     def step(self, batch, stage: str):
         data = batch[0]
@@ -256,20 +263,30 @@ class AEBase(pl.LightningModule, ABC):
         for loss_name, loss_func in self.losses.items():
             # print(f"\n\nComputing {loss_name}...\n\n")
             loss, loss_meta = loss_func(data, latent, pred, meta)
-            self.log(f"{stage}_{loss_name}", loss, prog_bar=(stage=="train"), 
-                    on_step=(stage=="train"), on_epoch=True, batch_size=data.shape[0])
+            self.log(f"{stage}_{loss_name}", loss.detach(), prog_bar=(stage=="train"), 
+                    on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
             losses[loss_name] = loss
             meta.update(loss_meta)
         losses = self.extra_training_step(data, latent, pred, meta, losses)
-        loss = torch.stack(list(losses.values()))
 
-        loss = self.aggregate_losses(loss)
+        if stage == "val":
+            for metric_name, metric_func in self.val_metrics.items():
+                metric, metric_meta = metric_func(data, latent, pred, meta)
+                self.log(f"val_{metric_name}", metric.detach(), 
+                         prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
+                for key, value in metric_meta.items():
+                    if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
+                        self.log(f"val_{key}", value, 
+                                 prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
+                meta.update(metric_meta)
 
-        self.log(f"{stage}_loss", loss, prog_bar=(stage=="train"), 
+        loss = self.aggregate_losses(losses)
+        self.log(f"{stage}_loss", loss.detach(), prog_bar=(stage=="train"),
                  on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
         for key, value in meta.items():
-            if isinstance(value, (int, float)):
-                self.log(f"{stage}_{key}", value, prog_bar=False, on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
+            if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
+                self.log(f"{stage}_{key}", value, 
+                         prog_bar=False, on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
         return loss
 
     def metric_mae(self, x, latent, prec, meta):
@@ -285,7 +302,8 @@ class AEBase(pl.LightningModule, ABC):
             labels_names = self.trainer.datamodule.label_list
             assert len(labels_names) == labels.shape[1], f"Labels names and labels do not match. {len(labels_names)} != {labels.shape[1]}"
             labels_dict = {labels_names[i]: labels[:,i] for i in range(labels.shape[1])}
-            LDplotter(data, latent, pred, labels_dict, meta, logger=self.logger.experiment, outstem=self.hparams.outname)
+            LDplotter(data, latent, pred, labels_dict, meta, 
+                      logger=self.logger.experiment, outstem=self.hparams.outname)
         else:
             raise ValueError(f"Unknown plotter: {self.hparams.test_plotter}")
         return
@@ -300,7 +318,7 @@ class AEBase(pl.LightningModule, ABC):
             metric, metric_meta = metric_func(data, latent, pred, meta)
             self.log(f"test_{metric_name}", metric, prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
             for key, value in metric_meta.items():
-                if isinstance(value, (int, float)):
+                if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
                     self.log(f"test_{key}", value, prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
             meta.update(metric_meta)
         if self.hparams.test_plotter is not None:
@@ -322,34 +340,34 @@ class AEBase(pl.LightningModule, ABC):
     def get_latent_names(self):
         return "latent"
     
-    @torch.no_grad()
-    def export_serial_model(self, model_path = None):
-        print(f"[Exporting the serialized {type(self).__name__} model]")
+    # @torch.no_grad()
+    # def export_serial_model(self, model_path = None):
+    #     print(f"[Exporting the serialized {type(self).__name__} model]")
 
-        fake_loader = self.trainer.datamodule.test_dataloader()
-        fake_input = next(iter(fake_loader))[0].float()
+    #     fake_loader = self.trainer.datamodule.test_dataloader()
+    #     fake_input = next(iter(fake_loader))[0].float()
 
-        if model_path == None:
-            model_path = '.'
-        if not os.path.isdir(model_path):
-                os.makedirs(model_path)
+    #     if model_path == None:
+    #         model_path = '.'
+    #     if not os.path.isdir(model_path):
+    #             os.makedirs(model_path)
 
-        self.metaD = True
-        torch.jit.save(self.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{model_path}/encoder.pt")
-        self.metaD = False
-        print(f"[{type(self).__name__} model serialized at: {model_path}/encoder.pt]")
+    #     self.metaD = True
+    #     torch.jit.save(self.to_torchscript(method='trace', example_inputs=fake_input, strict=False), f"{model_path}/encoder.pt")
+    #     self.metaD = False
+    #     print(f"[{type(self).__name__} model serialized at: {model_path}/encoder.pt]")
 
-    @torch.no_grad()
-    def export_latent(self, latents, labels = None):
-        if not isinstance(latents, tuple):
-            latents = (latents,)
-        latent_names = self.get_latent_names()
-        assert len(latents) == len(latent_names), f"Latent names and latents do not match. {len(latents)} != {len(latent_names)}"
-        for i in range(len(latents)):
-            np.save(self.hparams.outname + f"{latent_names[i]}.npy", latents[i])
+    # @torch.no_grad()
+    # def export_latent(self, latents, labels = None):
+    #     if not isinstance(latents, tuple):
+    #         latents = (latents,)
+    #     latent_names = self.get_latent_names()
+    #     assert len(latents) == len(latent_names), f"Latent names and latents do not match. {len(latents)} != {len(latent_names)}"
+    #     for i in range(len(latents)):
+    #         np.save(self.hparams.outname + f"{latent_names[i]}.npy", latents[i])
                 
-        if labels is not None:
-            np.save(self.hparams.outname + f"labels.npy", labels)
+    #     if labels is not None:
+    #         np.save(self.hparams.outname + f"labels.npy", labels)
     
     def get_metatomic_model(self):
         raise NotImplementedError("This function must be implemented in child class")

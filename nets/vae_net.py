@@ -107,10 +107,6 @@ class VAE(AEBase):
             "reg_loss": self.reg_loss,
         }
 
-        self.test_metrics = {
-            "mae": self.metric_mae,
-        }
-
         self.C_default = 1e-6
 
         if use_bond_deviation_loss:
@@ -147,14 +143,18 @@ class VAE(AEBase):
         mean, logvar = latent
         return mean
 
-    def forwards_metad(self, x: torch.Tensor) -> torch.Tensor:
-        if self.normIn:
-            x = x - self.Mean.view(1, -1).expand_as(x)
-            x = x / self.Range.view(1, -1).expand_as(x)
+    # def forwards_metad(self, x: torch.Tensor) -> torch.Tensor:
+    #     if self.normIn:
+    #         x = x - self.Mean.view(1, -1).expand_as(x)
+    #         x = x / self.Range.view(1, -1).expand_as(x)
 
-        latent, _ = self.encoder(x)
-        mean, logvar = latent
-        return mean
+    #     latent, _ = self.encoder(x)
+    #     mean, logvar = latent
+    #     return mean
+
+    def aggregate_losses(self, losses):
+        loss = losses['rec_loss'] + self.hparams.beta * losses['reg_loss']
+        return loss
 
     def print_hparams(self):
         super().print_hparams()
@@ -394,10 +394,10 @@ class VAE(AEBase):
             print(f"LD {i} : {ld_mean[i]}")
         print("=====================================")
 
-    def plot_extra(self, data_x, data_y, latents):
-        latent_logvar = latents[1]
-        self.plot_latent(latents, data_y, self.plot_sd, "latent_pdf")
-        self.plot_avg_sigma(latent_logvar)
+    # def plot_extra(self, data_x, data_y, latents):
+    #     latent_logvar = latents[1]
+    #     self.plot_latent(latents, data_y, self.plot_sd, "latent_pdf")
+    #     self.plot_avg_sigma(latent_logvar)
 
     def get_latent(self, data_x):
         data_x = self.normalize(data_x)
@@ -410,8 +410,8 @@ class VAE(AEBase):
     def get_latent_names(self):
         return "mu_latent", "logvar_latent"
 
-    def plot_sd(self, fig, ax, latents, train_y, i, yaxis, label, scalarMap=None):
-        latent_mu, latent_logvar = latents
-        latent_sd = np.exp(0.5 * latent_logvar)
-        ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis], xerr=latent_sd[:, i], yerr=latent_sd[:, yaxis],
-                    ecolor=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.1, ls='none')
+    # def plot_sd(self, fig, ax, latents, train_y, i, yaxis, label, scalarMap=None):
+    #     latent_mu, latent_logvar = latents
+    #     latent_sd = np.exp(0.5 * latent_logvar)
+    #     ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis], xerr=latent_sd[:, i], yerr=latent_sd[:, yaxis],
+    #                 ecolor=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.1, ls='none')
