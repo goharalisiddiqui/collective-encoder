@@ -38,8 +38,8 @@ class MetatomicCV(torch.nn.Module):
             )
 
         # we don't want to worry about selected_atoms yet
-        if selected_atoms is not None:
-            raise NotImplementedError("selected_atoms is not implemented")
+        # if selected_atoms is not None:
+        #     raise NotImplementedError("selected_atoms is not implemented")
 
         if outputs["features"].per_atom:
             raise NotImplementedError("per atom cv is not implemented")
@@ -55,9 +55,6 @@ class MetatomicCV(torch.nn.Module):
             )
             return {"features": TensorMap(keys=Labels("_", torch.tensor([[0]])), blocks=[block])}
         
-        if selected_atoms is not None:
-            raise NotImplementedError("selected_atoms is not implemented")
-
         model_input = self.dataprocessor(systems, outputs, selected_atoms)
         if len(model_input.shape) == 1:
             model_input = model_input.view(1, -1) # ensure batch dimension

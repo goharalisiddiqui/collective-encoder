@@ -267,6 +267,7 @@ if config.get('save_metatomic', False):
             System,
             ModelEvaluationOptions,
         )
+        from metatensor.torch import Labels
     except ImportError:
         raise ImportError("metatomic is not installed. Please install it with `pip install metatomic`")
 
@@ -301,6 +302,9 @@ if config.get('save_metatomic', False):
         length_unit=dataprocessor.get_length_unit(),
         outputs=metamodel.get_metatomic_outputs(),
         selected_atoms=None,
+        # selected_atoms=Labels(
+        #     ['system', 'atom'], torch.tensor([0, 512]).reshape(-1, 2)
+        # ),
     )
         
     # Run inference
@@ -313,7 +317,9 @@ if config.get('save_metatomic', False):
 
     print("metatomic model passed the sanity check.\nSerializing the model...")
     metatomic_model_file = os.path.join(run_dir, "metatomic_model.pt")
-    metatomic_module.save(metatomic_model_file)
+    metatomic_extension_directory = os.path.join(run_dir, "metatomic_extensions")
+    metatomic_module.save(metatomic_model_file,
+                          collect_extensions=metatomic_extension_directory)
 
     print(f"@@ metatomic model saved as: {metatomic_model_file}")
 

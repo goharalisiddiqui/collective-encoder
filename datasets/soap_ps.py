@@ -1,22 +1,37 @@
 from typing import List, Optional, Dict
 
 import ase
+import numpy as np
 
 import torch
 from torch.utils.data import Dataset
 
 import featomic.torch
 import metatensor.torch as mts
+
 import metatensor
 import metatomic.torch as mta
+import warnings
+
 
 class MetatomicSoapPowerSpectrumDataset(torch.nn.Module):
-    def __init__(self, spex, selected_atoms=None):
+    def __init__(self, spex, 
+                 selected_atoms: List[int],
+                 included_types: List[int]
+                 ):
         super().__init__()
 
         self.spex = spex
         self.selected_atoms = selected_atoms
-    
+        # self.selected_atoms = self.register_buffer(
+        #     "selected_atoms",
+        #     torch.tensor(selected_atoms, dtype=torch.int32) if selected_atoms is not None else None
+        # )
+        self.register_buffer(
+            "included_types",
+            torch.tensor(included_types, dtype=torch.int32)
+        )
+
     def get_atomic_types(self):
         return [a for a in range(0, 119)]  # all elements
 
@@ -32,17 +47,31 @@ class MetatomicSoapPowerSpectrumDataset(torch.nn.Module):
         outputs: Dict[str, mta.ModelOutput],
         selected_atoms: Optional[mts.Labels],
     ) -> torch.Tensor:
+        
+        # FIXME: Cannot compile this as TorchScript
+        # if selected_atoms is not None:
+        #     # Check consistency
+        #     for label in selected_atoms:
+        #         if int(label["atom"]) not in self.selected_atoms:
+        #             raise ValueError(
+        #                 f"selected_atoms contains atom index {label['atom'].item()}, "
+        #                 f"which is not in the predefined selected_atoms {self.selected_atoms}"
+        #             )
 
         if selected_atoms is None:
-            selected_atoms = mts.Labels(
+            warnings.warn(
+                "No selected_atoms provided to MetatomicSoapPowerSpectrumDataset, "
+                "using predefined selected_atoms which can be incorrect."
+            )
+            selected_cores: mts.Labels = mts.Labels(
                 "atom", torch.tensor(self.selected_atoms).reshape(-1, 1)
             )
         else:
-            assert list(selected_atoms.names) == ["atom"], "selected_atoms must be a Labels with name 'atom'" 
-
+            selected_cores: mts.Labels = selected_atoms
+        
         # computes the spherical expansion
         spex = self.spex(
-            systems, selected_samples=selected_atoms
+            systems, selected_samples=selected_cores
         )
 
         # then manipulate the tensormap to remove some of the sparsity
@@ -50,18 +79,33 @@ class MetatomicSoapPowerSpectrumDataset(torch.nn.Module):
         spex = spex.keys_to_properties("neighbor_2_type")
         spex = spex.keys_to_samples("center_type")
 
-        # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
-
         atom_desc = []
-        for atom in self.selected_atoms:
+        selected_atom_indices: torch.Tensor = selected_cores.values
+        if selected_atom_indices.shape[1] > 1:
+            selected_atom_indices = selected_atom_indices[:, 1]
+        selected_atom_indices = selected_atom_indices.flatten()
+        selected_atom_indices_list: List[int] = selected_atom_indices.to(torch.int64).tolist()
+        for atom in selected_atom_indices_list:
             desc_block = []
-            for block in mts.slice(
-                                spex,
-                                axis="samples",
-                                selection=mts.Labels(
-                                    "atom", torch.tensor([atom]).reshape(-1, 1)
-                                ),
-                            ).blocks():
+            sel_map = mts.slice(
+                            spex,
+                            axis="samples",
+                            selection=mts.Labels(
+                                "atom", torch.tensor([atom]).reshape(-1, 1)
+                            ),
+                        )
+            sel_map = mts.slice(
+                            sel_map,
+                            axis="properties",
+                            selection=mts.Labels(
+                                ["neighbor_1_type", "neighbor_2_type"], 
+                                torch.stack([
+                                    self.included_types,
+                                    self.included_types
+                                ], dim=-1)
+                            ),
+                        )
+            for block in sel_map.blocks():
                 desc = block.values
                 desc_block.append(desc)
             atom_desc.append(torch.concatenate(desc_block, dim=-2))
@@ -106,6 +150,9 @@ class SoapPowerSpectrumDataset(Dataset):
             }
         )
         self.at_types = structures[0].get_atomic_numbers()
+        self.expluded_types = [1]  # atomic number of hydrogen
+        self.included_types = list(set(self.at_types) - set(self.expluded_types))
+
 
         # Precompute all the systems
         systems = featomic.torch.systems_to_torch(structures)
@@ -121,16 +168,29 @@ class SoapPowerSpectrumDataset(Dataset):
         descriptors = descriptors.keys_to_samples("center_type")
 
         # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
+        
         atom_desc = []
         for atom in selected_atoms:
             desc_block = []
-            for block in mts.slice(
-                                descriptors,
-                                axis="samples",
-                                selection=mts.Labels(
-                                    "atom", torch.tensor([atom]).reshape(-1, 1)
-                                ),
-                            ).blocks():
+            sel_map = mts.slice(
+                            descriptors,
+                            axis="samples",
+                            selection=mts.Labels(
+                                "atom", torch.tensor([atom]).reshape(-1, 1)
+                            ),
+                        )
+            sel_map = mts.slice(
+                            sel_map,
+                            axis="properties",
+                            selection=mts.Labels(
+                                ["neighbor_1_type", "neighbor_2_type"], 
+                                torch.stack([
+                                    torch.tensor(self.included_types),
+                                    torch.tensor(self.included_types)
+                                ], dim=-1)
+                            ),
+                        )
+            for block in sel_map.blocks():
                 desc = block.values
                 desc_block.append(desc)
             atom_desc.append(torch.concatenate(desc_block, dim=-2))
@@ -156,4 +216,6 @@ class SoapPowerSpectrumDataset(Dataset):
         return self.descriptors, self.labels
 
     def get_metatomic_dataprocessor(self):
-        return MetatomicSoapPowerSpectrumDataset(self.spex, self.selected_atoms)
+        return MetatomicSoapPowerSpectrumDataset(self.spex, 
+                                                 self.selected_atoms,
+                                                 included_types=self.included_types)
