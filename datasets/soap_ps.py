@@ -127,6 +127,7 @@ class SoapPowerSpectrumDataset(Dataset):
         smoothing_width: float = 1.5,
         gaussian_width: float = 1.0,
         n_radial: int = 4,
+        excluded_types: List[int] = [1],
     ):
         print(f"\n\n[{type(self).__name__}]")
         print("="*80)
@@ -150,8 +151,8 @@ class SoapPowerSpectrumDataset(Dataset):
             }
         )
         self.at_types = structures[0].get_atomic_numbers()
-        self.expluded_types = [1]  # atomic number of hydrogen
-        self.included_types = list(set(self.at_types) - set(self.expluded_types))
+        self.excluded_types = excluded_types
+        self.included_types = list(set(self.at_types) - set(self.excluded_types))
 
 
         # Precompute all the systems

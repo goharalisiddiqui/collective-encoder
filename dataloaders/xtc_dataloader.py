@@ -26,6 +26,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch_geometric.loader import DataLoader as GeoDataLoader
 import pytorch_lightning as pl
 
+from warnings import warn
 
 class XtcData(Dataset):
     """XTC dataset"""
@@ -272,7 +273,12 @@ class XtcDataset(pl.LightningDataModule):
                 selected_indices = []
                 for selection in dataset_args['atoms_selections']:
                     sel_atoms = u.select_atoms(selection)
-                    assert sel_atoms.n_atoms == 1, f"Selection {selection} must select exactly one atom, found {sel_atoms.n_atoms}"
+                    if sel_atoms.n_atoms != 1:
+                        print(f"[{type(self).__name__}] WARNING! Selection {selection} does not select exactly one atom, selected {sel_atoms.n_atoms} atoms")
+                    n_types = len(set([at.type for at in sel_atoms]))
+                    if n_types > 1:
+                        print(f"[{type(self).__name__}] WARNING! Selection {selection} selects more than one atom type.)")
+                    print(f"Selected {sel_atoms.n_atoms} atoms of total {n_types} types") if verbose else None
                     for at in sel_atoms:
                         mol_index = np.where(mol.atoms.indices == at.index)[0]
                         if len(mol_index) == 0:
