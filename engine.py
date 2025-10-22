@@ -113,13 +113,13 @@ elif datatype == 'XYZ':
 ##################################
 # Output directory
 ##################################
-nexp = config['nexp']
+nexp = int(config['nexp'])
 run_stem = config['outpath'] + "/" + config['outfolder'] + "_"
 run_dir = run_stem + str(nexp)
 
 if not config['overwrite']:
     while True:
-        run_dir = run_dir + str(nexp)
+        run_dir = run_stem + str(nexp)
         if not os.path.isdir(run_dir):
             os.makedirs(run_dir)
             break
