@@ -51,7 +51,6 @@ class XtcData(Dataset):
     def get_data(self):
         return np.array([d.numpy() for d in self.positions]), np.array([l.numpy() for l in self.labels])
 
-
 class XtcDataset(pl.LightningDataModule):
     def __init__(self,
                  tprfile : str,
