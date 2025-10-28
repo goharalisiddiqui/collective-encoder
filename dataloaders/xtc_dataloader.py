@@ -68,8 +68,8 @@ class XtcDataset(pl.LightningDataModule):
                  verbose : bool = True,
                  dataset_type : str = 'DEFAULT',
                  dataset_args : Dict[str, Union[str, int]] = {},
-                 label_distance : List[str] = [],
-                 label_dihedrals : List[str] = [],
+                 labeler: str = None,
+                 labeler_args: Dict[str, Union[str, int]] = {},
                  norm_type : str = 'standard',
                  test_full_dataset : bool = False,
                  type_to_elements : List[int] = None,
@@ -135,33 +135,22 @@ class XtcDataset(pl.LightningDataModule):
         # Get the atom numbers in the trajectory
         atm_ids = [at.id + 1 for at in mol.atoms]
         
-        # Get the labels to add to the dataset
-        if len(label_distance) > 0:
-            print(f"Using label distance: {label_distance}") if verbose else None
-            label_atoms = u.select_atoms(label_distance)
-            if len(label_atoms) != 2:
-                raise ValueError(f"Label distance selection {label_distance} must select exactly 2 atoms, found {len(label_atoms)}")
-            self.label_list = ["Distance between " + label_atoms[0].name + " and " + label_atoms[1].name]
-        elif len(label_dihedrals) > 0: 
-            print(f"Using label dihedrals: {label_dihedrals}") if verbose else None
-            label_atoms = []
-            self.label_list = []
-            for res in label_dihedrals:
-                res = res.strip()
-                assert len(res) > 4, f"Label dihedral {res} must be at least 5 characters long"
-                if res[:4] not in ['phi_', 'psi_']:
-                    raise ValueError(f"Label dihedral {res} must start with 'phi_' or 'psi_'")
-                resnum = int(res.split('_')[1])
-                if res[:4] == 'phi_':
-                    sel = u.residues[resnum-1].phi_selection()
-                    assert sel is not None, f"Residue {resnum} does not have a phi dihedral"
-                    label_atoms.append(sel)
-                    self.label_list.append(f"phi_{resnum}")
-                elif  res[:4] == 'psi_':
-                    sel = u.residues[resnum-1].psi_selection()
-                    assert sel is not None, f"Residue {resnum} does not have a psi dihedral"
-                    label_atoms.append(sel)
-                    self.label_list.append(f"psi_{resnum}")
+        # Get the labels from labeler
+        if labeler is not None:
+            print(f"Using custom labeler: {labeler} with args {labeler_args}") if verbose else None
+            if labeler == 'CoordinationCountLabeler':
+                from labels.coordination import CoordinationCountLabeler as labeler_class
+            elif labeler == 'DistanceValueLabeler':
+                from labels.distance import DistanceValueLabeler as labeler_class
+            elif labeler == 'DihedralValueLabeler':
+                from labels.dihedral import DihedralValueLabeler as labeler_class
+            else:
+                raise ValueError(f"Unknown labeler {labeler}")
+            coord_labeler = labeler_class(
+                universe=u,
+                args=labeler_args,
+            )
+            self.label_list = coord_labeler.get_names()
         else:
             self.label_list = ['None']
         
@@ -224,24 +213,11 @@ class XtcDataset(pl.LightningDataModule):
             mol_traj.append(structure)
 
             # Get the labels
-            if len(label_distance) > 0:
-                labels.append(np.linalg.norm(label_atoms.positions[1] - label_atoms.positions[0]))
-            elif len(label_dihedrals) > 0:
-                dih = []
-                for dih_group in label_atoms:
-                    res = calc_dihedrals(
-                        dih_group.positions[0],
-                        dih_group.positions[1],
-                        dih_group.positions[2],
-                        dih_group.positions[3],
-                        dih_group.dimensions
-                    )
-                    dih.append(res)
-                labels.append(dih)
+            if labeler is not None:
+                labels.append(coord_labeler.compute())
             else:
                 labels.append([0.0])
         print(f"Finished reading trajectory.") if verbose else None
-        
         
         FRAMES = len(mol_traj)
         self.train_size = train_size

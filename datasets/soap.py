@@ -1,4 +1,5 @@
 from typing import List, Optional, Dict
+import warnings
 
 import ase
 
@@ -11,12 +12,21 @@ import metatensor
 import metatomic.torch as mta
 
 class MetatomicSOAPDataset(torch.nn.Module):
-    def __init__(self, spex, selected_keys, selected_atoms=None):
+    def __init__(self, spex, 
+                 selected_keys, 
+                 selected_atoms: List[int],
+                 included_types: List[int]
+                ):
         super().__init__()
 
         self.spex = spex
         self.selected_keys = selected_keys
         self.selected_atoms = selected_atoms
+
+        self.register_buffer(
+            "included_types",
+            torch.tensor(included_types, dtype=torch.int32)
+        )
     
     def get_atomic_types(self):
         return [a for a in range(0, 119)]  # all elements
@@ -25,7 +35,7 @@ class MetatomicSOAPDataset(torch.nn.Module):
         return torch.inf
 
     def get_length_unit(self):
-        return "nanometer"
+        return "angstrom"
 
     def forward(
         self,
@@ -35,12 +45,16 @@ class MetatomicSOAPDataset(torch.nn.Module):
     ) -> torch.Tensor:
 
         if selected_atoms is None:
-            selected_atoms = mts.Labels(
+            warnings.warn(
+                "No selected_atoms provided to MetatomicSoapPowerSpectrumDataset, "
+                "using predefined selected_atoms which can be incorrect."
+            )
+            selected_cores: mts.Labels = mts.Labels(
                 "atom", torch.tensor(self.selected_atoms).reshape(-1, 1)
             )
         else:
-            assert list(selected_atoms.names) == ["atom"], "selected_atoms must be a Labels with name 'atom'" 
-
+            selected_cores: mts.Labels = selected_atoms
+    
         # computes the spherical expansion
         spex = self.spex(
             systems, selected_samples=selected_atoms, selected_keys=self.selected_keys
@@ -54,21 +68,39 @@ class MetatomicSOAPDataset(torch.nn.Module):
         # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
 
         atom_desc = []
-        for atom in self.selected_atoms:
+        selected_atom_indices: torch.Tensor = selected_cores.values
+        if selected_atom_indices.shape[1] > 1:
+            selected_atom_indices = selected_atom_indices[:, 1]
+        selected_atom_indices = selected_atom_indices.flatten()
+        selected_atom_indices_list: List[int] = selected_atom_indices.to(torch.int64).tolist()
+        for atom in selected_atom_indices_list:
             desc_block = []
-            for block in mts.slice(
-                                spex,
-                                axis="samples",
-                                selection=mts.Labels(
-                                    "atom", torch.tensor([atom]).reshape(-1, 1)
-                                ),
-                            ).blocks():
+            sel_map = mts.slice(
+                            spex,
+                            axis="samples",
+                            selection=mts.Labels(
+                                "atom", torch.tensor([atom]).reshape(-1, 1)
+                            ),
+                        )
+            sel_map = mts.slice(
+                            sel_map,
+                            axis="properties",
+                            selection=mts.Labels(
+                                "neighbor_type", 
+                                self.included_types,
+                            ),
+                        )
+            for block in sel_map.blocks():
                 desc = block.values
                 desc_block.append(desc)
             atom_desc.append(torch.concatenate(desc_block, dim=-2))
         descriptors = torch.concatenate([d.unsqueeze(1) for d in atom_desc], dim=1)
 
-        descriptors = descriptors.reshape(descriptors.shape[0], -1) #FIXME: flatten for now
+        # flatten the descriptor dimensions
+        # descriptors = descriptors.reshape(descriptors.shape[0], -1)
+
+        # sum the atoms dimension
+        self.descriptors = self.descriptors.sum(dim=1)
 
 
         return descriptors
@@ -84,6 +116,7 @@ class SOAPDataset(Dataset):
         smoothing_width: float = 1.5,
         gaussian_width: float = 1.0,
         n_radial: int = 4,
+        excluded_types: List[int] = [1],
     ):
         print(f"\n\n[{type(self).__name__}]")
         print("="*80)
@@ -105,6 +138,8 @@ class SOAPDataset(Dataset):
             }
         )
         self.at_types = structures[0].get_atomic_numbers()
+        self.excluded_types = excluded_types
+        self.included_types = list(set(self.at_types) - set(self.excluded_types))
 
         self.selected_keys = mts.Labels(
             # These represent the degree of the spherical harmonics
@@ -124,20 +159,26 @@ class SOAPDataset(Dataset):
         descriptors = descriptors.keys_to_properties("neighbor_type")
         descriptors = descriptors.keys_to_samples("center_type")
 
-
         # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
-
-        
         atom_desc = []
         for atom in selected_atoms:
             desc_block = []
-            for block in mts.slice(
-                                descriptors,
-                                axis="samples",
-                                selection=mts.Labels(
-                                    "atom", torch.tensor([atom]).reshape(-1, 1)
-                                ),
-                            ).blocks():
+            sel_map = mts.slice(
+                            descriptors,
+                            axis="samples",
+                            selection=mts.Labels(
+                                "atom", torch.tensor([atom]).reshape(-1, 1)
+                            ),
+                        )
+            sel_map = mts.slice(
+                            sel_map,
+                            axis="properties",
+                            selection=mts.Labels(
+                                "neighbor_type", 
+                                self.included_types,
+                            ),
+                        )
+            for block in sel_map.blocks():
                 desc = block.values
                 desc_block.append(desc)
             atom_desc.append(torch.concatenate(desc_block, dim=-2))
@@ -148,7 +189,12 @@ class SOAPDataset(Dataset):
         self.labels = [torch.tensor(d) for d in labels]
         print(f"[{type(self).__name__}]: Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
 
-        self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1) # flatten the last two dimensions
+        # flatten the last two dimensions
+        # self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1)
+        
+        # sum the atoms dimension
+        self.descriptors = self.descriptors.sum(dim=1)
+
         self.num_inputs = self.descriptors.shape[-1]
         print(f"[{type(self).__name__}]: Each data point has input dimension {self.num_inputs}.")
         print("="*80)
@@ -163,4 +209,7 @@ class SOAPDataset(Dataset):
         return self.descriptors, self.labels
 
     def get_metatomic_dataprocessor(self):
-        return MetatomicSOAPDataset(self.spex, self.selected_keys, self.selected_atoms)
+        return MetatomicSOAPDataset(self.spex, 
+                                    self.selected_keys, 
+                                    self.selected_atoms,
+                                    included_types=self.included_types)

@@ -111,7 +111,11 @@ class MetatomicSoapPowerSpectrumDataset(torch.nn.Module):
             atom_desc.append(torch.concatenate(desc_block, dim=-2))
         descriptors = torch.concatenate([d.unsqueeze(1) for d in atom_desc], dim=1)
 
-        descriptors = descriptors.reshape(descriptors.shape[0], -1) #FIXME: flatten for now
+        # flatten the descriptor dimensions
+        # descriptors = descriptors.reshape(descriptors.shape[0], -1) #FIXME: flatten for now
+
+        # sum the atoms dimension
+        self.descriptors = self.descriptors.sum(dim=1)
 
 
         return descriptors
@@ -202,7 +206,12 @@ class SoapPowerSpectrumDataset(Dataset):
         self.labels = [torch.tensor(d) for d in labels]
         print(f"[{type(self).__name__}]: Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
 
-        self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1) # flatten the last two dimensions
+        # flatten the last two dimensions
+        # self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1)
+        
+        # sum the atoms dimension
+        self.descriptors = self.descriptors.sum(dim=1)
+        
         self.num_inputs = self.descriptors.shape[-1]
         print(f"[{type(self).__name__}]: Each data point has input dimension {self.num_inputs}.")
         print("="*80)
