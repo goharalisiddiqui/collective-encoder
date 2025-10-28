@@ -25,7 +25,7 @@ class MetatomicSOAPDataset(torch.nn.Module):
 
         self.register_buffer(
             "included_types",
-            torch.tensor(included_types, dtype=torch.int32)
+            torch.tensor(included_types, dtype=torch.int32).reshape(-1, 1)
         )
     
     def get_atomic_types(self):
@@ -96,11 +96,11 @@ class MetatomicSOAPDataset(torch.nn.Module):
             atom_desc.append(torch.concatenate(desc_block, dim=-2))
         descriptors = torch.concatenate([d.unsqueeze(1) for d in atom_desc], dim=1)
 
-        # flatten the descriptor dimensions
-        # descriptors = descriptors.reshape(descriptors.shape[0], -1)
-
         # sum the atoms dimension
-        self.descriptors = self.descriptors.sum(dim=1)
+        descriptors = descriptors.sum(dim=1)
+
+        # flatten all but the first dimension
+        descriptors = descriptors.reshape(descriptors.shape[0], -1)
 
 
         return descriptors
@@ -175,7 +175,7 @@ class SOAPDataset(Dataset):
                             axis="properties",
                             selection=mts.Labels(
                                 "neighbor_type", 
-                                self.included_types,
+                                torch.tensor(self.included_types).reshape(-1, 1),
                             ),
                         )
             for block in sel_map.blocks():
@@ -188,12 +188,12 @@ class SOAPDataset(Dataset):
         self.descriptors = descriptors
         self.labels = [torch.tensor(d) for d in labels]
         print(f"[{type(self).__name__}]: Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
-
-        # flatten the last two dimensions
-        # self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1)
         
         # sum the atoms dimension
         self.descriptors = self.descriptors.sum(dim=1)
+
+        # flatten all but the first dimension
+        self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1)
 
         self.num_inputs = self.descriptors.shape[-1]
         print(f"[{type(self).__name__}]: Each data point has input dimension {self.num_inputs}.")

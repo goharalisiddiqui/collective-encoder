@@ -115,7 +115,7 @@ class MetatomicSoapPowerSpectrumDataset(torch.nn.Module):
         # descriptors = descriptors.reshape(descriptors.shape[0], -1) #FIXME: flatten for now
 
         # sum the atoms dimension
-        self.descriptors = self.descriptors.sum(dim=1)
+        descriptors = descriptors.sum(dim=1)
 
 
         return descriptors
