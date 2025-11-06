@@ -56,7 +56,8 @@ class XtcDataset(pl.LightningDataModule):
                  tprfile : str,
                  selection : str,
                  xtcfile : str = None,
-                 multicoord : str = None,
+                 xtcfiles : List[str] = None,
+                 coord_glob : str = None,
                  dataset_size : int = None,
                  train_size : int = 0,
                  validation_size : int = 0,
@@ -77,7 +78,8 @@ class XtcDataset(pl.LightningDataModule):
         super().__init__()
         print(f"\n\n[Initializing {type(self).__name__} Module]") if verbose else None
         print("==========================================") if verbose else None
-        print(f"Loading coordinates from file {xtcfile if xtcfile else multicoord} and topology from file {tprfile}") if verbose else None
+        print(f"Loading topology from file {tprfile}") if verbose else None
+
 
         if not os.path.exists(tprfile):
             raise FileNotFoundError(f"File {tprfile} not found")
@@ -85,17 +87,27 @@ class XtcDataset(pl.LightningDataModule):
         # dataset_args = {k: eval(v) for k, v in (arg.split('=') for arg in dataset_args)}
         
         # Load the trajectory
-        assert any([a != None for a in [xtcfile, multicoord]]), "Either xtcfile or multicoord must be provided"
-        assert not all([a != None for a in [xtcfile, multicoord]]), "Only one of xtcfile or multicoord can be provided"
-        if multicoord:
-            xtcfiles = glob(multicoord)
+        assert any([a != None for a in [xtcfile, coord_glob, xtcfiles]]), "One of xtcfile, coord_glob or xtcfiles must be provided"
+        if coord_glob:
+            print(f"Loading trajectory files matching glob pattern: {coord_glob}") if verbose else None
+            xtcfiles = glob(coord_glob)
             if not xtcfiles:
-                raise FileNotFoundError(f"No files found for pattern {multicoord}")
+                raise FileNotFoundError(f"No files found for pattern {coord_glob}")
+            print(f"Found {len(xtcfiles)} files") if verbose else None
             u = mda.Universe(tprfile, *xtcfiles)
-        else:
+        elif xtcfiles:
+            print(f"Loading trajectory from multiple files: \n\t - {('\n\t - '.join(xtcfiles))}") if verbose else None
+            for xf in xtcfiles:
+                if not os.path.exists(xf):
+                    raise FileNotFoundError(f"File {xf} not found")
+            u = mda.Universe(tprfile, *xtcfiles)
+        elif xtcfile:
+            print(f"Loading trajectory from file: {xtcfile}") if verbose else None
             if not os.path.exists(xtcfile):
                 raise FileNotFoundError(f"File {xtcfile} not found")
             u = mda.Universe(tprfile, xtcfile)
+        else:
+            raise ValueError("One of xtcfile, coord_glob or xtcfiles must be provided")
 
         # Checks
         if dataset_size:
@@ -178,7 +190,11 @@ class XtcDataset(pl.LightningDataModule):
 
         top_warn_flags = [False, False, False]  # resname, resid, atomname
         for idx in tqdm(read_frame_seq, disable=not verbose):
-            u.trajectory[idx]
+            try:
+                u.trajectory[idx]
+            except OSError:
+                print(f"[{type(self).__name__}] Warning: Could not read frame {idx} from trajectory. Skipping frame.") if verbose else None
+                continue
             # Create the ASE structure
             structure = ase.Atoms(numbers=self.atns, 
                                   positions=mol.atoms.positions,
@@ -220,6 +236,14 @@ class XtcDataset(pl.LightningDataModule):
         print(f"Finished reading trajectory.") if verbose else None
         
         FRAMES = len(mol_traj)
+        print(f"Total frames read: {FRAMES}") if verbose else None
+        if FRAMES < (train_size + validation_size): # In case some frames could not be read
+            print(f"[{type(self).__name__}] Warning: Only {FRAMES} frames read, "
+                  f"which is less than train_size + validation_size "
+                  f"= {train_size + validation_size}. "
+                  f"Adjusting train size accordingly.") if verbose else None
+            train_size = int(FRAMES * (train_size / (train_size + validation_size)))
+            validation_size = FRAMES - train_size
         self.train_size = train_size
         self.validation_size = validation_size
         self.test_size = FRAMES - self.train_size - self.validation_size

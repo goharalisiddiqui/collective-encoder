@@ -184,7 +184,7 @@ class SOAPDataset(Dataset):
             atom_desc.append(torch.concatenate(desc_block, dim=-2))
         descriptors = torch.concatenate([d.unsqueeze(1) for d in atom_desc], dim=1)
 
-        # descriptors shape: (n_structures, n_selected_atoms, sum of (2l+1) over l in angular_list), radial components * no of species
+        # descriptors shape: (n_structures, n_selected_atoms, sum of (2l+1) over l in angular_list, radial components * no of species
         self.descriptors = descriptors
         self.labels = [torch.tensor(d) for d in labels]
         print(f"[{type(self).__name__}]: Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
