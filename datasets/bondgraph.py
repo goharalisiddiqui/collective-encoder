@@ -9,20 +9,23 @@ import torch
 from torch import Tensor
 from torch_geometric.data import Data, Dataset
 
-class MetatomicBondGraphDataset(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
+# import metatensor.torch as mts
+# import metatomic.torch as mta
+
+# class MetatomicBondGraphDataset(torch.nn.Module):
+#     def __init__(self):
+#         super().__init__()
 
      
 
-    def forward(
-        self,
-        systems: List[System],
-        outputs: Dict[str, ModelOutput],
-        selected_atoms: Optional[Labels] = None,
-    ) -> torch.Tensor:
+#     def forward(
+#         self,
+#         systems: List[mta.System],
+#         outputs: Dict[str, mta.ModelOutput],
+#         selected_atoms: Optional[mts.Labels] = None,
+#     ) -> torch.Tensor:
 
-        pass
+#         pass
 
 def bond_type_one_hot(kind: str) -> List[float]:
     # single, double, triple, aromatic, virtual

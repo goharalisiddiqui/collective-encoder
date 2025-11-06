@@ -1,6 +1,6 @@
 import argparse
 import math
-from typing import Callable, List, Optional
+from typing import List, Optional, Dict, Union
 
 import numpy as np
 
@@ -436,51 +436,6 @@ class BondGraphNetDecoder(nn.Module):
 
         return preds
 
-def bgne_parse_args():
-    desc = "Bond-GNN-ENCODER-DECODER Arguments"
-    parser = argparse.ArgumentParser(description=desc)
-
-    # Encoder args
-    parser.add_argument('--node_feat', type=int, default=3, help='Number of scalar node features (default 3 for bond nodes)')
-    parser.add_argument('--edge_feat', type=int, default=3, help='Edge feature dimension (default 3: angle one-hot + value)')
-    parser.add_argument('--enc_node_embed_dim', type=int, default=10, help='Node embedding size per scalar feature')
-    parser.add_argument('--enc_edge_embed_dim', type=int, default=2, help='Edge embedding size per scalar feature')
-    parser.add_argument('--enc_hidden_dim', type=int, default=128, help='Hidden embedding size')
-    parser.add_argument('--enc_num_layers', type=int, default=4, help='Number of message passing layers (L)')
-    parser.add_argument('--enc_heads', type=int, default=4, help='Attention heads')
-    parser.add_argument('--set2set_steps', type=int, default=3, help='T processing steps for Set2Set')
-    parser.add_argument('--latent_dim', type=int, default=256, help='Output latent embedding size')
-    parser.add_argument('--enc_dropout', type=float, default=0.0, help='Dropout applied to attention coefficients')
-
-    # Decoder args
-    parser.add_argument('--template_khop', type=int, default=2, help='k-hop neighborhood for template graph')
-    parser.add_argument('--dec_node_embed_dim', type=int, default=10, help='Node embedding size per scalar feature for decoder')
-    parser.add_argument('--dec_edge_embed_dim', type=int, default=2, help='Edge embedding size per scalar feature for decoder')
-    parser.add_argument('--dec_hidden_dim', type=int, default=128, help='Hidden embedding size for decoder')
-    parser.add_argument('--dec_num_layers', type=int, default=4, help='Number of message passing layers (L) for decoder')
-    parser.add_argument('--dec_heads', type=int, default=4, help='Attention heads for decoder')
-    parser.add_argument('--dec_dropout_mp', type=float, default=0.0, help='Dropout applied to attention coefficients in decoder')
-    parser.add_argument('--dec_dropout_mlp', type=float, default=0.0, help='Dropout applied in MLP heads of decoder')
-    parser.add_argument('--final_mlp_layers', type=int, default=3, help='Number of layers in final MLP heads of decoder')
-
-    parser.add_argument('--rbf_dim', type=int, default=16, help='Number of radial basis functions for distance embedding')
-    parser.add_argument('--rbf_min', type=float, default=0.0, help='Minimum distance for RBFs')
-    parser.add_argument('--rbf_max', type=float, default=4.0, help='Maximum distance for RBFs')
-    parser.add_argument('--rbf_gamma', type=float, default=10.0, help='Width parameter for RBFs')
-
-    parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate for the training')
-    parser.add_argument('--loss_latent_weight', type=float, default=1e-3, help='Weight for latent loss term if used')
-    parser.add_argument('--weight_decay', type=float, default=1e-3, help='Weights regularization for the training')
-    parser.add_argument('--normalize_inputs', dest='normIn', action='store_true', help='Whether to normalize the input features')
-    parser.add_argument('--scheduler', action='store_true', help='Whether to use learning rate scheduler')
-
-    args, _ = parser.parse_known_args()
-
-    return args
-
-
-BGNE_args = bgne_parse_args
-
 class BondGraphNetEncoderDecoder(pl.LightningModule):
     """LightningModule wrapper for BondGraphNet.
 
@@ -495,94 +450,64 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
     """
     def __init__(
         self,
-        node_feat: int = 3, ### ENCODER ARGS
-        edge_feat: int = 3,
-        enc_node_embed_dim: int = 10,
-        enc_edge_embed_dim: int = 2,
-        enc_hidden_dim: int = 128,
-        enc_num_layers: int = 4,
-        enc_heads: int = 4,
-        set2set_steps: int = 3,
-        enc_dropout: float = 0.0,
-        latent_dim: int = 256,
-        datamodule = None,  ### DECODER ARGS
-        template_khop: int = 2,
-        dec_node_embed_dim: int = 10,
-        dec_edge_embed_dim: int = 2,
-        dec_hidden_dim: int = 128,
-        dec_num_layers: int = 4,
-        dec_heads: int = 4,
-        dec_dropout_mp: float = 0.0,
-        dec_dropout_mlp: float = 0.0,
-        final_mlp_layers: int = 3,
-        rbf_dim: int = 16,
-        rbf_min: float = 0.0,
-        rbf_max: float = 4.0,
-        rbf_gamma: float = 10.0,
-        precompute: bool = True,
+        datamodule,
+        encoder_args: Dict[str, Union[int, float]],
+        decoder_args: Dict[str, Union[int, float]],
         lr: float = 1e-4,       ### OPTIMIZER ARGS
         weight_decay: float = 0.0,
         normIn: bool = False,
         scheduler: bool = False,
-        loss: Optional[nn.Module] = None,
+        scheduler_args: Optional[Dict] = None,
+        loss_fn: Optional[nn.Module] = None,
         loss_weights: Optional[List[float]] = None,
-        loss_latent_weight: float = 1e-3,
+        loss_latent_weight: float = 0.0,
         out_labels: List[str] = ['bond_dist', 'angle', 'dihedral_cos', 'dihedral_sin'],
         outname: str = './BGE_untitled/BGE_',
     ):
         super().__init__()
+        self.save_hyperparameters(ignore=["datamodule"])
         assert datamodule is not None, "datamodule must be provided"
         datasetobject = datamodule.get_dataset()
-        template_data = datasetobject.get_template_graph(k=template_khop)
+        self.template_khop = decoder_args['template_khop']
+        template_data = datasetobject.get_template_graph(k=self.template_khop)
         bond_index, angle_index, torsion_index = datasetobject.get_label_indices()
         assert len(out_labels) == 4, "out_labels must be a list of 4 strings"
-        assert loss_weights is None or len(loss_weights) == 4, "loss_weights must be None or a list of 4 floats"
+
+        if scheduler:
+            self.scheduler_args = {
+                'factor': 0.7, 
+                'patience': 5, 
+                'min_lr': 1e-9
+            }
+            if scheduler_args is not None:
+                self.scheduler_args.update(scheduler_args)
+
+        # EncDec loss weights
+        assert loss_weights is None or len(loss_weights) == 4, \
+            "loss_weights must be None or a list of 4 floats"
         if loss_weights is None:
             loss_weights = [1.0, 1.0, 1.0, 1.0]
         self.loss_weights = loss_weights
-        gnn_enc_kwargs = {
-            "node_feat": node_feat,
-            "edge_feat": edge_feat,
-            "node_embed_dim": enc_node_embed_dim,
-            "edge_embed_dim": enc_edge_embed_dim,
-            "hidden_dim": enc_hidden_dim,
-            "num_layers": enc_num_layers,
-            "heads": enc_heads,
-            "set2set_steps": set2set_steps,
-            "dropout": enc_dropout,
-            "latent_dim": latent_dim,
-        }
+        self.latent_dim = encoder_args['latent_dim']
+
         gnn_dec_kwargs = {
             "template_data": template_data,
             "label_indices": (bond_index, angle_index, torsion_index),
-            "latent_dim": latent_dim,
-            "node_embed_dim": dec_node_embed_dim,
-            "edge_embed_dim": dec_edge_embed_dim,
-            "hidden_dim": dec_hidden_dim,
-            "num_layers": dec_num_layers,
-            "heads": dec_heads,
-            "dropout_mp": dec_dropout_mp,
-            "dropout_mlp": dec_dropout_mlp,
-            "final_mlp_layers": final_mlp_layers,
-            "rbf_dim": rbf_dim,
-            "rbf_min": rbf_min,
-            "rbf_max": rbf_max,
-            "rbf_gamma": rbf_gamma,
-            "precompute": precompute,
-            "out_labels": out_labels,
+            "latent_dim": self.latent_dim,
         }
-        self.save_hyperparameters(ignore=["loss", "datasetobject"])
-        self.gnn_enc = BondGraphNetEncoder(**gnn_enc_kwargs)
-        self.gnn_dec = BondGraphNetDecoder(**gnn_dec_kwargs)
-        self.loss_fn = loss if loss is not None else nn.MSELoss()
+        gnn_dec_args = decoder_args.copy()
+        gnn_dec_args.pop('template_khop', None) # Otherwise decoder complains
+
+        self.gnn_enc = BondGraphNetEncoder(**encoder_args)
+        self.gnn_dec = BondGraphNetDecoder(**gnn_dec_kwargs, **gnn_dec_args)
+        self.loss_fn = loss_fn if loss_fn is not None else nn.MSELoss()
         # Normalization flag & statistics (avoid name clash with method normalize())
-        # self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
-        # self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
-        self.normIn = normIn
-        self.normSet = False
+        self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
+        self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
         # Register buffers for feature-wise mean/range; sized by encoder input features
-        self.register_buffer('Mean', torch.zeros(node_feat + edge_feat))
-        self.register_buffer('Range', torch.ones(node_feat + edge_feat))
+        num_norm = encoder_args['node_feat'] + encoder_args['edge_feat']
+        self.register_buffer('Mean', torch.zeros(num_norm))
+        self.register_buffer('Range', torch.ones(num_norm))
 
     def set_norm(self):
         if not self.trainer.datamodule:
@@ -590,17 +515,16 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         with torch.no_grad():
             Mean = torch.tensor(self.trainer.datamodule.get_scaler_mean(), device=self.device)
             Range = torch.tensor(self.trainer.datamodule.get_scaler_scale(), device=self.device)
-            assert Mean.size(0) == self.hparams.node_feat + self.hparams.edge_feat, \
-                f"Mean size {Mean.size(0)} does not match expected {(self.hparams.node_feat + self.hparams.edge_feat)}"
-            assert Range.size(0) == self.hparams.node_feat + self.hparams.edge_feat, \
-                f"Range size {Range.size(0)} does not match expected {(self.hparams.node_feat + self.hparams.edge_feat)}"
+            assert Mean.size(0) == self.hparams.encoder_args['node_feat'] + self.hparams.encoder_args['edge_feat'], \
+                f"Mean size {Mean.size(0)} does not match expected {(self.hparams.encoder_args['node_feat'] + self.hparams.encoder_args['edge_feat'])}"
+            assert Range.size(0) == self.hparams.encoder_args['node_feat'] + self.hparams.encoder_args['edge_feat'], \
+                f"Range size {Range.size(0)} does not match expected {(self.hparams.encoder_args['node_feat'] + self.hparams.encoder_args['edge_feat'])}"
             Range = Range.clone()
             Range[Range == 0.0] = 1.0
-            print(f"[{type(self).__name__}] Setting normalization for inputs.")
+            print(f"\n[{type(self).__name__}] Setting normalization for inputs.")
             self.Mean = Mean
             self.Range = Range
-            # self.normSet = torch.tensor(True, dtype=torch.bool)
-            self.normSet = True
+            self.normSet = torch.tensor(True, dtype=torch.bool)
     
     def normalize(self, data):
         """Normalize a PyG Data object's node & edge attributes in-place.
@@ -618,8 +542,8 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         if getattr(data, '_normalized', False):
             return data
 
-        node_dim = self.hparams.node_feat
-        edge_dim = self.hparams.edge_feat
+        node_dim = self.hparams.encoder_args['node_feat']
+        edge_dim = self.hparams.encoder_args['edge_feat']
         mean_node = self.Mean[:node_dim]
         range_node = self.Range[:node_dim]
         mean_edge = self.Mean[node_dim:node_dim+edge_dim]
@@ -664,8 +588,8 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         if not getattr(data, '_normalized', False):
             return data
 
-        node_dim = self.hparams.node_feat
-        edge_dim = self.hparams.edge_feat
+        node_dim = self.hparams.encoder_args['node_feat']
+        edge_dim = self.hparams.encoder_args['edge_feat']
         mean_node = self.Mean[:node_dim]
         range_node = self.Range[:node_dim]
         mean_edge = self.Mean[node_dim:node_dim+edge_dim]
@@ -711,21 +635,31 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         labels[self.hparams['out_labels'][3]] = batch.y_torsions_sin.view(num_graphs, -1)
 
         return labels
+    
+    def loss_encdec(self, pred, labels, stage: str, batch_size=None):
+        losses = {}
+        for out_label, weight in zip(self.hparams['out_labels'], self.loss_weights):
+            losses[out_label] = self.loss_fn(pred[out_label], labels[out_label]) * weight
+            self.log(f"{stage}_recon_{out_label}_loss", losses[out_label], prog_bar=False, on_epoch=True, batch_size=batch_size)
+        
+        self.log(f"{stage}_recon_loss", sum(losses.values()), 
+                 prog_bar=(stage=="train"), on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
 
-    def step(self, batch, stage: str):
-        pred, latent = self.forward(batch)
-        labels = self.extract_labels(batch)
+        with torch.no_grad():
+            mae = {}
+            for out_label in self.hparams['out_labels']:
+                mae[out_label] = (torch.abs(pred[out_label] - labels[out_label]).mean() 
+                                if labels[out_label].numel() > 0 
+                                else torch.tensor(0.0, device=pred[out_label].device))
+                self.log(f"{stage}_recon_{out_label}_mae", mae[out_label], prog_bar=False, on_epoch=True, batch_size=batch_size)
+            self.log(f"{stage}_recon_mae", sum(mae.values()) / len(mae), 
+                     prog_bar=(stage!="train"), on_epoch=True, batch_size=batch_size)
 
-        # print("PREDICTIONS:")
-        # for k, v in pred.items():
-        #     print(f"{k}: Shape {v.shape}")
-        # print("LABELS:")
-        # for k, v in labels.items():
-        #     print(f"{k}: Shape {v.shape}")
-        # exit()
+        return sum(losses.values())
 
+    def loss_latent(self, latent, stage: str):
         loss_latent = torch.tensor(0.0, device=latent.device)
-        # To make dynamics in the latent space more "modellable" (For this to work, points in a batch must be sequentially related)
+            # To make dynamics in the latent space more "modellable" (For this to work, points in a batch must be sequentially related)
         if latent.size(0) > 1:
             batch_dist = torch.norm(latent[1:] - latent[:-1], dim=1)
             # 1. We try to make the subsequent latent space points in a batch close to each other
@@ -735,28 +669,28 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
             loss_latent += torch.var(batch_dist)
 
         self.log(f"{stage}_loss_latent", loss_latent, prog_bar=False, on_step=(stage=="train"), on_epoch=True)
+        loss = loss + self.hparams.loss_latent_weight * loss_latent
 
-        loss = self.loss_fn(pred[self.hparams['out_labels'][0]], labels[self.hparams['out_labels'][0]]) * self.loss_weights[0], \
-               self.loss_fn(pred[self.hparams['out_labels'][1]], labels[self.hparams['out_labels'][1]]) * self.loss_weights[1], \
-                self.loss_fn(pred[self.hparams['out_labels'][2]], labels[self.hparams['out_labels'][2]]) * self.loss_weights[2], \
-                self.loss_fn(pred[self.hparams['out_labels'][3]], labels[self.hparams['out_labels'][3]]) * self.loss_weights[3]
+        return loss
 
-        with torch.no_grad():
-            mae = (torch.abs(pred[self.hparams['out_labels'][0]] - labels[self.hparams['out_labels'][0]]).mean() if labels[self.hparams['out_labels'][0]].numel() > 0 else torch.tensor(0.0, device=loss.device)), \
-                  (torch.abs(pred[self.hparams['out_labels'][1]] - labels[self.hparams['out_labels'][1]]).mean() if labels[self.hparams['out_labels'][1]].numel() > 0 else torch.tensor(0.0, device=loss.device)), \
-                  (torch.abs(pred[self.hparams['out_labels'][2]] - labels[self.hparams['out_labels'][2]]).mean() if labels[self.hparams['out_labels'][2]].numel() > 0 else torch.tensor(0.0, device=loss.device)), \
-                  (torch.abs(pred[self.hparams['out_labels'][3]] - labels[self.hparams['out_labels'][3]]).mean() if labels[self.hparams['out_labels'][3]].numel() > 0 else torch.tensor(0.0, device=loss.device))
+    def step(self, batch, stage: str):
+        pred, latent = self.forward(batch)
+        labels = self.extract_labels(batch)
 
         batch_size = self.trainer.datamodule.hparams.batch_size if self.trainer and self.trainer.datamodule else None
-        for i in range(len(self.hparams['out_labels'])):
-            self.log(f"{stage}_{self.hparams['out_labels'][i]}_mae", mae[i], prog_bar=False, on_epoch=True, batch_size=batch_size)  
-            self.log(f"{stage}_{self.hparams['out_labels'][i]}_loss", loss[i], prog_bar=False, on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
-        mae = sum(mae) / len(mae)
-        self.log(f"{stage}_mae", mae, prog_bar=(stage!="train"), on_epoch=True, batch_size=batch_size)
-        loss = sum(loss)
-        self.log(f"{stage}_loss", loss, prog_bar=(stage=="train"), on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
 
-        return loss + self.hparams.loss_latent_weight * loss_latent
+        # Reconstruction loss of encoder-decoder
+        loss = self.loss_encdec(pred, labels, stage, batch_size=batch_size)
+
+        # Latent space reqularization loss (experimental)
+        if self.hparams.loss_latent_weight > 0.0:
+            loss_latent = self.loss_latent(latent, stage)
+            loss = loss + self.hparams.loss_latent_weight * loss_latent
+        
+        self.log(f"{stage}_loss", loss, prog_bar=(stage=="train"), 
+                 on_step=(stage=="train"), on_epoch=True, batch_size=batch_size)
+
+        return loss
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, "train")
@@ -775,9 +709,9 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         if self.hparams.scheduler:
             sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 
                                                             mode='min', 
-                                                           factor=0.7, 
-                                                           patience=5, 
-                                                           min_lr=1e-9)
+                                                           factor=self.scheduler_args['factor'], 
+                                                           patience=self.scheduler_args['patience'], 
+                                                           min_lr=self.scheduler_args['min_lr'])
             return {"optimizer": opt, "lr_scheduler": sched, "monitor": "val_loss"}
         return opt
 

@@ -15,6 +15,7 @@ import torch
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 from utils import parse_vars
 
@@ -93,8 +94,8 @@ elif nntype == "VAEC_mse":
     from ce_nets import VAEC_mse as main_nn
 elif nntype == "VAEC":
     from nets.vae_cnn_net import VAEC as main_nn
-elif nntype == "GRAPH_ENCODER":
-    from nets.gnn_encoder import BondGraphNetEncoderDecoder as main_nn
+elif nntype == "BGE":
+    from nets.bge import BondGraphNetEncoderDecoder as main_nn
 else:
     raise ValueError("Unknown network type: "+nntype)
 
@@ -159,12 +160,34 @@ if config['data_name'] == 'MD17':
     colvardata.prepare_data()
     colvardata.setup(stage="fit")
 
+if config.get('data_analyser', None):
+    if config.get['data_analyser'] == 'ala2':
+        from collective_encoder.plotters.ala2 import Ala2DataAnalyser as DataAnalyser
+    else:
+        warnings.warn("Unknown data analyser type: "+config.get['data_analyser'])
+
+    analyser = DataAnalyser(output_dir=run_dir+"/data_analysis", data_args=config['data_args'])
+    analyser.write_data(colvardata.get_dataset())
+
 ##################################
 # Setting up the NN
 ##################################
-netargs = config['network_args']
-netargs['datamodule'] = colvardata
-netargs['outname'] = output_stem
+netargs = {
+    'lr': config.get('lr', 1e-4),
+    'weight_decay': config.get('weight_decay', 0.0),
+    'normIn': config.get('normIn', False),
+    'scheduler': config.get('scheduler', False),
+    'scheduler_args': config.get('scheduler_args', None),
+    'loss_fn': config.get('loss_fn', None),
+    'loss_weights': config.get('loss_weights', None),
+    'loss_latent_weight': config.get('loss_latent_weight', 0.0),
+    'encoder_args': config.get('encoder_args', {}),
+    'decoder_args': config.get('decoder_args', {}),
+    'outname': output_stem,
+    'datamodule': colvardata,
+}
+if config.get('out_labels', None) is not None:
+    netargs['out_labels'] = config['out_labels']
 
 load_model = config.get('load_model', None)
 if load_model != None:
@@ -207,6 +230,14 @@ if 'early_stopping' in config and config['early_stopping']:
     )
     callbacks.append(early_stop_callback)
 
+checkpoint_callback = ModelCheckpoint(
+    monitor='val_loss',
+    dirpath=run_dir + '/checkpoints',
+    filename=config['network_name'] + '-{epoch:02d}-{val_loss:.6f}',
+    save_top_k=1,
+    mode='min',
+)
+
 trainargs["callbacks"] = callbacks
 # trainargs["num_sanity_val_steps"] = 0
 
@@ -238,17 +269,6 @@ if config.get('output_traj', False):
 #####################################
 if config.get('export_latent', False):
     model.export_latent(next(iter(colvardata.test_dataloader())))
-
-##################################
-# Serializing and checkpointing the model
-##################################
-if config['save_serial_model']:
-    modelpath = config.get('save_serial_model_path', '.')
-    model.export_serial_model(os.path.join(run_dir, modelpath))
-
-if config['save_checkpoint'] and config['nepochs'] > 0:
-    trainer.save_checkpoint(f"{output_stem}checkpoint")
-    print(f"@@ checkpoint saved as: {output_stem}checkpoint")
 
 ##################################
 trainer.test(model, datamodule=colvardata)
