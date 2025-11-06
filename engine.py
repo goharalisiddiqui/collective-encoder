@@ -161,10 +161,10 @@ if config['data_name'] == 'MD17':
     colvardata.setup(stage="fit")
 
 if config.get('data_analyser', None):
-    if config.get['data_analyser'] == 'ala2':
-        from collective_encoder.plotters.ala2 import Ala2DataAnalyser as DataAnalyser
+    if config['data_analyser'] == 'ala2':
+        from plotters.ala2 import Ala2DataAnalyser as DataAnalyser
     else:
-        warnings.warn("Unknown data analyser type: "+config.get['data_analyser'])
+        warnings.warn("Unknown data analyser type: "+config['data_analyser'])
 
     analyser = DataAnalyser(output_dir=run_dir+"/data_analysis", data_args=config['data_args'])
     analyser.write_data(colvardata.get_dataset())
@@ -203,10 +203,10 @@ else:
 trainargs = {"max_epochs" : config['nepochs'],
              "log_every_n_steps" : 1,
              "default_root_dir" : run_dir}
-if not config['nogpu']:
+if not config.get('nogpu', False):
     trainargs["accelerator"] = 'auto'
     trainargs["devices"] = 'auto'
-if config['wandb']:
+if config.get('wandb', False):
     wandb_logger = WandbLogger(project=config['wandb_project'],
                              entity=config['wandb_entity'],
                              save_dir=run_dir,
@@ -237,6 +237,7 @@ checkpoint_callback = ModelCheckpoint(
     save_top_k=1,
     mode='min',
 )
+callbacks.append(checkpoint_callback)
 
 trainargs["callbacks"] = callbacks
 # trainargs["num_sanity_val_steps"] = 0

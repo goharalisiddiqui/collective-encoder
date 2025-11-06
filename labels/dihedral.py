@@ -42,7 +42,7 @@ class DihedralValueLabeler:
                 atoms.positions[2],
                 atoms.positions[3],
             )
-            dihedrals.append(dihedral[0])
+            dihedrals.append(dihedral)
 
         return dihedrals
 

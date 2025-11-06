@@ -80,9 +80,11 @@ class XtcDataset(pl.LightningDataModule):
         print("==========================================") if verbose else None
         print(f"Loading topology from file {tprfile}") if verbose else None
 
-
+        # Checks
         if not os.path.exists(tprfile):
             raise FileNotFoundError(f"File {tprfile} not found")
+        if train_size <= 0 or validation_size <= 0:
+            raise ValueError("Train size and validation size must be greater than 0")
         
         # dataset_args = {k: eval(v) for k, v in (arg.split('=') for arg in dataset_args)}
         
@@ -175,7 +177,7 @@ class XtcDataset(pl.LightningDataModule):
         labels = []
         mol_traj = []
         if dataset_size is None:
-            dataset_size = len(u.trajectory)
+            dataset_size = (train_size + validation_size)
         assert dataset_size >= (train_size + validation_size), f"Dataset size {dataset_size} must be greater than or equal to train_size + validation_size = {train_size + validation_size}"
         if sequential:
             s = random.randint(0, len(u.trajectory) - dataset_size)
@@ -316,8 +318,8 @@ class XtcDataset(pl.LightningDataModule):
         if self.hparams.val_batch_size is None:
             self.hparams.val_batch_size = int(self.validation_size * 0.1)
         # Printing
-        assert self.hparams.batch_size < self.train_size, "Batch size must be less than the training size"
-        assert self.hparams.val_batch_size < self.validation_size, "Validation batch size must be less than the validation size"
+        assert self.hparams.batch_size <= self.train_size, "Batch size must be less than the training size"
+        assert self.hparams.val_batch_size <= self.validation_size, "Validation batch size must be less than the validation size"
 
         print(f"Total frames: {FRAMES}, Train size: {self.train_size}, Batch size: {self.hparams.batch_size}, Validation size: {self.validation_size}") if verbose else None
         print("==========================================") if verbose else None
