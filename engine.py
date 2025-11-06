@@ -1,6 +1,7 @@
 import sys
 import os
 import yaml
+import shutil
 
 sys.path.append(os.path.dirname(os.getcwd() + '/nets/'))
 sys.path.append(os.path.dirname(os.getcwd() + '/dataloaders/'))
@@ -252,6 +253,12 @@ if config['nepochs'] > 0:
 
 if config['nepochs'] == 0 and load_model == None:
     warnings.warn("Both nepochs and load_model are not set. Nothing to do.")
+
+# Save the best model checkpoint as best.ckpt
+best_checkpoint_path = checkpoint_callback.best_model_path
+if best_checkpoint_path != "":
+    shutil.copy(best_checkpoint_path, os.path.dirname(best_checkpoint_path) + "/best.ckpt")
+    print(f"@@ Best model saved at: {best_checkpoint_path}")
 
 ##################################
 # Analysing a loaded model

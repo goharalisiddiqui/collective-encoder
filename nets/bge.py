@@ -476,8 +476,9 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         if scheduler:
             self.scheduler_args = {
                 'factor': 0.7, 
-                'patience': 5, 
-                'min_lr': 1e-9
+                'patience': 10, 
+                'min_lr': 1e-9,
+                'cooldown': 10,
             }
             if scheduler_args is not None:
                 self.scheduler_args.update(scheduler_args)
@@ -613,11 +614,20 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
                     data.edge_attr = head
         setattr(data, '_normalized', False)
         return data
-
-    def forward(self, data):  # inference
+    
+    def encode(self, data):
         data = self.normalize(data)
         latent = self.gnn_enc(data)
+        return latent
+
+    def decode(self, latent):
         pred = self.gnn_dec(latent)
+        # pred = self.denormalize(pred)
+        return pred
+
+    def forward(self, data):  # inference
+        latent = self.encode(data)
+        pred = self.decode(latent)
         # pred = self.denormalize(pred)
         return pred, latent
 
@@ -711,16 +721,18 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
                                                             mode='min', 
                                                            factor=self.scheduler_args['factor'], 
                                                            patience=self.scheduler_args['patience'], 
-                                                           min_lr=self.scheduler_args['min_lr'])
+                                                           min_lr=self.scheduler_args['min_lr'],
+                                                           cooldown=self.scheduler_args['cooldown'],
+            )
+            
             return {"optimizer": opt, "lr_scheduler": sched, "monitor": "val_loss"}
         return opt
 
     def get_latent(self, data):
-        data = self.normalize(data)
-        return self.gnn_enc(data)
+        return self.encode(data)
 
     def get_decoded(self, latent):
-        return self.gnn_dec(latent)
+        return self.decode(latent)
 
 __all__ = ["BondGraphNetEncoderDecoder"]
 
