@@ -20,6 +20,8 @@ from metatomic.torch import (
     System,
 )
 
+from collective_encoder.datasets.base import BaseDataset
+
 class MetatomicDistanceDataset(torch.nn.Module):
     def __init__(self, pairs: List[tuple]):
         super().__init__()
@@ -56,7 +58,7 @@ class MetatomicDistanceDataset(torch.nn.Module):
         return pd_batch
 
 
-class DistancesDataset(Dataset):
+class DistancesDataset(Dataset, BaseDataset):
     ''' Dataset for pairwise distances between two groups of atoms.
 
     The groups can be specified using python slice notation, e.g. "0:3" for the first three atoms.
@@ -110,13 +112,9 @@ class DistancesDataset(Dataset):
         self.num_inputs = len(pairs)
         
         if atm_ids is not None:
-            print("#########################################")
-            print("Atom ID information for distances dataset")
-            print("#########################################")
-            print(f"ATOM IDs: {atm_ids}")
+            self.log_list("Atom IDs", atm_ids)
             for ind, (i, j) in enumerate(pairs):
-                print(f"Distance {ind}: {atm_ids[i]} <-> {atm_ids[j]}")
-            print("#########################################")
+                self.log_msg(f"Distance {ind}: {atm_ids[i]} <-> {atm_ids[j]}")
         
     def __len__(self):
         return len(self.distances)
@@ -128,5 +126,8 @@ class DistancesDataset(Dataset):
     def get_data(self):
         return np.array([d.numpy() for d in self.distances]), np.array([l.numpy() for l in self.labels])
 
+    def get_norm_data(self):
+        return np.array([d.numpy() for d in self.distances])
+    
     def get_metatomic_dataprocessor(self):
         return MetatomicDistanceDataset(self.pairs)

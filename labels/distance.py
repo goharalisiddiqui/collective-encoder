@@ -1,7 +1,9 @@
 import MDAnalysis as mda
 from typing import Dict, List, Union
 
-class DistanceValueLabeler:
+from .base import BaseLabeler
+
+class DistanceValueLabeler(BaseLabeler):
     def __init__(self, 
                  universe: mda.Universe,
                  args: Dict[str, Union[str, List[str]]]

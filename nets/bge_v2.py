@@ -13,6 +13,10 @@ from torch_geometric.nn import MetaLayer
 from torch_geometric.utils import softmax
 import pytorch_lightning as pl
 
+"""
+Bond-based Graph Encoder and Decoder with edge updates.
+"""
+
 class ScalarFeatureEmbedding(nn.Module):
     """Applies one independent MLP per scalar feature dimension and sums outputs.
 
@@ -76,7 +80,7 @@ class AttentionMP(MessagePassing):
 
         self.attn_drop = nn.Dropout(dropout)
 
-    def forward(self, x: Tensor, edge_index: Tensor, edge_attr: Optional[Tensor]) -> Tensor:
+    def forward(self, x: Tensor, edge_index: Tensor, edge_attr: Optional[Tensor], u = None, batch = None) -> Tensor:
         if edge_index.numel() == 0:
             return x  # no edges
 
@@ -114,6 +118,21 @@ class AttentionMP(MessagePassing):
         out = beta * n_msg + (1 - beta) * aggr_out  # (N, heads, d_head)
         out = out.view(-1, self.hidden_dim)  # (N, hidden_dim)
         return out
+
+class EdgeModel(nn.Module):
+    def __init__(self, node_in_dim, edge_in_dim):
+        super(EdgeModel, self).__init__()
+        # Define MLP for edge feature updates
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(2 * node_in_dim + edge_in_dim, edge_in_dim),
+            nn.Tanh(),
+            nn.Linear(edge_in_dim, edge_in_dim),
+        )
+
+    def forward(self, src, dest, edge_attr, u, batch):
+        # Concatenate source and destination node features and edge attributes
+        out = torch.cat([src, dest, edge_attr], dim=1)
+        return self.edge_mlp(out)
 
 class BondGraphNetEncoder(nn.Module):
     """Bond-based message passing GNN Encoder with multi-head attention and Set2Set pooling.
@@ -161,11 +180,15 @@ class BondGraphNetEncoder(nn.Module):
         self.edge_dim = edge_embed_dim #* edge_feat
 
         self.layers = nn.ModuleList([
-            AttentionMP(node_feat_dim=self.node_dim if i == 0 else hidden_dim, 
-                    edge_feat_dim=self.edge_dim, 
-                    hidden_dim=hidden_dim, 
-                    heads=heads, 
-                    dropout=dropout)
+            MetaLayer(
+                EdgeModel(self.node_dim if i == 0 else hidden_dim, self.edge_dim),
+                AttentionMP(node_feat_dim=self.node_dim if i == 0 else hidden_dim, 
+                        edge_feat_dim=self.edge_dim, 
+                        hidden_dim=hidden_dim, 
+                        heads=heads, 
+                        dropout=dropout),
+                None,
+            )
             for i in range(num_layers)
         ])
         self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers)])
@@ -185,7 +208,7 @@ class BondGraphNetEncoder(nn.Module):
         h = self.node_embed(x)
         e = self.edge_embed(edge_attr)
         for mp, bn in zip(self.layers, self.bns):
-            h = mp(h, edge_index, e)
+            h, e, _ = mp(h, edge_index, e, None, batch)
             h = bn(h)
             h = self.elu(h)
 

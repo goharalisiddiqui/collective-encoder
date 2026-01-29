@@ -221,13 +221,13 @@ callbacks = []
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
 callbacks.append(lr_monitor)
 # Early stopping
-if 'early_stopping' in config and config['early_stopping']:
+if config.get('early_stopping', True):
     early_stop_callback = pl.callbacks.EarlyStopping(
-        monitor=config.get('early_stopping_args', {}).get('monitor', 'val_loss'),
-        min_delta=config.get('early_stopping_args', {}).get('min_delta', 0.00),
-        patience=config.get('early_stopping_args', {}).get('patience', 20),
-        verbose=config.get('early_stopping_args', {}).get('verbose', True),
-        mode=config.get('early_stopping_args', {}).get('mode', 'min')
+        monitor='val_loss',
+        patience=config.get('early_stopping_args', {}).get('patience', 100),
+        min_delta=config.get('early_stopping_args', {}).get('min_delta', 1e-8),
+        verbose=True,
+        mode='min'
     )
     callbacks.append(early_stop_callback)
 

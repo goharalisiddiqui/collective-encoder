@@ -9,6 +9,8 @@ import torch
 from torch import Tensor
 from torch_geometric.data import Data, Dataset
 
+from .base import BaseDataset
+
 # import metatensor.torch as mts
 # import metatomic.torch as mta
 
@@ -27,7 +29,7 @@ from torch_geometric.data import Data, Dataset
 
 #         pass
 
-def bond_type_one_hot(kind: str) -> List[float]:
+def _bond_type_one_hot(kind: str) -> List[float]:
     # single, double, triple, aromatic, virtual
     mapping = {"single": 0, "double": 1, "triple": 2, "aromatic": 3, "virtual": 4}
     vec = [0.0] * 5
@@ -48,7 +50,7 @@ def _dihedral(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) ->
     y = np.dot(np.cross(b1n, v), w)
     return float(np.arctan2(y, x))
 
-class BondGraphDataset(Dataset):
+class BondGraphDataset(Dataset, BaseDataset):
     """Graph dataset where nodes are bonds and edges connect bonds via angles or torsions.
 
     Node (bond) feature vector (length 3):
@@ -69,15 +71,16 @@ class BondGraphDataset(Dataset):
             add_torsion: bool = True,
             add_angles: bool = True,
             validate_indices: bool = True,
+            **kwargs,
         ):
         """Initialize dataset.
 
         bond_indices: list of (i,j) atom index pairs defining bonds (single global list applied to every structure).
         If validate_indices=True, will assert indices are in range for each structure.
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self.structures = structures
-        self.labels = labels if labels is not None else [None] * len(structures)
+        self.labels = labels if labels is not None else [0.0] * len(structures)
         assert len(self.structures) == len(self.labels), "Structures and labels length mismatch"
         self.bond_indices: List[Tuple[int, int]] = [tuple(map(int, b)) for b in bond_indices]
         self.add_torsion = add_torsion
@@ -86,7 +89,48 @@ class BondGraphDataset(Dataset):
             n_atoms0 = len(structures[0])
             for (i, j) in self.bond_indices:
                 assert 0 <= i < n_atoms0 and 0 <= j < n_atoms0, f"Bond index out of range: ({i},{j}) for n_atoms={n_atoms0}"
-        self.calculate_indices()
+        self._calculate_indices()
+        
+        # Log the bond set
+        self.log_list("Bond set (atom index pairs)", self.bond_indices)
+        # Log angle set
+        self.log_list("Angle set (atom index triplets)", self.angle_index)
+        # Log torsion set
+        self.log_list("Torsion set (atom index quartets)", self.torsion_index)
+        
+        # Log dataset info
+        self.log_msg(f"Loaded graph dataset with {self.len()} graphs") 
+        self.log_msg(f"Number of bonds (nodes): {len(self.bond_indices)}") 
+        sample = self.get(0)
+        self.log_msg(f"Node feature size: {sample.x.shape[1]}") 
+        self.log_msg(f"Edge feature size: {sample.edge_attr.shape[1]}") 
+        self.log_msg(f"Total number of edges: {sample.edge_index.shape[1]}") 
+    
+    def get_datapoint_shape(self) -> Dict[str, Tuple]:
+        """Return dictionary of data point tensor shapes."""
+        sample = self.get(0)
+        shapes = {
+            'x': tuple(sample.x.shape),
+            'edge_index': tuple(sample.edge_index.shape),
+            'edge_attr': tuple(sample.edge_attr.shape),
+            'pos': tuple(sample.pos.shape),
+            'y_bonds': tuple(sample.y_bonds.shape),
+            'y_angles': tuple(sample.y_angles.shape),
+            'y_torsions_sin': tuple(sample.y_torsions_sin.shape),
+            'y_torsions_cos': tuple(sample.y_torsions_cos.shape),
+        }
+        return shapes
+    
+    def get_norm_data(self) -> np.ndarray:
+        """Return array of data to be normalized."""
+        data_to_normalize = []
+        for idx in range(self.len()):
+            data = self.get(idx)
+            node_feats = data.x.numpy()
+            edge_feats = data.edge_attr.numpy()
+            data_to_normalize.append(np.hstack([node_feats.mean(axis=0), edge_feats.mean(axis=0)]))
+        data_to_normalize = np.vstack(data_to_normalize)
+        return data_to_normalize
     
     def get_label_indices(self) -> List[int]:
         """Return list of atom indices of labels."""
@@ -127,7 +171,7 @@ class BondGraphDataset(Dataset):
         atom_to_bonds: Dict[int, List[int]] = {}
         for b_idx, (i, j, _) in enumerate(bonds):
             atom_to_bonds.setdefault(i, []).append(b_idx)
-            atom_to_bonds.setdefault(j, []).append(b_idx)
+            atom_to_bonds.setdefault(j, []).append(b_idx)#
 
         edge_index_src = []
         edge_index_dst = []
@@ -214,7 +258,7 @@ class BondGraphDataset(Dataset):
     def len(self) -> int:  # for PyG Dataset compatibility
         return len(self.structures)
 
-    def calculate_indices(self):
+    def _calculate_indices(self):
         atoms = self.structures[0]
         bonds = self._assemble_bonds(atoms)
         edge_index, edge_attr, _, angle_atoms, torsion_atoms = self._angle_and_torsion_edges(atoms, bonds)
@@ -451,7 +495,7 @@ class BondGraphDataset(Dataset):
         # For now assume all provided bonds are single (RDKit could refine but keep simple)
         for (i, j) in bond_set:
             dist = float(dmat[i, j])
-            bt = torch.tensor(bond_type_one_hot("single"))
+            bt = torch.tensor(_bond_type_one_hot("single"))
             feat = torch.cat([bt, torch.tensor([dist])], dim=0)
             for s, t in ((i, j), (j, i)):
                 edge_src.append(s)
@@ -484,7 +528,7 @@ class BondGraphDataset(Dataset):
                         continue  # already direct edge
                     # add virtual edge both directions
                     dist = float(dmat[a, b])
-                    bt = torch.tensor(bond_type_one_hot("virtual"))
+                    bt = torch.tensor(_bond_type_one_hot("virtual"))
                     feat = torch.cat([bt, torch.tensor([dist])], dim=0)
                     edge_src.append(a)
                     edge_dst.append(b)

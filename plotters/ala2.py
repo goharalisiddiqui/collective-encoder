@@ -14,8 +14,7 @@ class Ala2DataAnalyser():
     def plot_dihedrals(self, data):
         idx_phi = 6 # [1,3,4,5]
         idx_psi = 10 # [3,4,6,8]
-
-        sequence_len = self.data_args.get("sequence_len", 1)
+        
         sin_phi, cos_phi, sin_psi, cos_psi = [], [], [], []
         for d in tqdm(data, desc="Processing dihedrals"):
             sin_phi.append(d.y_torsions_sin[idx_phi].cpu().numpy())
@@ -25,11 +24,19 @@ class Ala2DataAnalyser():
 
         phi = np.arctan2(sin_phi, cos_phi)
         psi = np.arctan2(sin_psi, cos_psi)
-
+        
         # Make sequence length alternate color
-        colors = ['red'] * sequence_len + ['blue'] * sequence_len
-        colors = colors * (len(phi) // (2 * sequence_len) + 1)
-        colors = colors[:len(phi)]
+        if all(key in self.data_args for key in ['input_chunk_length', 'output_chunk_length']):
+            input_chunk_length = self.data_args['input_chunk_length']
+            output_chunk_length = self.data_args['output_chunk_length']
+            n_samples = self.data_args.get('num_chunks_per_sequence', 1)
+            sequence_len = input_chunk_length + n_samples * output_chunk_length
+
+            colors = ['red'] * sequence_len + ['blue'] * sequence_len
+            colors = colors * (len(phi) // (2 * sequence_len) + 1)
+            colors = colors[:len(phi)]
+        else:
+            colors = 'blue'
 
         fig, ax = plt.subplots(2, 1, figsize=(7,5))
         ax[0].scatter(range(len(phi)), phi, marker='+', s=5, color=colors)
