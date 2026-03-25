@@ -174,10 +174,21 @@ class DefaultDatamodule(pl.LightningDataModule, CEModule):
                 self.test_indices = np.arange(self.max_frames)
             else:
                 test_start = random.randint(0, self.max_frames - required_size)
-                if (test_start >= self.train_indices[0] and test_start < self.train_indices[-1]) or \
-                   (test_start >= self.val_indices[0] and test_start < self.val_indices[-1]):
-                    test_start += self.train_size + self.validation_size
+                if len(self.train_indices) > 0 and \
+                        test_start >= self.train_indices[0] and \
+                        test_start < self.train_indices[-1]:
+                    test_start += self.train_size
+                if len(self.val_indices) > 0 and \
+                        test_start >= self.val_indices[0] and \
+                        test_start < self.val_indices[-1]:
+                    test_start += self.validation_size
                 self.test_indices = np.arange(test_start, test_start + self.test_size)
+            self.log_msg(f"Sequential split selected.")
+            self.log_msg(f"Train indices: {self.train_indices[0]} - {self.train_indices[-1]}, ")
+            if len(self.val_indices) > 0:
+                self.log_msg(f"Validation indices: {self.val_indices[0]} - {self.val_indices[-1]}, ")
+            if len(self.test_indices) > 0:
+                self.log_msg(f"Test indices: {self.test_indices[0]} - {self.test_indices[-1]}")
         else:
             all_indices = range(self.max_frames)
             self.train_indices = random.sample(all_indices, self.train_size)
@@ -188,6 +199,9 @@ class DefaultDatamodule(pl.LightningDataModule, CEModule):
                 self.test_indices = all_indices
             else:
                 self.test_indices = random.sample(list(remainder_indices), self.test_size)
+            self.log_msg(f"Random split selected. Train indices size: {len(self.train_indices)}, "
+                         f"Validation indices size: {len(self.val_indices)}, "
+                         f"Test indices size: {len(self.test_indices)}")
         
     def get_atns(self):
         return self.atomic_numbers
