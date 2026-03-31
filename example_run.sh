@@ -1,11 +1,11 @@
 #! /bin/bash
-#SBATCH -J CE
+#SBATCH -J CollectiveEncoder
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -c 8
-#SBATCH -p gpucloud
+#SBATCH -p ###PARTITION###
 #SBATCH --mem=4G
-#SBATCH --gres=shard:1
+#SBATCH --gres=####GPU_RESOURCES###
 #SBATCH --time=100:00:00
 #SBATCH --export=ALL
 #SBATCH -o ./slurm_logs/slurm-%J.out
@@ -16,14 +16,19 @@ if [ ! -z "${SLURM_JOB_ID}" ]; then
     echo "Running on compute node"
     pref='srun'
     mkdir -p slurm_logs
-
-    ####### PREPARE ENV #######
-    echo "Loading modules from $SLURM_PRESCRIPT_ML"
-    source $SLURM_PRESCRIPT_ML
-    ########################################
 else 
     echo "Running on local machine"
     pref=''
+fi
+
+if test ! -d .venv; then
+    echo "Creating local virtual environment"
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install .
+else
+    echo "Activating local virtual environment in .venv"
+    source .venv/bin/activate
 fi
 
 #Read command line arguments
@@ -35,7 +40,7 @@ do
 done
 
 if [ "$debug" == 1 ]; then
-    $pref python engine.py --config config.yaml --debug
+    $pref collective-encoder-train --config config.yaml --debug
 else
-    $pref python engine.py --config config.yaml
+    $pref collective-encoder-train --config config.yaml
 fi

@@ -15,3 +15,4 @@ lightning_logs/
 *.log
 *test*
 md17_data/
+**.egg-info/

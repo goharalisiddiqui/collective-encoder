@@ -1,0 +1,27 @@
+# Core dependencies
+torch>=2.5.0,<3.0.0
+pytorch-lightning>=2.5.0,<3.0.0
+numpy>=2.2.0,<3.0.0
+pandas>=2.3.0,<3.0.0
+matplotlib>=3.10.0,<4.0.0
+scipy>=1.15.0,<2.0.0
+pyyaml>=6.0.0,<7.0.0
+tqdm>=4.67.0,<5.0.0
+scikit-learn>=1.6.0,<2.0.0
+MDAnalysis>=2.9.0,<3.0.0
+ase>=3.25.0,<4.0.0
+torch-geometric>=2.6.0,<3.0.0
+metatensor-torch
+featomic-torch
+
+# Optional dependencies (install with pip install -r requirements-dev.txt for development)
+# wandb>=0.20.0,<1.0.0
+# metatomic
+# pytest>=6.0.0
+# pytest-cov>=3.0.0
+# black>=22.0.0
+# flake8>=4.0.0
+# isort>=5.10.0
+# mypy>=0.950
+# jupyterlab
+# ipython>=9.3.0

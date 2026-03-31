@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "collective-encoder"
+version = "0.1.0"
+description = "A machine learning framework for creating surrogate models that predict dynamics of molecular systems"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Gohar Ali", email = "gsiddiqui411@gmail.com"},
+]
+keywords = ["machine learning", "molecular dynamics", "autoencoder", "deep learning", "pytorch"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+dependencies = [
+    "torch>=2.5.0,<3.0.0",
+    "pytorch-lightning>=2.5.0,<3.0.0",
+    "numpy>=2.2.0,<3.0.0",
+    "pandas>=2.3.0,<3.0.0",
+    "matplotlib>=3.10.0,<4.0.0",
+    "scipy>=1.15.0,<2.0.0",
+    "pyyaml>=6.0.0,<7.0.0",
+    "tqdm>=4.67.0,<5.0.0",
+    "scikit-learn>=1.6.0,<2.0.0",
+    "MDAnalysis>=2.9.0,<3.0.0",
+    "ase>=3.25.0,<4.0.0",
+    "torch-geometric>=2.6.0,<3.0.0",
+    "metatensor-torch",
+    "featomic-torch",
+]
+
+[project.optional-dependencies]
+wandb = ["wandb>=0.20.0,<1.0.0"]
+metatomic = ["metatomic"]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "isort>=5.10.0",
+    "mypy>=0.950",
+    "jupyterlab",
+    "ipython>=9.3.0",
+]
+all = ["collective-encoder[wandb,metatomic,dev]"]
+
+[project.scripts]
+collective-encoder-train = "collective_encoder.cli:main_train"
+collective-encoder-eval = "collective_encoder.cli:main_eval"
+
+[project.urls]
+Homepage = "https://github.com/collective-encoder/collective-encoder"
+Repository = "https://github.com/collective-encoder/collective-encoder.git"
+Documentation = "https://collective-encoder.readthedocs.io/"
+"Bug Tracker" = "https://github.com/collective-encoder/collective-encoder/issues"
+
+[tool.setuptools]
+packages = ["collective_encoder"]
+
+[tool.setuptools.package-dir]
+collective_encoder = "collective_encoder"
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "--cov=collective_encoder --cov-report=html --cov-report=term"
