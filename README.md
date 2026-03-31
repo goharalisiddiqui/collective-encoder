@@ -108,20 +108,7 @@ network_args:                # Architecture parameters
     network: [256, 128, 2]
     beta: 1.0
 ```
-For full documentation, see `examples/ala2_tutorial/ala2_config.yaml`.
-
-### YAML Config Checking (Best Practice)
-
-Use the included utility to validate your config and catch typos or missing fields before a run:
-
-```python
-from collective_encoder.common.config_check import validate_required_fields, validate_duplicate_keys
-validate_duplicate_keys('path/to/config.yaml')
-import yaml
-with open('path/to/config.yaml') as f:
-    cfg = yaml.safe_load(f)
-validate_required_fields(cfg)
-```
+For full documentation, see `examples/full_config.yaml`.
 
 ## Development & Contributing
 
@@ -129,23 +116,9 @@ validate_required_fields(cfg)
 - Follow PEP8 and maintain docstrings. Tests for new features are highly recommended.
 - When adding new datasets, inherit from the relevant base data loader and register in the config resolver.
 
-## Citing This Work
-
-If you use Collective Encoder in your research, please cite us (to be updated with DOI/preprint):
-
-```
-@software{collective_encoder_2026,
-  author = {Your Name and Co-authors},
-  title = {Collective Encoder: Surrogate Models for Molecular Dynamics},
-  url = {https://github.com/your-username/collective-encoder},
-  version = {0.1},
-  year = {2026}
-}
-```
-
 ## Support & Questions
 
-For setup or usage questions, open a GitHub issue or reach out to [your-email@institution.edu](mailto:your-email@institution.edu).
+For setup or usage questions, open a GitHub issue or reach out to [gsiddiqui411@gmail.com](mailto:gsiddiqui411@gmail.com).
 
 ---
 
