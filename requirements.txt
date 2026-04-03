@@ -1,4 +1,5 @@
 # Core dependencies
+--extra-index-url https://download.pytorch.org/whl/cu122
 torch>=2.5.0,<3.0.0
 pytorch-lightning>=2.5.0,<3.0.0
 numpy>=2.2.0,<3.0.0
@@ -10,9 +11,10 @@ tqdm>=4.67.0,<5.0.0
 scikit-learn>=1.6.0,<2.0.0
 MDAnalysis>=2.9.0,<3.0.0
 ase>=3.25.0,<4.0.0
-torch-geometric>=2.6.0,<3.0.0
 metatensor-torch
 featomic-torch
+--find-links https://data.pyg.org/whl/torch-2.5.1+cu121.html
+torch-geometric>=2.6.0,<3.0.0
 
 # Optional dependencies (install with pip install -r requirements-dev.txt for development)
 # wandb>=0.20.0,<1.0.0
