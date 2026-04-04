@@ -42,6 +42,7 @@ dependencies = [
     "torch-geometric>=2.6.0,<3.0.0",
     "metatensor-torch",
     "featomic-torch",
+    "gslibs @ git+https://github.com/goharalisiddiqui/gslibs.git@main",
 ]
 
 [project.optional-dependencies]
