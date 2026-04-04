@@ -4,6 +4,12 @@ from typing import Dict, List, Union
 from .base import BaseLabeler
 
 class CoordinationCountLabeler(BaseLabeler):
+    '''
+    Docstring for CoordinationCountLabeler
+    '''
+    
+    _IDENTIFIER = "COORDINATION"
+    
     def __init__(self, 
                  universe: mda.Universe,
                  args: Dict[str, Union[str, float, List[int]]],

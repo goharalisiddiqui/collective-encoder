@@ -4,9 +4,14 @@ from typing import Dict, List, Union
 from .base import BaseLabeler
 
 class DummyLabeler(BaseLabeler):
+    '''
+    Docstring for DummyLabeler
+    '''
+    _IDENTIFIER = "DUMMY"
+
     def __init__(self, 
-                 universe: mda.Universe,
-                 args: Dict[str, Union[str, List[str]]]
+                 universe: mda.Universe = None,
+                 args: Dict[str, Union[str, List[str]]] = {}
                  ) -> None:
         pass
     def get_names(self) -> List[str]:

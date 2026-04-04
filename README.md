@@ -60,6 +60,7 @@ collective-encoder/
 ├── README.md
 └── requirements.txt
 ```
+Each submodule is designed for modularity and extensibility. For example, to add a new dataset type, create a new class in `datasets/` that inherits from the appropriate base class and register it in the config resolver.
 
 ### Preparing Your Run
 
@@ -70,7 +71,7 @@ collective-encoder/
    Before launching your full experiment, run:
 
    ```bash
-   python engine.py --config path/to/config.yaml --debug
+   python trainer.py --config path/to/config.yaml --debug
    ```
 
    This uses a smaller dataset and two epochs for rapid validation.
@@ -78,7 +79,7 @@ collective-encoder/
 3. **Launch Full Training (Command Line):**
 
    ```bash
-   python engine.py --config path/to/config.yaml
+   python trainer.py --config path/to/config.yaml
    ```
 
 4. **Run on HPC with SLURM:**
@@ -118,7 +119,7 @@ For full documentation, see `examples/full_config.yaml`.
 
 ## Support & Questions
 
-For setup or usage questions, open a GitHub issue or reach out to [gsiddiqui411@gmail.com](mailto:gsiddiqui411@gmail.com).
+For setup or usage questions, open a GitHub issue or reach out to [goharalisiddiqui@gmail.com](mailto:goharalisiddiqui@gmail.com).
 
 ---
 

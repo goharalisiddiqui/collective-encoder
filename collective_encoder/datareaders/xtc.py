@@ -1,7 +1,7 @@
 import os
 
 from glob import glob
-from typing import List, Dict, Union
+from typing import List, Dict, Tuple, Union
 from tqdm import tqdm
 
 import numpy as np
@@ -11,11 +11,16 @@ import MDAnalysis as mda
 
 from MDAnalysis.exceptions import NoDataError
 
-from .base import TrajectoryReaderBase
-
+import gslibs.validation as gsv
+from .trajectory import TrajectoryReaderBase
 from collective_encoder.labels.resolver import get_labeler
 
 class XTCReader(TrajectoryReaderBase):
+    '''
+    #FIXME: Add Docstring
+    '''
+    _IDENTIFIER = "XTC"
+    
     def __init__(self,
                  tprfile : str,
                  xtcfile : str = None,
@@ -28,9 +33,9 @@ class XTCReader(TrajectoryReaderBase):
         super().__init__(**kwargs)
         
         # Check files
-        self.check_exists(tprfile=tprfile)
+        gsv.check_exists(tprfile=tprfile)
         self.log_msg(f"Loading topology from file {tprfile}")
-        self.check_mutually_exclusive(xtcfile=xtcfile, 
+        gsv.check_mutually_exclusive(xtcfile=xtcfile, 
                                       coord_glob=coord_glob, 
                                       xtcfiles=xtcfiles, 
                                       require_one=True)
@@ -71,7 +76,7 @@ class XTCReader(TrajectoryReaderBase):
                         indices: List[List[int]],
                         labeler_type : str = 'Dummy',
                         labeler_args : Dict[str, Union[str, float, List[int]]] = {},
-                        ):
+                        ) -> Tuple[Tuple[List[ase.Atoms]], Tuple[List[List[float]]]]:
         # Center the and unwrap the trajectory
         self.u = self.mda_add_default_transforms(self.u, self.mol)
     

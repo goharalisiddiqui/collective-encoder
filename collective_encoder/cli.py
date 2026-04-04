@@ -7,7 +7,7 @@ from pathlib import Path
 
 def main_train():
     """Entry point for the collective-encoder-train command."""
-    from collective_encoder.engine import main as engine_main
+    from collective_encoder.trainer import main as engine_main
 
     # Temporarily modify sys.argv to pass arguments to engine
     original_argv = sys.argv.copy()

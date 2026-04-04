@@ -6,6 +6,8 @@ class BaseLabeler(ABC):
     '''
     Abstract base class for labelers.
     '''
+    # To be overridden by subclasses
+    _IDENTIFIER: str = None
 
     def get_names(self) -> List[str]:
         """ Get the names of the labels. """

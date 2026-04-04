@@ -466,8 +466,8 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         out_labels: List[str] = ['bond_dist', 'angle', 'dihedral_cos', 'dihedral_sin'],
         outname: str = './BGE_untitled/BGE_',
     ):
-        super().__init__()
         self.save_hyperparameters(ignore=["datamodule"])
+        super().__init__()
         assert datamodule is not None, "datamodule must be provided"
         datasetobject = datamodule.get_dataset()
         self.template_khop = decoder_args['template_khop']

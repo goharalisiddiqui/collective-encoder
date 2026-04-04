@@ -4,6 +4,11 @@ from typing import Dict, List, Union
 from .base import BaseLabeler
 
 class DistanceValueLabeler(BaseLabeler):
+    '''
+    Docstring for DistanceValueLabeler
+    '''
+    _IDENTIFIER = "DISTANCE"
+    
     def __init__(self, 
                  universe: mda.Universe,
                  args: Dict[str, Union[str, List[str]]]

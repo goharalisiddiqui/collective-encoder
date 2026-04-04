@@ -11,6 +11,7 @@ scikit-learn>=1.6.0,<2.0.0
 MDAnalysis>=2.9.0,<3.0.0
 ase>=3.25.0,<4.0.0
 torch-geometric>=2.6.0,<3.0.0
+-e ./gslibs
 metatensor-torch
 featomic-torch
 

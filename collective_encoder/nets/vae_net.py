@@ -70,6 +70,7 @@ class VAE(AEBase):
                  use_steric_loss = False,
                  use_bond_deviation_loss = False,
                  ):
+        self.save_hyperparameters(ignore=['datamodule'])
         # Checks
         assert len(network) >= 3, "Network must have at least 2 layers (input, hidden, output)"
         assert not all([a != None for a in [C_reg, D_reg]]), "C_reg and D_reg are incompatible, choose one of them"
@@ -125,7 +126,6 @@ class VAE(AEBase):
             cov_mat = cov_radii.unsqueeze(0) + cd_t.unsqueeze(1)
             self.cov_mat = cov_mat.squeeze(1)
 
-        self.save_hyperparameters(ignore=['datamodule'])
     
     def get_metatomic_model(self):
         model = self.metatomic_model_cls(

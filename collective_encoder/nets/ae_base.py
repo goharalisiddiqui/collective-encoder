@@ -92,7 +92,6 @@ class AEBase(pl.LightningModule, ABC):
         self.register_buffer('Mean', torch.zeros(dim_data))
         self.register_buffer('Range', torch.ones(dim_data))
         self.metatomic_model_cls = MetatomicModelAE
-        self.save_hyperparameters()
 
     def set_norm(self):
         if hasattr(self, 'trainer'):

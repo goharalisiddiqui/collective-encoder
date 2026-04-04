@@ -34,7 +34,7 @@ data_args:
     dataset_type : "DISTANCES"
     num_workers : 4
     norm_type : "minmax"
-    labeler_type: "DihedralValueLabeler"
+    labeler_type: "DIHEDRAL"
     labeler_args:
       label_dihedrals: 
         - phi_2

@@ -14,14 +14,15 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
-from collective_encoder.utils import recursive_update
+from gslibs.utils.common import recursive_update
+from gslibs.utils.common import get_required_init_args
+
 from collective_encoder.nets.resolver import get_net
-from collective_encoder.dataloaders.resolver import get_dataloader
+from collective_encoder.datamodules.resolver import get_datamodule
 from collective_encoder.common.config_check import (
     validate_duplicate_keys, 
     validate_required_fields 
 )
-from collective_encoder.utils import get_required_init_args
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'defaults.yaml')
@@ -44,9 +45,8 @@ def parse_args():
 
     return args
 
-
-def main():
-    """Main entry point for the collective encoder training."""
+def train(config: str, debug: bool = False):
+    """Train a collective encoder model based on the provided configuration."""
     args = parse_args()
     if not os.path.isfile(args.config):
         raise FileNotFoundError(f"Config file not found at {args.config}")
@@ -73,7 +73,7 @@ def main():
     validate_required_fields(config['network_args'], req_fields)
 
     data_args = config['data_args']
-    main_dl, data_args = get_dataloader(datatype, data_args)
+    main_dl, data_args = get_datamodule(datatype, data_args)
     validate_required_fields(data_args, 
                              get_required_init_args(main_dl))
     
@@ -313,6 +313,10 @@ def main():
 
         print(f"@@ metatomic model saved as: {metatomic_model_file}")
 
+def main():
+    """Main entry point for the collective encoder training."""
+    args = parse_args()
+    train(args.config, args.debug)
 
 if __name__ == "__main__":
     main()

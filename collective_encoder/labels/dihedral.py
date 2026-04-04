@@ -4,6 +4,12 @@ from typing import Dict, List, Union
 from .base import BaseLabeler
 
 class DihedralValueLabeler(BaseLabeler):
+    '''
+    Docstring for DihedralValueLabeler
+    '''
+    
+    _IDENTIFIER = "DIHEDRAL"
+
     def __init__(self, 
                  universe: mda.Universe,
                  args: Dict[str, Union[str, List[float]]]

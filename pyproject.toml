@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Gohar Ali", email = "gsiddiqui411@gmail.com"},
+    {name = "Gohar Ali Siddiqui", email = "goharalisiddiqui@gmail.com"},
 ]
 keywords = ["machine learning", "molecular dynamics", "autoencoder", "deep learning", "pytorch"]
 classifiers = [
@@ -61,13 +61,12 @@ all = ["collective-encoder[wandb,metatomic,dev]"]
 
 [project.scripts]
 collective-encoder-train = "collective_encoder.cli:main_train"
-collective-encoder-eval = "collective_encoder.cli:main_eval"
 
 [project.urls]
-Homepage = "https://github.com/collective-encoder/collective-encoder"
-Repository = "https://github.com/collective-encoder/collective-encoder.git"
-Documentation = "https://collective-encoder.readthedocs.io/"
-"Bug Tracker" = "https://github.com/collective-encoder/collective-encoder/issues"
+Homepage = "https://github.com/goharalisiddiqui/collective-encoder"
+Repository = "https://github.com/goharalisiddiqui/collective-encoder.git"
+Documentation = "https://github.com/goharalisiddiqui/collective-encoder"
+"Bug Tracker" = "https://github.com/goharalisiddiqui/collective-encoder/issues"
 
 [tool.setuptools]
 packages = ["collective_encoder"]
