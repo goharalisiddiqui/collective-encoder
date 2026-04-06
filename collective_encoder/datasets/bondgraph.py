@@ -78,7 +78,8 @@ class BondGraphDataset(Dataset, BaseDataset):
         bond_indices: list of (i,j) atom index pairs defining bonds (single global list applied to every structure).
         If validate_indices=True, will assert indices are in range for each structure.
         """
-        super().__init__(**kwargs)
+        Dataset.__init__(self)
+        BaseDataset.__init__(self, **kwargs)
         self.structures = structures
         self.labels = labels if labels is not None else [0.0] * len(structures)
         assert len(self.structures) == len(self.labels), "Structures and labels length mismatch"

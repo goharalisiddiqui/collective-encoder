@@ -3,7 +3,7 @@
 # The actual implementation has been moved to coordinates.py
 
 import warnings
-from collective_encoder.datamodules.coordinates import CoordinatesDataloader
+from collective_encoder.datamodules.coordinates import CoordinatesDataModule
 
 # Issue a deprecation warning
 warnings.warn(
@@ -15,6 +15,6 @@ warnings.warn(
 )
 
 # For backward compatibility
-DefaultDatamodule = CoordinatesDataloader
+DefaultDatamodule = CoordinatesDataModule
 
 __all__ = ["DefaultDatamodule"]
