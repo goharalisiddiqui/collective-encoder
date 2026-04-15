@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 import warnings
 
 import ase
@@ -6,6 +6,7 @@ import ase
 import torch
 from torch.utils.data import Dataset
 
+from collective_encoder.collective_encoder.datasets.base import BaseDataset
 import featomic.torch
 import metatensor.torch as mts
 import metatensor
@@ -105,52 +106,59 @@ class MetatomicSOAPDataset(torch.nn.Module):
 
         return descriptors
 
-class SOAPDataset(Dataset):
+class SOAPDataset(Dataset, BaseDataset):
+    '''
+    Docstring for SOAPDataset
+    '''
+    
+    _IDENTIFIER = "SOAP"
+    _REQUIRED_ARGS = ['selected_atoms', 'cutoff']
+    _OPTIONAL_ARGS = {
+        'angular_list': [4],
+        'smoothing_width': 1.5,
+        'gaussian_width': 1.0,
+        'n_radial': 4,
+        'excluded_types': [1],  # Exclude hydrogen by default
+    }
+    
     def __init__(
         self,
         structures: List[ase.Atoms],
-        selected_atoms: List[int],
         labels: List[float],
-        cutoff: float,
-        angular_list: List[int] = [4],
-        smoothing_width: float = 1.5,
-        gaussian_width: float = 1.0,
-        n_radial: int = 4,
-        excluded_types: List[int] = [1],
+        dataset_args: Dict[str, Union[float, int, str]] = None,
+        **kwargs,
     ):
-        print(f"\n\n[{type(self).__name__}]")
-        print("="*80)
-        self.max_angular = max(angular_list)
-        self.selected_atoms = selected_atoms
+        Dataset.__init__(self)
+        BaseDataset.__init__(self, dataset_args=dataset_args, **kwargs)
+        self.max_angular = max(self.angular_list)
         # initialize and store the featomic calculator inside the class
         self.spex = featomic.torch.SphericalExpansion(
             **{
                 "cutoff": {
-                    "radius": cutoff,
-                    "smoothing": {"type": "ShiftedCosine", "width": smoothing_width},
+                    "radius": self.cutoff,
+                    "smoothing": {"type": "ShiftedCosine", "width": self.smoothing_width},
                 },
-                "density": {"type": "Gaussian", "width": gaussian_width},
+                "density": {"type": "Gaussian", "width": self.gaussian_width},
                 "basis": {
                     "type": "TensorProduct",
                     "max_angular": self.max_angular,
-                    "radial": {"type": "Gto", "max_radial": n_radial},
+                    "radial": {"type": "Gto", "max_radial": self.n_radial},
                 },
             }
         )
         self.at_types = structures[0].get_atomic_numbers()
-        self.excluded_types = excluded_types
         self.included_types = list(set(self.at_types) - set(self.excluded_types))
 
         self.selected_keys = mts.Labels(
             # These represent the degree of the spherical harmonics
             "o3_lambda",
-            torch.tensor(angular_list).reshape(-1, 1),
+            torch.tensor(self.angular_list).reshape(-1, 1),
         )
 
         # Precompute all the systems
         systems = featomic.torch.systems_to_torch(structures)
         selected_atoms_label = mts.Labels(
-            "atom", torch.tensor(selected_atoms).reshape(-1, 1)
+            "atom", torch.tensor(self.selected_atoms).reshape(-1, 1)
         )
         descriptors = self.spex(
             systems, selected_samples=selected_atoms_label, selected_keys=self.selected_keys
@@ -161,7 +169,7 @@ class SOAPDataset(Dataset):
 
         # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
         atom_desc = []
-        for atom in selected_atoms:
+        for atom in self.selected_atoms:
             desc_block = []
             sel_map = mts.slice(
                             descriptors,

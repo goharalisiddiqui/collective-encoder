@@ -52,13 +52,17 @@ class CoordinatesDataModule(BaseDataModule):
                  test_full_dataset: bool = False,
                  sequential: bool = False,
                  max_frames: int = None,
+                 maximize_label_variance: bool = False,
                  **kwargs,
                  ):
         self.save_hyperparameters()
+        
+        if maximize_label_variance:
+            assert labeler_type is not None, "labeler_type must be specified when maximize_label_variance is True"
 
         self.max_frames = max_frames
         
-        self._read_data()
+        self._initialize_datareader()
 
         if self.max_frames is None:
             self.max_frames = self.datareader.get_total_frames()
@@ -80,7 +84,7 @@ class CoordinatesDataModule(BaseDataModule):
 
         self._create_datasets()
     
-    def _read_data(self):
+    def _initialize_datareader(self):
         # Initialize the trajectory reader
         datareader_cls = get_datareader(self.hparams.datareader_type)
         self.datareader = datareader_cls(**self.hparams.datareader_args)
@@ -182,25 +186,25 @@ class CoordinatesDataModule(BaseDataModule):
         dataset_class, dataset_args, self.dl_cls = \
             get_dataset_cls_dl(self.hparams.dataset_type, 
                                self.hparams.dataset_args, self.datareader)
-
+        
         self.train_data = dataset_class(
             structures=trajs[0],
             labels=labels[0],
-            **dataset_args,
+            dataset_args=dataset_args,
             **self.hparams
         )
 
         self.val_data = dataset_class(
             structures=trajs[1],
             labels=labels[1],
-            **dataset_args,
+            dataset_args=dataset_args,
             **self.hparams
         ) if self.validation_size > 0 else []
 
         self.test_data = dataset_class(
             structures=trajs[2],
             labels=labels[2],
-            **dataset_args,
+            dataset_args=dataset_args,
             **self.hparams
         ) if self.test_size > 0 else []
 

@@ -24,13 +24,6 @@ class XTCChunksReader(XTCReader):
     def get_total_frames(self):
         return len(self.u.trajectory) - self.sequence_length
     
-    def _read_and_label(self, indices, labeler):
-        chunked_indices = []
-        for i in indices:
-            s = i
-            e = s + self.sequence_length
-            chunked_indices.extend([j for j in range(s, e)])
-        indices = chunked_indices
-        return super()._read_and_label(indices, labeler)
-    
-    
+    def _prepare_seq(self, seq):
+        """Expand start indices into consecutive frame ranges of length sequence_length."""
+        return [j for i in seq for j in range(i, i + self.sequence_length)]

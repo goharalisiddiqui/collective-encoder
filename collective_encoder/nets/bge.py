@@ -452,9 +452,9 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
     """
     def __init__(
         self,
-        datamodule,
         encoder_args: Dict[str, Union[int, float]],
         decoder_args: Dict[str, Union[int, float]],
+        datamodule = None,
         lrate: float = 1e-4,       ### OPTIMIZER ARGS
         weight_decay: float = 0.0,
         normIn: bool = False,
@@ -468,11 +468,6 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
     ):
         self.save_hyperparameters(ignore=["datamodule"])
         super().__init__()
-        assert datamodule is not None, "datamodule must be provided"
-        datasetobject = datamodule.get_dataset()
-        self.template_khop = decoder_args['template_khop']
-        template_data = datasetobject.get_template_graph(k=self.template_khop)
-        bond_index, angle_index, torsion_index = datasetobject.get_label_indices()
         assert len(out_labels) == 4, "out_labels must be a list of 4 strings"
 
         if scheduler:
@@ -493,16 +488,12 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         self.loss_weights = loss_weights
         self.latent_dim = encoder_args['latent_dim']
 
-        gnn_dec_kwargs = {
-            "template_data": template_data,
-            "label_indices": (bond_index, angle_index, torsion_index),
-            "latent_dim": self.latent_dim,
-        }
-        gnn_dec_args = decoder_args.copy()
-        gnn_dec_args.pop('template_khop', None) # Otherwise decoder complains
-
+        if datamodule is not None: # Otherwise we lazy-initialize decoder later when decoder is needed
+            self._init_decoder(datamodule)
+        else:
+            self.gnn_dec = None
+            
         self.gnn_enc = BondGraphNetEncoder(**encoder_args)
-        self.gnn_dec = BondGraphNetDecoder(**gnn_dec_kwargs, **gnn_dec_args)
         self.loss_fn = loss_fn if loss_fn is not None else nn.MSELoss()
         # Normalization flag & statistics (avoid name clash with method normalize())
         self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
@@ -511,6 +502,20 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         num_norm = encoder_args['node_feat'] + encoder_args['edge_feat']
         self.register_buffer('Mean', torch.zeros(num_norm))
         self.register_buffer('Range', torch.ones(num_norm))
+    
+    def _init_decoder(self, datamodule):
+        datasetobject = datamodule.get_dataset()
+        self.template_khop = self.hparams.decoder_args['template_khop']
+        template_data = datasetobject.get_template_graph(k=self.template_khop)
+        bond_index, angle_index, torsion_index = datasetobject.get_label_indices()
+        gnn_dec_kwargs = {
+            "template_data": template_data,
+            "label_indices": (bond_index, angle_index, torsion_index),
+            "latent_dim": self.latent_dim,
+        }
+        gnn_dec_args = self.hparams.decoder_args.copy()
+        gnn_dec_args.pop('template_khop', None) # Otherwise decoder complains
+        self.gnn_dec = BondGraphNetDecoder(**gnn_dec_kwargs, **gnn_dec_args)
 
     def set_norm(self):
         if not self.trainer.datamodule:
@@ -623,6 +628,15 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
         return latent
 
     def decode(self, latent):
+        if self.gnn_dec is None:
+            try:
+                self.trainer
+            except RuntimeError as e:
+                raise RuntimeError("Decoder not initialized and trainer not found; cannot initialize decoder.")
+            datamodule = getattr(self.trainer, 'datamodule', None)
+            if datamodule is None:
+                raise RuntimeError("Decoder not initialized and trainer datamodule not found; cannot initialize decoder.")
+            self._init_decoder(datamodule)
         pred = self.gnn_dec(latent)
         # pred = self.denormalize(pred)
         return pred
@@ -681,9 +695,8 @@ class BondGraphNetEncoderDecoder(pl.LightningModule):
             loss_latent += torch.var(batch_dist)
 
         self.log(f"{stage}_loss_latent", loss_latent, prog_bar=False, on_step=(stage=="train"), on_epoch=True)
-        loss = loss + self.hparams.loss_latent_weight * loss_latent
 
-        return loss
+        return loss_latent
 
     def step(self, batch, stage: str):
         pred, latent = self.forward(batch)

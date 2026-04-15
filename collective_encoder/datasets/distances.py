@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 
 import numpy as np
 import ase
@@ -73,27 +73,34 @@ class DistancesDataset(Dataset, BaseDataset):
         distances (torch.Tensor): Tensor of shape (num_structures, num_pairs) containing the distances.
         labels (torch.Tensor): Tensor of shape (num_structures,) containing the labels.
     '''
+    _IDENTIFIER = "DISTANCES"
+    _REQUIRED_ARGS = []
+    _OPTIONAL_ARGS = {
+        'group1': None,
+        'group2': None,
+        'atm_ids': None,
+    }
+
     def __init__(
         self,
         structures: List[ase.Atoms],
         labels: List[float],
-        group1 : str = "",
-        group2 : str = "",
-        atm_ids : List[int] =  None,
+        dataset_args: Dict[str, Union[float, int, str]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         assert len(structures) == len(labels), "Number of structures and labels must match"
         atns = structures[0].get_atomic_numbers()
-        if group1 == "":
+
+        if self.group1 is None:
             group1_indices = list(range(len(atns)))
         else:
-            group1 = parse_slice(group1)
+            group1 = parse_slice(self.group1)
             group1_indices = list(range(*group1.indices(len(atns)))) if group1 != slice(None) else list(range(len(atns)))
-        if group2 == "":
+        if self.group2 is None:
             group2_indices = list(range(len(atns)))
         else:
-            group2 = parse_slice(group2)
+            group2 = parse_slice(self.group2)
             group2_indices = list(range(*group2.indices(len(atns)))) if group2 != slice(None) else list(range(len(atns)))
         
         pairs = []
@@ -115,10 +122,10 @@ class DistancesDataset(Dataset, BaseDataset):
         self.labels = [torch.tensor(d) for d in labels]
         self.num_inputs = len(pairs)
         
-        if atm_ids is not None:
-            self.log_list("Atom IDs", atm_ids)
+        if self.atm_ids is not None:
+            self.log_list("Atom IDs", self.atm_ids)
             for ind, (i, j) in enumerate(pairs):
-                self.log_msg(f"Distance {ind}: {atm_ids[i]} <-> {atm_ids[j]}")
+                self.log_msg(f"Distance {ind}: {self.atm_ids[i]} <-> {self.atm_ids[j]}")
         
     def __len__(self):
         return len(self.distances)

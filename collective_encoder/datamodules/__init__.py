@@ -7,7 +7,6 @@ from collective_encoder.datamodules.resolver import get_datamodule
 
 __all__ = [
     "CoordinatesDataModule",
-    "DefaultDatamodule",  # For backward compatibility
     "get_datamodule"
     # "ColvarDataloader",
     # "MD17Dataloader",

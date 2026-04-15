@@ -9,7 +9,7 @@ class Ala2DataAnalyser():
         self.data_args = data_args
         os.makedirs(self.output_dir, exist_ok=True)
     
-    def plot_dihedrals(self, data):
+    def plot_dihedrals(self, data, label = ""):
         idx_phi = 6 # [1,3,4,5]
         idx_psi = 10 # [3,4,6,8]
         
@@ -27,7 +27,7 @@ class Ala2DataAnalyser():
         if all(key in self.data_args for key in ['input_chunk_length', 'output_chunk_length']):
             input_chunk_length = self.data_args['input_chunk_length']
             output_chunk_length = self.data_args['output_chunk_length']
-            n_samples = self.data_args.get('num_chunks_per_sequence', 1)
+            n_samples = self.data_args.get('n_seq_per_sample', 1)
             sequence_len = input_chunk_length + n_samples * output_chunk_length
 
             colors = ['red'] * sequence_len + ['blue'] * sequence_len
@@ -50,11 +50,28 @@ class Ala2DataAnalyser():
         ax[1].set_ylim([-np.pi, np.pi])
         ax[1].set_yticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
         ax[1].set_yticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
-        fig.savefig(self.output_dir + "/dihedrals.png", dpi=300)
-        print(f"\n[{type(self).__name__}]: Saved dihedral plot to {self.output_dir}/dihedrals.png")
+        fig.savefig(self.output_dir + f"/dihedrals_{label}.png", dpi=300)
+        print(f"\n[{type(self).__name__}]: Saved dihedral plot to {self.output_dir}/dihedrals_{label}.png")
 
-    def write_data(self, data):
+        plt.close(fig)
+        fig, ax = plt.subplots(1, 1, figsize=(5,5))
+        ax.scatter(phi, psi, marker='+', s=5, color=colors)
+        ax.set_xlabel(r"$\Phi$")
+        ax.set_ylabel(r"$\Psi$")
+        ax.set_xlim([-np.pi, np.pi])
+        ax.set_ylim([-np.pi, np.pi])
+        ax.set_xticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
+        ax.set_xticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
+        ax.set_yticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
+        ax.set_yticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
+        fig.savefig(self.output_dir + f"/ramachandran_{label}.png", dpi=300)
+        print(f"\n[{type(self).__name__}]: Saved Ramachandran plot to {self.output_dir}/ramachandran_{label}.png")
+        plt.close(fig)
+        
+
+    def write_data(self, data, label = ""):
         print(f"\n[{type(self).__name__}]: Writing data analysis to {self.output_dir}")
         print("="*80)
-        self.plot_dihedrals(data)
+        self.plot_dihedrals(data, label)
         print("="*80)
+        

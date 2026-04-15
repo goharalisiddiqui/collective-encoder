@@ -93,6 +93,16 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
         if self.test_size > 0:
             assert self.hparams.test_batch_size <= self.test_size, "Test batch size must be less than or equal to the test size"
 
+    def set_batch_size(self, batch_size: int):
+        """Set the batch size for training."""
+        self.hparams.batch_size = batch_size
+        self._check_batch_sizes()
+    
+    def set_val_batch_size(self, val_batch_size: int):
+        """Set the batch size for validation."""
+        self.hparams.val_batch_size = val_batch_size
+        self._check_batch_sizes()
+    
     def fit_target_scaler(self):
         """Fit the target scaler on training, validation, and test data."""
         if self.target_scaler is not None:
@@ -200,9 +210,29 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
         """Get the shape of a single datapoint."""
         return self.datapoint_shape
 
-    def get_dataset(self):
+    def get_dataset(self): # FIXME: Return combined dataset instead
         """Get the training dataset."""
         return self.train_data
+    
+    def get_train_dataset(self):
+        """Get the training dataset."""
+        return self.train_data
+    
+    def get_val_dataset(self):
+        """Get the validation dataset."""
+        if self.val_data is None:
+            raise ValueError("Validation data is not available")
+        return self.val_data
+
+    def get_test_dataset(self):
+        """Get the test dataset."""
+        if self.test_data is None:
+            raise ValueError("Test data is not available")
+        return self.test_data
+
+    def set_num_workers(self, num_workers: int):
+        """Set the number of workers for data loading."""
+        self.hparams.num_workers = num_workers
 
     @classmethod
     def get_compatible_datareaders(cls) -> List[str]:

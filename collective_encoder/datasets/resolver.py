@@ -18,6 +18,10 @@ def get_dataset_cls_dl(dataset_type: str, dataset_args, datareader) \
         from collective_encoder.datasets.bondgraph import BondGraphDataset as dataset_class
         dataset_args['bond_indices'] = datareader.bonds
         dl_cls = GeoDataLoader
+    elif dataset_type == 'GRAPH_LATENT':
+        from collective_encoder.datasets.bondgraph_latent import BondGraphLatentDataset as dataset_class
+        dataset_args['bond_indices'] = datareader.bonds
+        dl_cls = DataLoader
     elif dataset_type == 'SOAP':
         from collective_encoder.datasets.soap import SOAPDataset as dataset_class
         dataset_args = soap_modifications(dataset_args, datareader)

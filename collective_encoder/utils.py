@@ -1,7 +1,5 @@
-import os
-import pandas as pd
 import numpy as np
-import inspect
+from tqdm import tqdm
 
 def compute_mfpt_matrix(vals : np.ndarray, minima : np.ndarray, lag: int = 1):
     '''
@@ -31,7 +29,7 @@ def compute_mfpt_matrix(vals : np.ndarray, minima : np.ndarray, lag: int = 1):
     # Build transition count matrix
     transition_counts = np.zeros((n_states, n_states))
     
-    for t in range(len(state_assignments) - lag_time):
+    for t in tqdm(range(len(state_assignments) - lag_time), desc="Computing transition counts"):
         i = state_assignments[t]
         j = state_assignments[t + lag_time]
         transition_counts[i, j] += 1
@@ -46,7 +44,7 @@ def compute_mfpt_matrix(vals : np.ndarray, minima : np.ndarray, lag: int = 1):
     # MFPT from state i to state j is computed by solving linear system
     mfpt_matrix = np.zeros((n_states, n_states))
     
-    for j in range(n_states):
+    for j in tqdm(range(n_states), desc="Computing MFPT matrix"):
         # For each target state j, solve for mean hitting times
         # Set up system: (I - P + e_j e_j^T) * tau = 1
         # where e_j is unit vector for state j

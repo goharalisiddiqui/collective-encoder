@@ -19,6 +19,18 @@ class BaseDataReader(CEModule, ABC):
         Method to get the total number of frames in the trajectory.
         '''
         raise NotImplementedError("Subclasses must implement get_total_frames method")
+
+    @classmethod
+    def get_identifier(cls) -> str:
+        '''
+        Get the identifier for this DataReader type.
+
+        Returns:
+            str: The identifier string.
+        '''
+        if cls._IDENTIFIER is None:
+            raise NotImplementedError(f"{cls.__name__} must define a class-level _IDENTIFIER attribute")
+        return cls._IDENTIFIER
     
     def get_label_names(self) -> List[str]:
         '''
@@ -34,15 +46,3 @@ class BaseDataReader(CEModule, ABC):
                                  "trajectory has been read and labels have been "
                                  "computed before calling get_label_names.")
         return self.label_list
-
-    @classmethod
-    def get_identifier(cls) -> str:
-        '''
-        Get the identifier for this DataReader type.
-
-        Returns:
-            str: The identifier string.
-        '''
-        if cls._IDENTIFIER is None:
-            raise NotImplementedError(f"{cls.__name__} must define a class-level _IDENTIFIER attribute")
-        return cls._IDENTIFIER
