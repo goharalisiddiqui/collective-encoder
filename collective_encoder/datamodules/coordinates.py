@@ -191,21 +191,18 @@ class CoordinatesDataModule(BaseDataModule):
             structures=trajs[0],
             labels=labels[0],
             dataset_args=dataset_args,
-            **self.hparams
         )
 
         self.val_data = dataset_class(
             structures=trajs[1],
             labels=labels[1],
             dataset_args=dataset_args,
-            **self.hparams
         ) if self.validation_size > 0 else []
 
         self.test_data = dataset_class(
             structures=trajs[2],
             labels=labels[2],
             dataset_args=dataset_args,
-            **self.hparams
         ) if self.test_size > 0 else []
 
         # Set common attributes

@@ -14,7 +14,7 @@ class BaseDataset(CEModule, ABC):
     _OPTIONAL_ARGS: Dict[str, Union[float, int, str]] = {}      # Dict of optional keys and their default values in dataset_args for this dataset type, used for config validation
     
     def __init__(self,
-                 dataset_args: Dict[str, Union[float, int, str]] = None,
+                 dataset_args: Dict[str, Union[float, int, str]] = {},
                  **kwargs,
                  ):
         validate_required_fields(dataset_args, fields=self._REQUIRED_ARGS)

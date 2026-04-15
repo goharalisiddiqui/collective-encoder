@@ -23,29 +23,8 @@ def get_datamodule(datamodule_name: str, dataset_args: Dict[str, any]):
 
     if datamodule_name == "XTC" or datamodule_name == "COORDINATES":
         from collective_encoder.datamodules.coordinates import CoordinatesDataModule as datamodule
-        dataset_args.update({
-            "datareader_type": "XTC",
-        })
-    # elif datamodule_name == "COLVAR":
-    #     from collective_encoder.datamodules.colvar import ColvarDataloader as main_dl
-    #     # COLVAR dataloaders don't use datareaders in the same way
-    #     pass
-    # elif datamodule_name == "MD17":
-    #     from collective_encoder.datamodules.md17 import MD17Dataloader as main_dl
-    #     # MD17 dataloaders handle their own data loading
-    #     pass
     else:
         raise ValueError(f"Unknown datamodule name: {datamodule_name}")
-
-    # Only process datareader args if the dataloader uses a datareader
-    if "datareader_type" in dataset_args:
-        datareader_args_names = get_init_args(
-            get_datareader(dataset_args["datareader_type"]))
-        datareader_args = dataset_args.get("datareader_args", {})
-        for arg in datareader_args_names:
-            if arg in dataset_args:
-                datareader_args[arg] = dataset_args.pop(arg)
-        dataset_args["datareader_args"] = datareader_args
 
     return datamodule, dataset_args
 
@@ -60,7 +39,7 @@ def get_compatible_datareaders(dataloader_name: str) -> List[str]:
     Returns:
     List[str]: A list of compatible datareader type names.
     """
-    dataloader_class, _ = get_dataloader(dataloader_name, {})
+    dataloader_class, _ = get_datamodule(dataloader_name, {})
     return dataloader_class.get_compatible_datareaders()
 
 
@@ -74,6 +53,6 @@ def get_compatible_datasets(dataloader_name: str) -> List[str]:
     Returns:
     List[str]: A list of compatible dataset type names.
     """
-    dataloader_class, _ = get_dataloader(dataloader_name, {})
+    dataloader_class, _ = get_datamodule(dataloader_name, {})
     return dataloader_class.get_compatible_datasets()
         

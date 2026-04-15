@@ -23,6 +23,8 @@ from collective_encoder.common.config_check import (
     validate_duplicate_keys, 
     validate_required_fields 
 )
+from collective_encoder.dataanalysers.resolver import get_dataanalyser
+from gslibs.utils.filesystem import create_rundir, output_to_file
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'defaults.yaml')
@@ -47,6 +49,7 @@ def parse_args():
 
 def train(config: str, debug: bool = False):
     """Train a collective encoder model based on the provided configuration."""
+    
     args = parse_args()
     if not os.path.isfile(args.config):
         raise FileNotFoundError(f"Config file not found at {args.config}")
@@ -64,101 +67,74 @@ def train(config: str, debug: bool = False):
     ##################################
     # Importing Lightning Modules
     ##################################
-    nntype = config['network_name']
-    datatype = config['data_name']
+    nn_type = config['network_type']
+    dm_type = config['datamodule_type']
     
-    main_nn = get_net(nntype)
-    req_fields = get_required_init_args(main_nn)
+    nn_cls = get_net(nn_type)
+    req_fields = get_required_init_args(nn_cls)
     req_fields.remove('datamodule')
     validate_required_fields(config['network_args'], req_fields)
 
-    data_args = config['data_args']
-    main_dl, data_args = get_datamodule(datatype, data_args)
-    validate_required_fields(data_args, 
-                             get_required_init_args(main_dl))
+    dm_args = config['datamodule_args']
+    dm_cls, dm_args = get_datamodule(dm_type, dm_args)
+    validate_required_fields(dm_args, 
+                             get_required_init_args(dm_cls))
     
-    dataset_type = data_args.get('dataset_type', None)
-    if dataset_type not in main_nn._COMPATIBLE_DATASETS:
-        raise ValueError(f"Network '{nntype}' is not compatible with dataset" \
+    dataset_type = dm_args.get('dataset_type', None)
+    if dataset_type not in nn_cls._COMPATIBLE_DATASETS:
+        raise ValueError(f"Network '{nn_type}' is not compatible with dataset" \
                          f" '{dataset_type}'")
 
     ##################################
     # Output directory
     ##################################
-    nexp = int(config['nexp'])
-    run_stem = config['outpath'] + "/" + config['outfolder'] + "_"
-    run_dir = run_stem + str(nexp)
-
-    if not config['overwrite']:
-        while True:
-            run_dir = run_stem + str(nexp)
-            if not os.path.isdir(run_dir):
-                os.makedirs(run_dir)
-                break
-            nexp = nexp + 1
-    else:
-        if not os.path.isdir(run_dir):
-            os.makedirs(run_dir)
-
-    if len(os.listdir(run_dir)) != 0:
-        shutil.rmtree(run_dir, ignore_errors=True)
-        os.mkdir(run_dir)
-    output_stem = run_dir + "/"
+    run_dir = create_rundir(config['outpath'], 
+                        config['outfolder'], 
+                        config['nexp'], 
+                        overwrite=config['overwrite'])
 
     ##################################
     # Output to file
     ##################################
     if config['output_to_file']:
-        import sys
-        import subprocess
-        print("Redirecting output to file "+output_stem+"out.txt")
-        tee = subprocess.Popen(["tee", output_stem+"out.txt"], stdin=subprocess.PIPE)
-        # Cause tee's stdin to get a copy of our stdin/stdout (as well as that
-        # of any child processes we spawn)
-        os.dup2(tee.stdin.fileno(), sys.stdout.fileno())
-        os.dup2(tee.stdin.fileno(), sys.stderr.fileno())
-
-    print("Using Pytorch", torch.__version__)
+        output_to_file(run_dir, filename="out.txt")
 
     ##################################
     # Creating Dataset
     ##################################
-
-    colvardata = main_dl(**data_args)
-    if config['data_name'] == 'MD17':
-        colvardata.prepare_data()
-        colvardata.setup(stage="fit")
-
+    dm = dm_cls(**dm_args)
+        
+    ##################################
+    # Data analysis and visualization
+    ##################################
     if config.get('data_analyser', False):
-        if config['data_analyser'] == 'ala2':
-            from collective_encoder.plotters.ala2 import Ala2DataAnalyser as DataAnalyser
-        else:
-            warnings.warn("Unknown data analyser type: "+config['data_analyser'])
+        analyser_cls = get_dataanalyser(config['data_analyser'])
 
-        analyser = DataAnalyser(output_dir=run_dir+"/data_analysis", data_args=config['data_args'])
-        analyser.write_data(colvardata.get_dataset())
+        analyser = analyser_cls(output_dir=run_dir+"/data_analysis", 
+                                data_args=config['data_args'])
+        analyser.write_data(dm.get_dataset())
 
     ##################################
     # Setting up the NN
     ##################################
-    netargs = {
+    nn_args = {
         'lrate': config['lrate'],
         'weight_decay': config['weight_decay'],
         'normIn': config['normIn'],
         'scheduler': config['scheduler'],
         'scheduler_args': config.get('scheduler_args', {}),
-        'outname': output_stem,
-        'datamodule': colvardata,
+        'outname': run_dir,
+        'datamodule': dm,
     }
-    netargs.update(config.get('network_args', {}))
+    nn_args.update(config.get('network_args', {}))
 
     load_model = config.get('load_model', None)
     if load_model != None:
         checkpoint_file = load_model
         print(f"Loading model from {checkpoint_file}")
-        model = main_nn.load_from_checkpoint(checkpoint_file, **netargs)
+        model = nn_cls.load_from_checkpoint(checkpoint_file, **nn_args)
     else:
-        model = main_nn(**netargs)
+        model = nn_cls(**nn_args)
 
     ##################################
     # Training the NN
@@ -196,7 +172,7 @@ def train(config: str, debug: bool = False):
     checkpoint_callback = ModelCheckpoint(
         monitor='val_loss',
         dirpath=run_dir + '/checkpoints',
-        filename=config['network_name'] + '-{epoch:02d}-{val_loss:.6f}',
+        filename=config['network_type'] + '-{epoch:02d}-{val_loss:.6f}',
         save_top_k=1,
         mode='min',
     )
@@ -211,7 +187,7 @@ def train(config: str, debug: bool = False):
     trainer = pl.Trainer(**trainargs)
 
     if config['nepochs'] > 0:
-        trainer.fit(model, datamodule=colvardata)
+        trainer.fit(model, datamodule=dm)
 
     if config['nepochs'] == 0 and load_model == None:
         warnings.warn("Both nepochs and load_model are not set. Nothing to do.")
@@ -225,23 +201,22 @@ def train(config: str, debug: bool = False):
     ##################################
     # Analysing a loaded model
     ##################################
-    # model.print_fve(colvardata)
     if config.get('output_traj', False):
         if not config['data_name'] in ["XTC"]:
             raise ValueError(f"Unsupported data type: {config['data_name']}")
         else:
-            pred = model(colvardata.get_full_batch()[0])[0].detach().cpu().numpy()
-            colvardata.output_trajectory(f"{output_stem}recon_trajectory.pdb", pred)
+            pred = model(dm.get_full_batch()[0])[0].detach().cpu().numpy()
+            dm.output_trajectory(os.path.join(run_dir, "recon_trajectory.pdb"), pred)
 
 
     #####################################
     # Output latent space of the dataset
     #####################################
     if config.get('export_latent', False):
-        model.export_latent(next(iter(colvardata.test_dataloader())))
+        model.export_latent(next(iter(dm.test_dataloader())))
 
     ##################################
-    trainer.test(model, datamodule=colvardata)
+    trainer.test(model, datamodule=dm)
 
     #####################################
     # Save metatomic model
@@ -261,7 +236,7 @@ def train(config: str, debug: bool = False):
         except ImportError:
             raise ImportError("metatomic is not installed. Please install it with `pip install metatomic`")
 
-        dataprocessor = colvardata.get_dataset().get_metatomic_dataprocessor()
+        dataprocessor = dm.get_dataset().get_metatomic_dataprocessor()
         # FIXME: Remove wandb hooks to avoid issues during serialization
         metamodel = model.get_metatomic_model()
         metatomic_model = MetatomicCV(dataprocessor, metamodel)
@@ -287,7 +262,7 @@ def train(config: str, debug: bool = False):
         ##################################
         # Sanity check of the model
         ##################################
-        fake_systems = colvardata.get_fake_systems()
+        fake_systems = dm.get_dataset().get_fake_systems()
         fake_options = ModelEvaluationOptions(
             length_unit=dataprocessor.get_length_unit(),
             outputs=metamodel.get_metatomic_outputs(),

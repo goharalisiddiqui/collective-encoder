@@ -17,7 +17,7 @@ from metatomic.torch import (
     System,
 )
 
-from collective_encoder.datasets.base import BaseDataset
+from .base import BaseDataset
 from gslibs.utils.common import parse_slice
 
 class MetatomicDistanceDataset(torch.nn.Module):

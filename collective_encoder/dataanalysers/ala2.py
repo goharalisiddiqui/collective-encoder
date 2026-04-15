@@ -3,12 +3,9 @@ import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-class Ala2DataAnalyser():
-    def __init__(self, output_dir, data_args = {}):
-        self.output_dir = output_dir
-        self.data_args = data_args
-        os.makedirs(self.output_dir, exist_ok=True)
-    
+from .base import BaseDataAnalyser
+
+class Ala2DataAnalyser(BaseDataAnalyser):
     def plot_dihedrals(self, data, label = ""):
         idx_phi = 6 # [1,3,4,5]
         idx_psi = 10 # [3,4,6,8]
@@ -51,7 +48,7 @@ class Ala2DataAnalyser():
         ax[1].set_yticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
         ax[1].set_yticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
         fig.savefig(self.output_dir + f"/dihedrals_{label}.png", dpi=300)
-        print(f"\n[{type(self).__name__}]: Saved dihedral plot to {self.output_dir}/dihedrals_{label}.png")
+        self.log_msg(f"Saved dihedral plot to {self.output_dir}/dihedrals_{label}.png")
 
         plt.close(fig)
         fig, ax = plt.subplots(1, 1, figsize=(5,5))
@@ -65,13 +62,11 @@ class Ala2DataAnalyser():
         ax.set_yticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
         ax.set_yticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
         fig.savefig(self.output_dir + f"/ramachandran_{label}.png", dpi=300)
-        print(f"\n[{type(self).__name__}]: Saved Ramachandran plot to {self.output_dir}/ramachandran_{label}.png")
+        self.log_msg(f"Saved Ramachandran plot to {self.output_dir}/ramachandran_{label}.png")
         plt.close(fig)
         
 
     def write_data(self, data, label = ""):
-        print(f"\n[{type(self).__name__}]: Writing data analysis to {self.output_dir}")
-        print("="*80)
+        self.log_msg(f"Writing data analysis to {self.output_dir}")
         self.plot_dihedrals(data, label)
-        print("="*80)
         

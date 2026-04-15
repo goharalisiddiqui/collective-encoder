@@ -20,27 +20,30 @@ wandb_entity: None
 scheduler: True
 lrate: 0.001
 
-data_name: XTC
-data_args:
-    tprfile: ./examples/ala2_tutorial/data/ala2.tpr
-    xtcfile: ./examples/ala2_tutorial/data/ala2.xtc
-    selection: "(resname ALA or resname ACE or resname NME) and not element H"
-    max_frames: 150
+datamodule_type: COORDINATES
+datamodule_args:
+    datareader_type: XTC
+    datareader_args:
+      tprfile: ./examples/ala2_tutorial/data/ala2.tpr
+      xtcfile: ./examples/ala2_tutorial/data/ala2.xtc
+      selection: "(resname ALA or resname ACE or resname NME) and not element H"
+      parallel: False
     sequential: False
     train_size : 80
     batch_size : 8
     validation_size : 20
     val_batch_size : 5
-    dataset_type : "DISTANCES"
-    num_workers : 4
+    max_frames: 150
     norm_type : "minmax"
+    dataset_type : "DISTANCES"
     labeler_type: "DIHEDRAL"
     labeler_args:
       label_dihedrals: 
         - phi_2
         - psi_2
+    num_workers : 4
 
-network_name: VAE
+network_type: VAE
 network_args:
     network: [256, 64, 3]
     beta: 1.0

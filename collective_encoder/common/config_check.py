@@ -1,7 +1,7 @@
 from typing import Dict, List
 
 REQUIRED_TOP_LEVEL = [
-    "nepochs", "lrate", "network_name", "data_name", "data_args", "network_args"
+    "nepochs", "lrate", "network_type", "network_args", "datamodule_type", "datamodule_args"
 ]
 
 def validate_duplicate_keys(config_path: str):
@@ -38,7 +38,7 @@ def validate_required_fields(config: Dict[str, any], fields : List[str] = REQUIR
     bool: True if all required fields are present, otherwise raises a 
         ValueError indicating which field is
     """
-    if len(config) == 0:
+    if len(fields) == 0:
         return True  # Empty config is valid (no required fields)
     if config is None:
         raise ValueError("Config is None, expected a dictionary.")

@@ -8,7 +8,7 @@ import ase
 import torch
 from torch.utils.data import Dataset
 
-from collective_encoder.collective_encoder.datasets.base import BaseDataset
+from .base import BaseDataset
 
 
 class PositionsDataset(Dataset, BaseDataset):
