@@ -1,14 +1,13 @@
-import pandas as pd
 from typing import List, Optional, Tuple
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-from collective_encoder.nets.encoders.variational_encoder import VariationalNN
-from collective_encoder.nets.encoders.simple_encoder import SimpleNN
+from collective_encoder.nets.modules.variational_encoder import VariationalNN
+from collective_encoder.nets.modules.simple_encoder import SimpleNN
 
 from collective_encoder.nets.vae_net import VAE
+
 
 class DVAE(VAE):
     def __init__(self,
@@ -18,7 +17,7 @@ class DVAE(VAE):
                  lrate: float = 0.01,
                  weight_decay: float = 1e-7,
                  scheduler: bool = True,
-                 scheduler_args : dict = {},
+                 scheduler_args: dict = None,
                  outname: str = './VAE_untitled/DVAE_',
                  test_plotter : str = "LDplotter",
                  export_latent : bool = False,
@@ -45,21 +44,17 @@ class DVAE(VAE):
             batch_norm=batch_norm,
             C_reg=C_reg,
             C_auto=C_auto,
+            D_reg=D_reg,
             use_steric_loss=use_steric_loss,
             use_bond_deviation_loss=use_bond_deviation_loss,
         )
 
 
     def init_network(self):
-        print(f"[Initializing {type(self).__name__} Module]")
-        print("- hidden layers:", self.network)
+        self.log_msg(f"[Initializing {type(self).__name__} Module] hidden layers: {self.network}")
         self.print_hparams()
-        print("")
-        print("========= NN =========")
         self.encoder_net = VariationalNN(layers=self.network, batch_norm=self.hparams.batch_norm)
-        print("(Reparameterization Sampler)\n\n")
         self.decoder_net = SimpleNN(layers=self.network[::-1], batch_norm=self.hparams.batch_norm)
-        print("======================")
 
     def decoder(self, z):
         z = self.decoder_net(z)

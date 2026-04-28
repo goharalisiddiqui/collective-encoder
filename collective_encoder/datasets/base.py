@@ -11,19 +11,21 @@ class BaseDataset(CEModule, ABC):
     '''
     _IDENTIFIER: str = None             # A unique identifier for the dataset type, used for registry and config validation
     _REQUIRED_ARGS: List[str] = []      # List of required keys in dataset_args for this dataset type, used for config validation
-    _OPTIONAL_ARGS: Dict[str, Union[float, int, str]] = {}      # Dict of optional keys and their default values in dataset_args for this dataset type, used for config validation
+    _OPTIONAL_ARGS: Dict[str, Any] = {}      # Dict of optional keys and their default values in dataset_args for this dataset type, used for config validation
     
     def __init__(self,
-                 dataset_args: Dict[str, Union[float, int, str]] = {},
+                 dataset_args: Dict[str, Union[float, int, str]] = None,
                  **kwargs,
                  ):
+        if dataset_args is None:
+            dataset_args = {}
         validate_required_fields(dataset_args, fields=self._REQUIRED_ARGS)
         for key, default_value in self._OPTIONAL_ARGS.items():
             if key not in dataset_args:
                 dataset_args[key] = default_value
         for key in dataset_args:
-            self.__setattr__(key, dataset_args[key]) # Set dataset_args as attributes of the dataset for easy access
-        super().__init__(**kwargs)
+            self.__setattr__(key, dataset_args[key])
+        super().__init__(dataset_args, **kwargs)
     
     @abstractmethod
     def __len__(self):

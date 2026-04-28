@@ -8,6 +8,8 @@ save_checkpoint: False
 save_serial_model: False
 
 # Trainer Settings
+nepochs: 50
+lrate: 0.001
 weight_decay: 0.0
 nogpu: False
 export_latent: False
@@ -17,4 +19,10 @@ wandb_entity: None
 scheduler: False
 normIn: False
 
+# Network (must be overridden in user config)
+network_type: VAE
+network_args: {}
 
+# Data (must be overridden in user config)
+datamodule_type: COORDINATES
+datamodule_args: {}

@@ -14,7 +14,7 @@ from MDAnalysis.exceptions import NoDataError
 
 import gslibs.validation as gsv
 from .trajectory import TrajectoryReaderBase
-from collective_encoder.labels.resolver import get_labeler
+from collective_encoder.datalabelers.resolver import get_labeler
 
 def _read_and_label_parallel(args):
     """Worker function: reads a chunk of frame sequences from a copied Universe.
@@ -26,7 +26,7 @@ def _read_and_label_parallel(args):
     worker_id, u_copy, selection, atns, at_elements, seqs, labeler_type, labeler_args, verbose = args
 
     from MDAnalysis.exceptions import NoDataError
-    from collective_encoder.labels.resolver import get_labeler
+    from collective_encoder.datalabelers.resolver import get_labeler
 
     mol = u_copy.select_atoms(selection)
 
@@ -52,7 +52,7 @@ def _read_and_label_parallel(args):
                       trans.center_in_box(mol, center='geometry', point=[0.0,0.0,0.0], wrap=False)]
     u_copy.trajectory.add_transformations(*transforms)
 
-    mol_traj, labels = [], []
+    mol_traj, labels, failed_indices = [], [], []
     for idx in tqdm(seqs,
                     position=worker_id,
                     desc=f"Worker {worker_id}",
@@ -62,6 +62,7 @@ def _read_and_label_parallel(args):
         try:
             u_copy.trajectory[idx]
         except OSError:
+            failed_indices.append(idx)
             continue
         structure = ase.Atoms(numbers=atns,
                                 positions=mol.atoms.positions.copy(),
@@ -74,13 +75,36 @@ def _read_and_label_parallel(args):
         labels.append(labeler.compute())
         mol_traj.append(structure)
 
-    return mol_traj, labels
+    return mol_traj, labels, failed_indices
 
 
 class XTCReader(TrajectoryReaderBase):
-    '''
-    #FIXME: Add Docstring
-    '''
+    """Read GROMACS XTC/TPR trajectories via MDAnalysis.
+
+    Loads a molecular topology (``.tpr``) together with one or more trajectory
+    files (``.xtc``) and converts each requested frame into an ASE ``Atoms``
+    object.  Labeling is performed per-frame using a
+    :class:`~collective_encoder.datalabelers.base.FrameLabeler`.
+
+    Supports optional multi-process reading: the trajectory is copied to
+    independent worker processes (each with its own Universe) to parallelise
+    I/O and label computation.
+
+    Args:
+        tprfile: Path to the GROMACS ``.tpr`` topology file.
+        xtcfile: Path to a single ``.xtc`` trajectory file.
+        xtcfiles: List of ``.xtc`` files to concatenate.
+        coord_glob: Glob pattern matching one or more ``.xtc`` files.
+        selection: MDAnalysis atom selection string (default: ``'all'``).
+        type_to_elements: Optional mapping of atom types to element numbers
+            when the topology lacks element information.
+        parallel: Whether to use multiprocessing for reading (default: ``True``).
+        **kwargs: Forwarded to :class:`~collective_encoder.datareaders.base.BaseDataReader`.
+
+    Note:
+        Exactly one of ``xtcfile``, ``xtcfiles``, or ``coord_glob`` must be
+        provided.
+    """
     _IDENTIFIER = "XTC"
     
     def __init__(self,
@@ -149,7 +173,7 @@ class XTCReader(TrajectoryReaderBase):
             universe=self.u,
             args=labeler_args,
         )
-        self.label_list = labeler.get_names()
+        self.label_list = labeler.get_label_names()
         
         self.no_residues, self.no_resids, self.no_atomnames = False, False, False
 
@@ -158,19 +182,19 @@ class XTCReader(TrajectoryReaderBase):
         # Expand/transform indices for each seq (e.g. chunk expansion in subclasses)
         prepared_indices = [self._prepare_seq(seq) for seq in indices]
         
-        trajs, labels = (), ()
-        for index_list in tqdm(prepared_indices, 
+        trajs, labels, all_failed = (), (), ()
+        for index_list in tqdm(prepared_indices,
                                position=0,
-                               disable=not self.verbose, 
-                               leave=True, 
-                               desc="Processing sequences", 
+                               disable=not self.verbose,
+                               leave=True,
+                               desc="Processing sequences",
                                dynamic_ncols=True):
 
             if not self.parallel or len(index_list) < 10:  # Threshold for parallel processing
                 # Apply transforms if not already applied
                 args = (0, self.u.copy(), self._selection, self.atns, self.at_elements, index_list,
                         labeler_type, labeler_args, self.verbose)
-                traj, label = _read_and_label_parallel(args)
+                traj, label, failed = _read_and_label_parallel(args)
             else:
                 # Distribute sequences across up to 8 workers using interleaved chunks
                 # so each worker gets one Universe copy and processes its chunk sequentially.
@@ -191,20 +215,23 @@ class XTCReader(TrajectoryReaderBase):
 
                 # Reassemble in original order (interleaved chunks → interleaved results)
                 n_seqs = len(index_list)
-                traj  = [None] * n_seqs
-                label = [None] * n_seqs
+                traj   = [None] * n_seqs
+                label  = [None] * n_seqs
+                failed = []
                 for worker_idx, result in enumerate(chunk_results):
+                    failed.extend(result[2])
                     for local_idx, (read_traj, read_label) in enumerate(zip(result[0], result[1])):
                         original_idx = worker_idx + local_idx * n_workers
                         traj[original_idx]  = read_traj
                         label[original_idx] = read_label
 
             traj, label = self._postprocess_seq(traj, label)
-            trajs += (traj,)
-            labels += (label,)
+            trajs      += (traj,)
+            labels     += (label,)
+            all_failed += (failed,)
 
         self.log_msg(f"Finished reading trajectories.")
-        return trajs, labels
+        return trajs, labels, all_failed
 
     def _prepare_seq(self, seq):
         """Transform a seq of indices before passing to the parallel worker.

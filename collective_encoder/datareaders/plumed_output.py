@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict, Optional, Tuple, Union
 
-from collective_encoder.labels.resolver import get_labeler
+from collective_encoder.datalabelers.resolver import get_labeler
 import gslibs.validation as gsv
 from gslibs.utils.plumed import plumed_outfile_reader
 
@@ -28,7 +28,7 @@ class PlumedOutputReader(BaseDataReader):
             Only columns containing this pattern will be read.
         **kwargs: Additional arguments passed to the parent class.
     """
-    _IDENTIFIER = "PLUMEDCOLVARFILE"
+    _IDENTIFIER = "PLUMED_OUTPUT"
 
     def __init__(self,
                  plumed_file: str,
@@ -90,7 +90,7 @@ class PlumedOutputReader(BaseDataReader):
                        indices: List[List[int]],
                        labeler_type : str = 'Dummy',
                        labeler_args : Dict[str, Union[str, float, List[int]]] = {},
-                    ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+                    ) -> Tuple[List[np.ndarray], List[np.ndarray], List]:
         """
         Read the PLUMED collective variable data.
 
@@ -103,6 +103,7 @@ class PlumedOutputReader(BaseDataReader):
             Tuple containing:
                 - List of numpy arrays with collective variable data
                 - List of numpy arrays with corresponding labels computed by the labeler
+                - Empty list (no partial failures possible for PLUMED reads)
         """
         self.log_msg("Reading PLUMED collective variable data...")
         
@@ -112,7 +113,7 @@ class PlumedOutputReader(BaseDataReader):
             dataframe=self.data,
             args=labeler_args,
         )
-        self.label_list = labeler.get_names()
+        self.label_list = labeler.get_label_names()
         
         trajs, labels = [], []
 
@@ -137,4 +138,4 @@ class PlumedOutputReader(BaseDataReader):
                     f"{[t.shape for t in trajs]} and "
                     f"label shapes {[l.shape for l in labels]}.")
 
-        return trajs, labels
+        return trajs, labels, []

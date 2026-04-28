@@ -1,9 +1,12 @@
+import logging
 import os
 import yaml
 import shutil
 
 import argparse
 import warnings
+
+_log = logging.getLogger(__name__)
 
 import numpy as np
 
@@ -47,22 +50,33 @@ def parse_args():
 
     return args
 
-def train(config: str, debug: bool = False):
+def train(config_path: str, debug: bool = False):
     """Train a collective encoder model based on the provided configuration."""
-    
-    args = parse_args()
-    if not os.path.isfile(args.config):
-        raise FileNotFoundError(f"Config file not found at {args.config}")
-    validate_duplicate_keys(args.config)
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(f"Config file not found at {config_path}")
+    validate_duplicate_keys(config_path)
     config = yaml.safe_load(open(DEFAULT_CONFIG_PATH, 'r'))
-    recursive_update(config, yaml.safe_load(open(args.config, 'r')))
-    if args.debug or config.get('debug', False):
+    recursive_update(config, yaml.safe_load(open(config_path, 'r')))
+    if debug or config.get('debug', False):
         # Load debug config and override values
         recursive_update(config, yaml.safe_load(open(DEBUG_CONFIG_PATH, 'r')))
         torch.manual_seed(0)
         np.random.seed(0)
         print("Running in debug mode.")
     validate_required_fields(config)
+
+    _KNOWN_CONFIG_KEYS = {
+        'debug', 'outpath', 'outfolder', 'overwrite', 'nexp', 'output_to_file',
+        'save_checkpoint', 'save_serial_model', 'nepochs', 'lrate', 'weight_decay',
+        'nogpu', 'export_latent', 'wandb', 'wandb_project', 'wandb_entity',
+        'scheduler', 'scheduler_args', 'normIn', 'network_type', 'network_args',
+        'datamodule_type', 'datamodule_args', 'data_analyser', 'data_args',
+        'load_model', 'output_traj', 'save_metatomic', 'early_stopping',
+        'early_stopping_args',
+    }
+    for key in config:
+        if key not in _KNOWN_CONFIG_KEYS:
+            _log.warning("Unknown config key '%s' — will be ignored", key)
 
     ##################################
     # Importing Lightning Modules
@@ -202,18 +216,11 @@ def train(config: str, debug: bool = False):
     # Analysing a loaded model
     ##################################
     if config.get('output_traj', False):
-        if not config['data_name'] in ["XTC"]:
-            raise ValueError(f"Unsupported data type: {config['data_name']}")
+        if not config['datamodule_type'] in ["COORDINATES", "XTC"]:
+            raise ValueError(f"Unsupported data type: {config['datamodule_type']} for trajectory output")
         else:
             pred = model(dm.get_full_batch()[0])[0].detach().cpu().numpy()
             dm.output_trajectory(os.path.join(run_dir, "recon_trajectory.pdb"), pred)
-
-
-    #####################################
-    # Output latent space of the dataset
-    #####################################
-    if config.get('export_latent', False):
-        model.export_latent(next(iter(dm.test_dataloader())))
 
     ##################################
     trainer.test(model, datamodule=dm)

@@ -5,6 +5,7 @@ from typing import List, Any
 import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import torch
+from torch.utils.data import ConcatDataset
 import pytorch_lightning as pl
 
 from collective_encoder.common.module import CEModule
@@ -115,10 +116,13 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
         else:
             raise ValueError(f"Normalization type {self.hparams.norm_type} not supported")
 
-        # Collect normalization data from all datasets
-        data_to_normalize = np.vstack([self.train_data.get_norm_data(),
-                                      self.val_data.get_norm_data(),
-                                      self.test_data.get_norm_data()])
+        # Collect normalization data from all available datasets
+        parts = [self.train_data.get_norm_data()]
+        if self.val_data:
+            parts.append(self.val_data.get_norm_data())
+        if self.test_data:
+            parts.append(self.test_data.get_norm_data())
+        data_to_normalize = np.vstack(parts)
         self.target_scaler.fit(data_to_normalize)
 
     # Common dataloader methods
@@ -210,9 +214,14 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
         """Get the shape of a single datapoint."""
         return self.datapoint_shape
 
-    def get_dataset(self): # FIXME: Return combined dataset instead
-        """Get the training dataset."""
-        return self.train_data
+    def get_dataset(self):
+        """Get the combined train + val + test dataset for full-data operations."""
+        parts = [self.train_data]
+        if self.val_data is not None:
+            parts.append(self.val_data)
+        if self.test_data is not None:
+            parts.append(self.test_data)
+        return ConcatDataset(parts) if len(parts) > 1 else parts[0]
     
     def get_train_dataset(self):
         """Get the training dataset."""

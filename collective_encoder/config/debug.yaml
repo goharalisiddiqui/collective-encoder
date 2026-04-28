@@ -12,7 +12,7 @@ export_latent: False
 save_checkpoint: False
 save_serial_model: False
 
-data_args:
+datamodule_args:
   max_frames: 14
   sequential: true
   train_size: 10

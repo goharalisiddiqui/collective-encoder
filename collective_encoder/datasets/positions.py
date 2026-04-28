@@ -30,7 +30,6 @@ class PositionsDataset(Dataset, BaseDataset):
         
         self.positions = [torch.tensor(s.positions).flatten() for s in structures]
         self.labels = [torch.tensor(l).flatten() for l in labels]
-        self.num_inputs = len(self.positions[0])
 
     def __len__(self):
         return len(self.positions)
@@ -42,3 +41,9 @@ class PositionsDataset(Dataset, BaseDataset):
     
     def get_data(self):
         return np.array([d.numpy() for d in self.positions]), np.array([l.numpy() for l in self.labels])
+    
+    def get_norm_data(self) -> np.ndarray:
+        return np.array([d.numpy() for d in self.positions])
+
+    def get_datapoint_shape(self) -> tuple:
+        return tuple(self.positions[0].shape)

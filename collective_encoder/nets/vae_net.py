@@ -1,4 +1,3 @@
-import pandas as pd
 import numpy as np
 from typing import List, Optional, Tuple, Union, Dict
 
@@ -9,7 +8,7 @@ from torch.distributions.normal import Normal
 from ase.data import covalent_radii
 
 from collective_encoder.nets.ae_base import AEBase
-from collective_encoder.nets.encoders.variational_encoder import VariationalNN
+from collective_encoder.nets.modules.variational_encoder import VariationalNN
 
 from metatomic.torch import ModelOutput
 
@@ -58,7 +57,7 @@ class VAE(AEBase):
                  lrate: float = 0.01,
                  weight_decay: float = 1e-7,
                  scheduler: bool = True,
-                 scheduler_args : dict = {},
+                 scheduler_args: dict = None,
                  outname: str = './VAE_untitled/VAE_',
                  test_plotter : str = "LDplotter",
                  export_latent : bool = False,
@@ -115,8 +114,10 @@ class VAE(AEBase):
         if use_bond_deviation_loss:
             self.bond_indices = datamodule.get_bond_indices()
             self.atomic_numbers = datamodule.get_atns()
+            self.losses["bond_deviation_loss"] = self.bond_deviation_loss
         if use_steric_loss:
             self.atomic_numbers = datamodule.get_atns()
+            self.losses["steric_loss"] = self.steric_loss
 
         if use_bond_deviation_loss or use_steric_loss:
             cov_radii = [covalent_radii[el] for el in self.atomic_numbers]
@@ -141,41 +142,30 @@ class VAE(AEBase):
         mean, logvar = latent
         return mean
 
-    # def forwards_metad(self, x: torch.Tensor) -> torch.Tensor:
-    #     if self.normIn:
-    #         x = x - self.Mean.view(1, -1).expand_as(x)
-    #         x = x / self.Range.view(1, -1).expand_as(x)
-
-    #     latent, _ = self.encoder(x)
-    #     mean, logvar = latent
-    #     return mean
-
     def aggregate_losses(self, losses):
         loss = losses['rec_loss'] + self.hparams.beta * losses['reg_loss']
         return loss
 
     def print_hparams(self):
         super().print_hparams()
-        print("- Beta \t=", self.hparams.beta)
+        hparams: dict = {"beta": self.hparams.beta}
         if self.hparams.C_reg is not None:
-            print("- C_value \t=", self.hparams.C_reg[0])
-            print("- C_start \t=", self.hparams.C_reg[1])
-            print("- C_end \t=", self.hparams.C_reg[2])
+            hparams["C_reg"] = {
+                "value": self.hparams.C_reg[0],
+                "start": self.hparams.C_reg[1],
+                "end":   self.hparams.C_reg[2],
+            }
         if self.hparams.C_auto:
-            print("- C_auto \t= True")
+            hparams["C_auto"] = True
         if self.hparams.D_reg is not None:
-            print("- D \t=", self.hparams.D_reg)
+            hparams["D_reg"] = self.hparams.D_reg
+        self.log_msg_dict("VAE hparams:", hparams)
 
     def init_network(self):
-        print(f"[Initializing {type(self).__name__} Module]")
-        print("- hidden layers:", self.network)
+        self.log_msg(f"[Initializing {type(self).__name__} Module] hidden layers: {self.network}")
         self.print_hparams()
-        print("")
-        print("========= NN =========")
         self.encoder_net = VariationalNN(layers=self.network, batch_norm=self.hparams.batch_norm)
-        print("(Reparameterization Sampler)\n\n")
         self.decoder_net = VariationalNN(layers=self.network[::-1], batch_norm=self.hparams.batch_norm)
-        print("======================")
 
     def encoder(self, x):
         mu, logvar = self.encoder_net(x)
@@ -184,10 +174,7 @@ class VAE(AEBase):
     def decoder(self, z):
         mu_x, logvar_x = self.decoder_net(z)
         x_out = self.reparametrize_multivariate(mu_x, logvar_x)
-        mu_x = self.denormalize(mu_x)
-        logvar_x = logvar_x  # No denormalization of logvar? FIXME
-
-        return x_out, {"mu_x" : mu_x, "logvar_x" : logvar_x}
+        return x_out, {"mu_x": mu_x, "logvar_x": logvar_x}
 
     def latent_to_decoder_input(self, latent: Tuple[torch.Tensor, torch.Tensor]):
         mu_latent, logvar_latent = latent
@@ -206,22 +193,16 @@ class VAE(AEBase):
         return kld
     
     def recon_loss(self, x, latent, pred, meta):
-
+        # Compute NLL in normalized space so mu_x, logvar_x, and x are on the same scale.
+        x_norm = self.normalize(x)
         mu_x = meta["mu_x"]
         logvar_x = meta["logvar_x"]
 
         sd = torch.exp(0.5 * logvar_x) + EPSILON
         p_x = Normal(mu_x, sd)
-        loss_rec = -torch.mean(p_x.log_prob(x), axis=1)
+        loss_rec = -torch.mean(p_x.log_prob(x_norm), axis=1)
 
-        # if (loss_rec < 0.0).any().detach().cpu().numpy():
-        #     var = 0.5 * torch.exp(logvar_x)
-        #     print("\n loss_rec= ", loss_rec)
-        #     print("\n var= ", var)
-        #     print("\n tru_x= ", tru_x)
-        #     print("\n log_prob= ", p_x.log_prob(tru_x))
-        #     exit()
-        loss_rec = torch.mean(loss_rec) # Mean of batch
+        loss_rec = torch.mean(loss_rec)
 
         return loss_rec, {}
 
@@ -236,7 +217,7 @@ class VAE(AEBase):
         meta = {"kld" : loss_reg}
         if self.hparams.C_reg is not None:
             C = self.C_default
-            c_start, c_end, cmax = self.hparams.C_reg[0], self.hparams.C_reg[1], self.hparams.C_reg[2]
+            cmax, c_start, c_end = self.hparams.C_reg[0], self.hparams.C_reg[1], self.hparams.C_reg[2]
             if self.current_epoch >= c_start and self.current_epoch <= c_end:
                 C = cmax * (self.current_epoch - c_start) / (c_end - c_start)
             elif self.current_epoch > c_end:
@@ -245,7 +226,7 @@ class VAE(AEBase):
             meta["C"] = C
 
         if self.hparams.D_reg is not None:
-            if torch.mean(loss_reg) < self.hparams.D:
+            if torch.mean(loss_reg) < self.hparams.D_reg:
                 loss_reg *= 0.0
         
         return loss_reg, meta
@@ -253,88 +234,46 @@ class VAE(AEBase):
     def bond_deviation_loss(self, x, latent, pred, meta):
         bonded_indices = self.bond_indices
         coordinates = x.view(x.shape[0], -1, 3)
-        # print(f"Coordinates shape: {coordinates.shape}")
-        # print(f"Coordinates: {coordinates}")
-        
-        # Reshape the coordinates to get the flattened coordinates to be used in the pairwise distance
         n_atoms = coordinates.shape[-2]
         flattened_instances = coordinates.reshape(-1, n_atoms, 3)
         n_instances = flattened_instances.shape[0]
         flattened_coordinates = flattened_instances.reshape(-1, 3)
-        # print(f"natoms: {n_atoms}")
-        # print(f"flattened_instances: {flattened_instances.shape}")
-        # print(f"n_instances: {n_instances}")
-        # print(f"flattened_coordinates: {flattened_coordinates.shape}")
-        
-        # print(f"Flattened Coordinates: {flattened_coordinates.shape}")
-        # print(f"Number of Instances: {n_instances}")
-        # print(f"Number of Atoms: {n_atoms}")
+
         for bond in bonded_indices:
             if bond[0] >= n_atoms or bond[1] >= n_atoms:
-                raise ValueError(
-                    f"Invalid bond indices: {bond} for {n_atoms} atoms")
-        
+                raise ValueError(f"Invalid bond indices: {bond} for {n_atoms} atoms")
 
-        # Mask the non-bonded atoms
         mask1 = torch.zeros(len(bonded_indices), device=x.device)
         mask2 = torch.zeros(len(bonded_indices), device=x.device)
-        cov_distances = torch.zeros(
-            len(bonded_indices), device=x.device)
+        cov_distances = torch.zeros(len(bonded_indices), device=x.device)
 
         for ind, (i, j) in enumerate(bonded_indices):
             mask1[ind] = i
             mask2[ind] = j
             cov_distances[ind] = self.cov_mat[i, j]
-        # print(f"cov_distances shape: {cov_distances.shape}")
-        # print(f"cov_distances: {cov_distances}")
+
         mask1 = mask1.repeat(n_instances)
         mask2 = mask2.repeat(n_instances)
         cov_distances = cov_distances.repeat(n_instances)
         set1 = flattened_coordinates[mask1.long()]
         set2 = flattened_coordinates[mask2.long()]
 
-        # print(f"Set1: {set1.shape}")
-        # print(f"Set2: {set2.shape}")
-
-        # Calculate the pairwise distance between the bonded atoms
         dist = F.pairwise_distance(set1, set2)
-        # print(f"Distance shape: {dist.shape}")
-        # exit()
-
-
         deviation = (dist - cov_distances) ** 2
-        # print(f"Deviation: {deviation[:len(bonded_indices)]}")
-        # print(f"cov_distances: {cov_distances[:len(bonded_indices)]}")
-        # exit()
-        
-        # print(f"\nDeviation: {deviation.mean()}")
         return deviation.mean(), {}
     
     def steric_loss(self, x, latent, pred, meta):
         coordinates = x.view(x.shape[0], -1, 3)
-        # print(f"Coordinates: {coordinates}")
-        
-        # Reshape the coordinates to get the flattened coordinates to be used in the pairwise distance
         n_atoms = coordinates.shape[-2]
         flattened_instances = coordinates.reshape(-1, n_atoms, 3)
         n_instances = flattened_instances.shape[0]
         flattened_coordinates = flattened_instances.reshape(-1, 3)
-        # print(f"natoms: {n_atoms}")
-        # print(f"flattened_instances: {flattened_instances.shape}")
-        # print(f"n_instances: {n_instances}")
-        # print(f"flattened_coordinates: {flattened_coordinates.shape}")
-        
-        # print(f"Flattened Coordinates: {flattened_coordinates.shape}")
-        # print(f"Number of Instances: {n_instances}")
-        # print(f"Number of Atoms: {n_atoms}")
 
         n_pairs = n_atoms * (n_atoms - 1)
         mask1 = torch.zeros(n_pairs, device=x.device)
         mask2 = torch.zeros(n_pairs, device=x.device)
-        cov_distances = torch.zeros(
-            n_pairs, device=x.device)
+        cov_distances = torch.zeros(n_pairs, device=x.device)
 
-        # for ind, (i, j) in enumerate(bonded_indices):
         ind = 0
         for i in range(n_atoms):
             for j in range(n_atoms):
@@ -344,62 +283,41 @@ class VAE(AEBase):
                 mask2[ind] = j
                 cov_distances[ind] = self.cov_mat[i, j]
                 ind += 1
+
         mask1 = mask1.repeat(n_instances)
         mask2 = mask2.repeat(n_instances)
         cov_distances = cov_distances.repeat(n_instances)
         set1 = flattened_coordinates[mask1.long()]
         set2 = flattened_coordinates[mask2.long()]
 
-        # print(f"Set1: {set1.shape}")
-        # print(f"Set2: {set2.shape}")
-
-        # Calculate the pairwise distance between the bonded atoms
         dist = F.pairwise_distance(set1, set2)
-        
-        # print(f"Distance shape: {dist.shape}")
-        # print(f"Distance: {dist[:10]}")
-        # print(f"cov_distances shape: {cov_distances.shape}")
-        # print(f"cov_distances: {cov_distances[:10]}")
-        # exit()
-
         steric_mask = torch.where(dist > 0.5 * cov_distances, torch.zeros_like(dist), torch.ones_like(dist))
-        
         strain = ((dist - cov_distances) ** 2) * steric_mask
-        # print(f"Deviation: {deviation[:len(bonded_indices)]}")
-        # print(f"cov_distances: {cov_distances[:len(bonded_indices)]}")
-        # exit()
-        
-        # print(f"\nDeviation: {deviation.mean()}")
         return strain.mean(), {}
     
     def on_validation_epoch_end(self):
-        if self.hparams.C_auto \
-            and self.losses.get("val_rec_loss") is not None \
-            and len(self.losses.get("val_rec_loss")) > 1:
-            if self.losses.get("val_rec_loss")[-1] > self.losses.get("val_rec_loss")[-2]:
-                self.C_default = self.losses.get("val_kld")[-1]
-                print(f"\nC_Scheduler: Setting C_default to {self.C_default} based on validation loss increase.")
-            else:
-                self.C_default = 1e-6
-                print("\nC_Scheduler: Resetting C_default to 1e-6 based on validation loss decrease.")
+        if self.hparams.C_auto:
+            val_rec_loss = self.trainer.callback_metrics.get("val_rec_loss")
+            val_kld = self.trainer.callback_metrics.get("val_kld")
+            if val_rec_loss is not None:
+                prev = getattr(self, "_prev_val_rec_loss", None)
+                if prev is not None and val_rec_loss.item() > prev:
+                    self.C_default = val_kld.item() if val_kld is not None else self.C_default
+                    self.log_msg(f"C_Scheduler: Setting C_default to {self.C_default} based on validation loss increase.")
+                else:
+                    self.C_default = 1e-6
+                    self.log_msg("C_Scheduler: Resetting C_default to 1e-6 based on validation loss decrease.")
+                self._prev_val_rec_loss = val_rec_loss.item()
         return super().on_validation_epoch_end()
 
     def plot_avg_sigma(self, latent_logvar):
-        # This implements any extra printing or plotting in child class
         ld_mean = np.mean(np.exp(0.5 * latent_logvar), axis=0)
-        print("========= Avg. Sigma per LD =========")
-        for i in range(len(ld_mean)):
-            print(f"LD {i} : {ld_mean[i]}")
-        print("=====================================")
-
-    # def plot_extra(self, data_x, data_y, latents):
-    #     latent_logvar = latents[1]
-    #     self.plot_latent(latents, data_y, self.plot_sd, "latent_pdf")
-    #     self.plot_avg_sigma(latent_logvar)
+        lines = ["Avg. Sigma per LD:"] + [f"  LD {i}: {ld_mean[i]}" for i in range(len(ld_mean))]
+        self.log_msg("\n".join(lines))
 
     def get_latent(self, data_x):
         data_x = self.normalize(data_x)
-        latent_mu, latent_logvar = self.encode(data_x)
+        (latent_mu, latent_logvar), _ = self.encoder(data_x)
         return latent_mu.detach().cpu().numpy(), latent_logvar.detach().cpu().numpy()
 
     def get_latent_mean(self, data_x):
@@ -407,9 +325,3 @@ class VAE(AEBase):
 
     def get_latent_names(self):
         return "mu_latent", "logvar_latent"
-
-    # def plot_sd(self, fig, ax, latents, train_y, i, yaxis, label, scalarMap=None):
-    #     latent_mu, latent_logvar = latents
-    #     latent_sd = np.exp(0.5 * latent_logvar)
-    #     ax.errorbar(latent_mu[:, i], latent_mu[:, yaxis], xerr=latent_sd[:, i], yerr=latent_sd[:, yaxis],
-    #                 ecolor=scalarMap.to_rgba(train_y) if train_y is not None else None, alpha=0.1, ls='none')

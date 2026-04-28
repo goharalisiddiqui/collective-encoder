@@ -1,53 +1,63 @@
 from collective_encoder.datamodules.coordinates import CoordinatesDataModule
 from collective_encoder.datareaders.resolver import get_datareader
 
+
 class ColvarsDataModule(CoordinatesDataModule):
-    """
-    PyTorch Lightning DataModule for COLVAR data.
-    Handles loading and processing of collective variable data from COLVAR files.
+    """PyTorch Lightning DataModule for collective variable data from PLUMED output files.
 
-    Args:
-        
+    Inherits the full train/val/test splitting, batching, and normalisation
+    logic from :class:`~collective_encoder.datamodules.coordinates.CoordinatesDataModule`.
+    The only customisation needed is to initialise the datareader without
+    attempting to read coordinate-specific metadata (atomic numbers, bonds,
+    element symbols) that PLUMED output files do not contain.
+
+    Compatible pipeline:
+        ``PLUMED_OUTPUT`` datareader → ``COLVAR`` dataset → any flat-input network
     """
 
-    # Compatible datareaders and datasets for COLVAR data
     _IDENTIFIER = "COLVAR"
-    _COMPATIBLE_DATAREADERS = ["PLUMEDCOLVARFILE"]
+    _COMPATIBLE_DATAREADERS = ["PLUMED_OUTPUT"]
     _COMPATIBLE_DATASETS = ["COLVAR"]
-    _COMPATIBLE_LABELERS = ["COLUMN_SELECTOR"]
-    
-    def __init__(self, 
-                 datareader_type: str,
-                 dataset_type: str,
-                 sequential: bool = True,
-                 **kwargs,
-                 ):
+    _COMPATIBLE_LABELERS = ["COLUMN_SELECTOR", "DUMMY"]
+
+    def __init__(
+        self,
+        datareader_type: str,
+        dataset_type: str,
+        sequential: bool = True,
+        **kwargs,
+    ):
         super().__init__(
             datareader_type=datareader_type,
             dataset_type=dataset_type,
             sequential=sequential,
-            **kwargs
+            **kwargs,
         )
 
-    def _read_data(self):
-        # Initialize the trajectory reader
+    # ------------------------------------------------------------------
+    # Override coordinate-specific initialisation
+    # ------------------------------------------------------------------
+
+    def _initialize_datareader(self) -> None:
+        """Initialise the PLUMED datareader without reading atomic metadata."""
         datareader_cls = get_datareader(self.hparams.datareader_type)
         self.datareader = datareader_cls(**self.hparams.datareader_args)
+        # COLVAR files have no atomic numbers, bonds, or element symbols.
+        # These attributes are intentionally left unset; methods that access
+        # them raise AttributeError as expected (see overrides below).
 
-    # Coordinate-specific methods
+    # ------------------------------------------------------------------
+    # Coordinate-specific methods — not applicable to COLVAR data
+    # ------------------------------------------------------------------
+
     def get_atns(self):
-        """Get atomic numbers."""
         raise AttributeError("Atomic numbers are not applicable for COLVAR data.")
 
     def get_bond_indices(self):
-        """Get bond indices."""
         raise AttributeError("Bond indices are not applicable for COLVAR data.")
 
     def get_element_symbols(self):
-        """Get element symbols."""
         raise AttributeError("Element symbols are not applicable for COLVAR data.")
-    
+
     def get_fake_systems(self):
-        """Get fake systems for testing purposes."""
-        #FIXME: Implement fake systems for COLVAR data if needed
         raise NotImplementedError("Fake systems are not implemented for COLVAR data.")

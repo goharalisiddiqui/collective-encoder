@@ -7,9 +7,18 @@ from tqdm import tqdm
 from collective_encoder.common.module import CEModule
 
 class BaseDataAnalyser(CEModule, ABC):
-    def __init__(self, output_dir, data_args = {}):
+    '''
+    Docstring for BaseDataAnalyser
+    '''
+    
+    def __init__(self,
+                 output_dir: str,
+                 args: dict = None,
+                 **kwargs):
         self.output_dir = output_dir
-        self.data_args = data_args
+        if args is None:
+            args = {}
+        super().__init__(args=args, **kwargs)
         os.makedirs(self.output_dir, exist_ok=True)
 
     @abstractmethod

@@ -8,8 +8,6 @@ from collective_encoder.datamodules.base import BaseDataModule
 from collective_encoder.datareaders.resolver import get_datareader
 from collective_encoder.datasets.resolver import get_dataset_cls_dl
 
-NON_READABILITY_TOLERANCE = 0.02  # Do not raise error if less than this fraction of frames are not readable
-
 class CoordinatesDataModule(BaseDataModule):
     """
     PyTorch Lightning DataModule for molecular dynamics coordinate data.
@@ -39,27 +37,31 @@ class CoordinatesDataModule(BaseDataModule):
     # Compatible datareaders and datasets
     _IDENTIFIER = "COORDINATES"
     _COMPATIBLE_DATAREADERS = ["XTC", "XTC_CHUNKS", "XTC_CHUNKS_CG"]  # Add other coordinate-based readers
-    _COMPATIBLE_DATASETS = ["DISTANCES", "POSITIONS", "GRAPH"]  # Add other coordinate-based datasets
+    _COMPATIBLE_DATASETS = ["DISTANCES", "POSITIONS", "GRAPH", "GRAPH_LATENT", "SOAP", "SOAP_PS"]
     _COMPATIBLE_LABELERS = ["COORDINATION", "DIHEDRAL", "DISTANCE"]  # Add other coordinate-based labelers
 
     def __init__(self,
                  datareader_type: str,
                  dataset_type: str,
-                 labeler_type : str = None,
-                 datareader_args: Dict[str, Any] = {},
-                 dataset_args: Dict[str, Any] = {},
-                 labeler_args : Dict[str, Any] = {},
+                 labeler_type: str = None,
+                 datareader_args: Dict[str, Any] = None,
+                 dataset_args: Dict[str, Any] = None,
+                 labeler_args: Dict[str, Any] = None,
                  test_full_dataset: bool = False,
                  sequential: bool = False,
                  max_frames: int = None,
-                 maximize_label_variance: bool = False,
+                 non_readability_tolerance: float = 0.02,
                  **kwargs,
                  ):
+        if datareader_args is None:
+            datareader_args = {}
+        if dataset_args is None:
+            dataset_args = {}
+        if labeler_args is None:
+            labeler_args = {}
         self.save_hyperparameters()
         
-        if maximize_label_variance:
-            assert labeler_type is not None, "labeler_type must be specified when maximize_label_variance is True"
-
+        self.non_readability_tolerance = non_readability_tolerance
         self.max_frames = max_frames
         
         self._initialize_datareader()
@@ -94,10 +96,25 @@ class CoordinatesDataModule(BaseDataModule):
         self.element_symbols = self.datareader.get_element_symbols()
         self.bonds = self.datareader.get_bonds()
 
-    def _validate_traj_length(self, traj: List[Any], expected_length: int):
-        """Validate that trajectory has expected number of frames."""
-        if len(traj) < expected_length * (1 - NON_READABILITY_TOLERANCE):
-            raise ValueError(f"Trajectory length {len(traj)} is less than expected {expected_length} frames")
+    def _validate_traj_length(self, traj: List[Any], expected_length: int,
+                              failed_indices: List[int] = None, split_name: str = ""):
+        """Validate that trajectory has expected number of frames.
+
+        Logs a WARNING with the exact failed frame indices when frames are dropped,
+        so downstream analysis tools can correlate the shortened trajectory.
+        """
+        if failed_indices:
+            self.warn(
+                f"[{split_name}] {len(failed_indices)} frame(s) could not be read "
+                f"(OSError) and were skipped. Failed frame indices: {failed_indices}"
+            )
+        threshold = expected_length * (1 - self.non_readability_tolerance)
+        if len(traj) < threshold:
+            raise ValueError(
+                f"[{split_name}] Trajectory length {len(traj)} is less than the minimum expected "
+                f"{threshold:.0f} frames (tolerance={self.non_readability_tolerance:.1%}). "
+                f"Failed indices: {failed_indices}"
+            )
 
     def _calculate_indices(self):
         """Calculate train, validation, and test indices based on split configuration."""
@@ -114,27 +131,16 @@ class CoordinatesDataModule(BaseDataModule):
         if not self.hparams.test_full_dataset:
             required_size += self.test_size
 
-        train_start = random.randint(0, self.max_frames - required_size)
-        self.train_indices = np.arange(train_start, train_start + self.hparams.train_size)
-        
-        val_start = random.randint(0, self.max_frames - required_size)
-        if val_start >= self.train_indices[0] and val_start < self.train_indices[-1]:
-            val_start += self.train_size
-        self.val_indices = np.arange(val_start, val_start + self.validation_size)
+        start = random.randint(0, self.max_frames - required_size)
+        self.train_indices = np.arange(start, start + self.train_size)
+        self.val_indices   = np.arange(start + self.train_size,
+                                        start + self.train_size + self.validation_size)
         
         if self.hparams.test_full_dataset:
             self.test_indices = np.arange(self.max_frames)
         else:
-            test_start = random.randint(0, self.max_frames - required_size)
-            if len(self.train_indices) > 0 and \
-                    test_start >= self.train_indices[0] and \
-                    test_start < self.train_indices[-1]:
-                test_start += self.train_size
-            if len(self.val_indices) > 0 and \
-                    test_start >= self.val_indices[0] and \
-                    test_start < self.val_indices[-1]:
-                test_start += self.validation_size
-            self.test_indices = np.arange(test_start, test_start + self.test_size)
+            self.test_indices  = np.arange(start + self.train_size + self.validation_size,
+                                            start + required_size)
 
         self.log_msg(f"Train indices: {self.train_indices[0]} - {self.train_indices[-1]}")
         if len(self.val_indices) > 0:
@@ -171,16 +177,25 @@ class CoordinatesDataModule(BaseDataModule):
                      f"Test size: {self.test_size}")
 
         # Read trajectory data
-        trajs, labels = self.datareader.read_trajectory(
+        read_result = self.datareader.read_trajectory(
             indices=[self.train_indices, self.val_indices, self.test_indices],
             labeler_type=self.hparams.labeler_type,
             labeler_args=self.hparams.labeler_args,
         )
+        # Readers that track failed frames return a 3-tuple; older/other readers return 2-tuple
+        if len(read_result) == 3:
+            trajs, labels, failed_per_split = read_result
+        else:
+            trajs, labels = read_result
+            failed_per_split = ([], [], [])
 
-        # Validate trajectory lengths
-        self._validate_traj_length(trajs[0], len(self.train_indices))
-        self._validate_traj_length(trajs[1], len(self.val_indices))
-        self._validate_traj_length(trajs[2], len(self.test_indices))
+        # Validate trajectory lengths and report any dropped frames
+        self._validate_traj_length(trajs[0], len(self.train_indices),
+                                   failed_per_split[0], split_name="train")
+        self._validate_traj_length(trajs[1], len(self.val_indices),
+                                   failed_per_split[1], split_name="val")
+        self._validate_traj_length(trajs[2], len(self.test_indices),
+                                   failed_per_split[2], split_name="test")
 
         # Create datasets
         dataset_class, dataset_args, self.dl_cls = \

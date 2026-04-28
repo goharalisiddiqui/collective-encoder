@@ -1,123 +1,110 @@
-import argparse
-
 import numpy as np
-
-import pandas as pd
-pd.set_option('display.max_columns', None)
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
-torch.manual_seed(0)
-TORCH_PI = torch.acos(torch.zeros(1))*2
 
 from collective_encoder.nets.dvae_net import DVAE
-from collective_encoder.nets.dvae_net import DVAE_args
-
-def edvae_parse_args():
-    desc = "Embedded Deterministic VAE Module"
-    parser = argparse.ArgumentParser(description=desc)
-
-    parser.add_argument('--emb_type', dest="embedding_type", required=True,
-                        type=str, help='Type of embedding for Embedded Deterministic VAE Module')
-
-    args, _ = parser.parse_known_args()
-
-    res_args = DVAE_args()
-
-    return argparse.Namespace(**vars(args), **vars(res_args))
 
 
-EDVAE_args = edvae_parse_args
+class _EmbedProxy:
+    """Lightweight wrapper that reports the post-embedding datapoint shape to VAE.__init__.
+
+    VAE.__init__ calls ``datamodule.get_datapoint_shape()`` to prepend the input
+    dimension to the layer list.  For "flatten" embedding the true input to the
+    network is ``prod(raw_shape)``, not ``raw_shape[0]``.  This proxy overrides
+    that single method while delegating every other attribute access to the real
+    datamodule so the rest of VAE.__init__ works unchanged.
+    """
+
+    def __init__(self, datamodule, embedded_shape: Tuple[int, ...]) -> None:
+        self._datamodule = datamodule
+        self._embedded_shape = embedded_shape
+
+    def get_datapoint_shape(self) -> Tuple[int, ...]:
+        return self._embedded_shape
+
+    def __getattr__(self, name: str):
+        return getattr(self._datamodule, name)
 
 
 class EDVAE(DVAE):
     def __init__(self,
-                 l: list,
-                 embedding_type: str,
-                 datapoint_shape: tuple,
-                 lr: float = 0.01,
-                 l2_reg: float = 1e-7,
+                 datamodule,
+                 network: List[int],
+                 embedding_type: str = "flatten",
+                 normIn: Optional[bool] = False,
+                 lrate: float = 0.01,
+                 weight_decay: float = 1e-7,
+                 scheduler: bool = True,
+                 scheduler_args: dict = None,
+                 outname: str = './EDVAE_untitled/EDVAE_',
+                 test_plotter: str = "LDplotter",
+                 export_latent: bool = False,
                  beta: float = 1.0,
                  batch_norm: bool = True,
-                 lr_scheduler: bool = True,
-                 plot_every: int = 0,
-                 C_max: float = 0.0,
-                 C_start: int = 0,
-                 C_end: int = 0,
-                 saveplotdata: bool = False,
-                 use_bond_deviation_loss = False,
-                 bond_indices = None,
-                 atomic_numbers = None,
-                 outname: str = './EDVAE_untitled/EDVAE_',
-                 use_steric_loss = False,
+                 C_reg: Optional[Tuple[float, int, int]] = None,
+                 C_auto: bool = False,
+                 use_steric_loss: bool = False,
+                 use_bond_deviation_loss: bool = False,
                  ):
+        self.save_hyperparameters(ignore=['datamodule'])
 
-        self.save_hyperparameters()
+        # Store the raw shape before the proxy changes what super() sees
+        raw_shape = datamodule.get_datapoint_shape()
+        self._raw_datapoint_shape = raw_shape
 
-        super().__init__(l,
-                         lr,
-                         l2_reg,
-                         beta,
-                         batch_norm,
-                         lr_scheduler,
-                         plot_every,
-                         C_max,
-                         C_start,
-                         C_end,
-                         saveplotdata,
-                         use_bond_deviation_loss,
-                         bond_indices,
-                         atomic_numbers,
-                         outname=outname,
-                         use_steric_loss=use_steric_loss,
-                         )
+        # Build a proxy that reports the embedded input dimension to VAE.__init__
+        if embedding_type == "flatten":
+            embedded_length = int(np.prod(raw_shape))
+            proxy = _EmbedProxy(datamodule, (embedded_length,))
+        else:
+            raise ValueError(f"Unknown embedding_type: '{embedding_type}'. Supported: 'flatten'")
 
-        self.Mean = torch.zeros(self.hparams.l[0])
-        self.Range = torch.ones(self.hparams.l[0])
+        super().__init__(
+            datamodule=proxy,
+            network=network,
+            normIn=normIn,
+            lrate=lrate,
+            weight_decay=weight_decay,
+            scheduler=scheduler,
+            scheduler_args=scheduler_args,
+            outname=outname,
+            test_plotter=test_plotter,
+            export_latent=export_latent,
+            beta=beta,
+            batch_norm=batch_norm,
+            C_reg=C_reg,
+            C_auto=C_auto,
+            use_steric_loss=use_steric_loss,
+            use_bond_deviation_loss=use_bond_deviation_loss,
+        )
 
-    def init_network(self):
-        print(f"[Initializing {type(self).__name__} Module]")
-        print("- Hidden layers:", self.hparams.l)
-        print("- Embedding type:", self.hparams.embedding_type)
-        print("")
-        print("========= NN =========")
-        self.init_embedding()
-        self.init_encoder()
-        print("")
-        self.init_decoder()
-        self.init_deembedding()
-        print("======================")
+    def init_network(self) -> None:
+        self.log_msg(f"[Initializing {type(self).__name__} Module] hidden layers: {self.network}, "
+                  f"embedding: {self.hparams.embedding_type}")
 
-    def set_norm(self, Mean: torch.Tensor, Range: torch.Tensor):
-        Range[Range == 0.0] = 1.0
-        print(f"[{type(self).__name__}] Setting normalization for inputs.")
-        self.normIn = True
-        if self.hparams.embedding_type == "flatten":
-            self.Mean = Mean.flatten()
-            self.Range = Range.flatten()
-    
-    def init_embedding(self):
-        l = self.hparams.l
-        datapoint_shape = self.hparams.datapoint_shape
+        raw_shape = self._raw_datapoint_shape
 
         if self.hparams.embedding_type == "flatten":
             self.embedding = nn.Flatten()
-            self.embedded_length = np.prod(datapoint_shape)
-            print("(Flatten layer)")
-            print(datapoint_shape, " --> ", self.embedded_length," (embedding)")
+            embedded_length = int(np.prod(raw_shape))
+            self.log_msg(f"  {raw_shape} --> {embedded_length} (flatten embedding)")
 
-        self.hparams.l[0] = self.embedded_length
-
-    def init_deembedding(self):
-        l = self.hparams.l
-        datapoint_shape = self.hparams.datapoint_shape
+        super().init_network()
 
         if self.hparams.embedding_type == "flatten":
-            self.deembedding = nn.Unflatten(1, datapoint_shape)
-            print("(Unflatten layer)")
-            print(l[0], " --> ", datapoint_shape, " (deembedding)")
+            self.deembedding = nn.Unflatten(1, raw_shape)
+            self.log_msg(f"  {embedded_length} --> {raw_shape} (unflatten deembedding)")
 
-    def forward(self, x):
+    def set_norm(self) -> None:
+        """Override to flatten Mean/Range buffers for multi-dim input."""
+        super().set_norm()
+        if self.hparams.embedding_type == "flatten":
+            self.Mean = self.Mean.flatten()
+            self.Range = self.Range.flatten()
+
+    def forward(self, x: torch.Tensor):
         x = self.embedding(x)
         x_out = super().forward(x)
 
@@ -126,27 +113,18 @@ class EDVAE(DVAE):
 
         x_out, meta = x_out
         x_out = self.deembedding(x_out)
-
         return x_out, meta
 
-    def get_latent(self, data_x):
+    def get_latent(self, data_x: torch.Tensor):
         data_x = self.embedding(data_x)
         data_x = self.normalize(data_x)
-        latent_mu, latent_logvar = self.encode(data_x)
+        latent_mu, latent_logvar = self.encoder_net(data_x)
         return latent_mu.detach().cpu().numpy(), latent_logvar.detach().cpu().numpy()
 
-    def print_labels_latent_correlations(self, latent, labels = None):
-        pass
-    
-    def plot_extra(self, data_x, data_y, latents):
-        latent_logvar = latents[1]
-        self.plot_latent(latents, data_y, self.plot_sd, "latent_pdf")
-
-
-    def decode_latent(self, latent, keeptensor=False):
-        latent = self.decode(latent)
-        latent = self.deembedding(latent)
-        x_out = self.denormalize(latent)
+    def decode_latent(self, latent: torch.Tensor, keeptensor: bool = False):
+        pred, _ = self.decoder(latent)
+        pred = self.denormalize(pred)
+        pred = self.deembedding(pred)
         if not keeptensor:
-            x_out = x_out.detach().cpu().numpy()
-        return x_out
+            pred = pred.detach().cpu().numpy()
+        return pred

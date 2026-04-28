@@ -26,7 +26,7 @@ wandb: False                   # Set to True for Weights & Biases tracking
 # =============================================================================
 # NETWORK ARCHITECTURE
 # =============================================================================
-network_name: VAE              # Network type: VAE, AE, DVAE, EDVAE, etc.
+network_type: VAE              # Network type: VAE, AE, DVAE, EDVAE, etc.
 network_args:
     network: [128, 64, 2]      # Encoder layers: input -> 128 -> 64 -> 2D latent
     beta: 1.0                  # VAE beta parameter (KL divergence weight)
@@ -35,17 +35,20 @@ network_args:
 # =============================================================================
 # DATA CONFIGURATION
 # =============================================================================
-data_name: XTC                 # Data type: XTC (GROMACS trajectory)
-data_args:
-    # Input files
-    tprfile: ./data/ala2.tpr   # GROMACS topology file
-    xtcfile: ./data/ala2.xtc   # GROMACS trajectory file
+datamodule_type: COORDINATES   # Data type: COORDINATES, COLVAR
+datamodule_args:
+    datareader_type: XTC        # XTC | XTC_CHUNKS | XTC_CHUNKS_CG | PLUMED_OUTPUT
 
-    # Atom selection (all heavy atoms, no hydrogens, no solvent)
-    selection: "(resname ALA or resname ACE or resname NME) and not element H"
+    # Input files
+    datareader_args:
+        tprfile: ./data/ala2.tpr   # GROMACS topology file
+        xtcfile: ./data/ala2.xtc   # GROMACS trajectory file
+
+        # Atom selection (all heavy atoms, no hydrogens, no solvent)
+        selection: "(resname ALA or resname ACE or resname NME) and not element H"
 
     # Dataset parameters
-    mac_frames: 1000           # Number of frames to use from trajectory
+    max_frames: 1000           # Number of frames to use from trajectory
     sequential: False          # Random sampling (True for sequential frames)
 
     # Train/validation split
@@ -56,18 +59,18 @@ data_args:
     test_full_dataset: True   # Use full dataset for testing (True)
 
     # Feature representation
-    dataset_type: "DISTANCES"  # Feature type: DISTANCES, POSITIONS, SOAP
+    dataset_type: "DISTANCES"   # Feature type: DISTANCES, POSITIONS, SOAP
     dataset_args:
-        group1: "0:22"         # First group of atoms for distance calculation
-        group2: "0:22"         # Second group of atoms for distance calculation
+        group1: "0:22"          # First group of atoms for distance calculation
+        group2: "0:22"          # Second group of atoms for distance calculation
 
     # Data processing
-    num_workers: 4            # Number of parallel data loading workers
-    norm_type: "minmax"       # Normalization: minmax, standard, none
+    num_workers: 4             # Number of parallel data loading workers
+    norm_type: "minmax"        # Normalization: minmax, standard, none
 
     # Labels (optional - for monitoring specific collective variables)
-    labeler_type: "DIHEDRAL"     
+    labeler_type: "DIHEDRAL"
     labeler_args:
-        label_dihedrals: 
+        label_dihedrals:
             - phi_2
             - psi_2

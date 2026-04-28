@@ -215,6 +215,12 @@ class SOAPDataset(Dataset, BaseDataset):
     
     def get_data(self):
         return self.descriptors, self.labels
+    
+    def get_norm_data(self):
+        return self.descriptors
+    
+    def get_datapoint_shape(self):
+        return self.descriptors.shape[1:]
 
     def get_metatomic_dataprocessor(self):
         return MetatomicSOAPDataset(self.spex, 

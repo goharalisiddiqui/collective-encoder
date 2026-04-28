@@ -6,6 +6,33 @@ from tqdm import tqdm
 from .base import BaseDataAnalyser
 
 class Ala2DataAnalyser(BaseDataAnalyser):
+    """Post-training analyser for the alanine dipeptide (Ala2) benchmark system.
+
+    Produces Ramachandran plots and time-series dihedral plots from the latent
+    space trajectory of a trained collective-encoder model.  Reads torsion
+    angles (phi/psi) from graph-structured data objects and saves publication-
+    quality figures to ``output_dir``.
+
+    Args:
+        output_dir: Directory where output plots will be written.
+        args: Optional configuration dict.  Recognised keys:
+
+            - ``input_chunk_length`` (int): Length of the input window in
+              sequence models; used to colour-code time-series by split.
+            - ``output_chunk_length`` (int): Length of the prediction window.
+            - ``n_seq_per_sample`` (int): Number of output sequences per
+              input sample (default: ``1``).
+        **kwargs: Forwarded to :class:`BaseDataAnalyser` and
+            :class:`~collective_encoder.common.module.CEModule`.
+    """
+
+    _IDENTIFIER = "ALA2_ANALYSER"
+    _OPTIONAL_ARGS = {
+        'input_chunk_length': None,
+        'output_chunk_length': None,
+        'n_seq_per_sample': 1,
+    }
+
     def plot_dihedrals(self, data, label = ""):
         idx_phi = 6 # [1,3,4,5]
         idx_psi = 10 # [3,4,6,8]
@@ -21,11 +48,9 @@ class Ala2DataAnalyser(BaseDataAnalyser):
         psi = np.arctan2(sin_psi, cos_psi)
         
         # Make sequence length alternate color
-        if all(key in self.data_args for key in ['input_chunk_length', 'output_chunk_length']):
-            input_chunk_length = self.data_args['input_chunk_length']
-            output_chunk_length = self.data_args['output_chunk_length']
-            n_samples = self.data_args.get('n_seq_per_sample', 1)
-            sequence_len = input_chunk_length + n_samples * output_chunk_length
+        if self.input_chunk_length is not None and self.output_chunk_length is not None:
+            sequence_len = self.input_chunk_length + \
+                    self.n_seq_per_sample * self.output_chunk_length
 
             colors = ['red'] * sequence_len + ['blue'] * sequence_len
             colors = colors * (len(phi) // (2 * sequence_len) + 1)

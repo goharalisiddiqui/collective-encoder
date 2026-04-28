@@ -1,58 +1,40 @@
-from typing import Dict, List
-from gslibs.utils.common import get_init_args
-from collective_encoder.datareaders.resolver import get_datareader
+import importlib
+from typing import Any, Dict, List
+
+_REGISTRY: dict = {
+    "XTC":         ("collective_encoder.datamodules.coordinates", "CoordinatesDataModule"),
+    "COORDINATES": ("collective_encoder.datamodules.coordinates", "CoordinatesDataModule"),
+    "COLVAR":      ("collective_encoder.datamodules.colvars",     "ColvarsDataModule"),
+}
 
 
-def get_datamodule(datamodule_name: str, dataset_args: Dict[str, any]):
+def get_datamodule(datamodule_name: str, dataset_args: Dict[str, Any]):
+    """Return the datamodule class for *datamodule_name*.
+
+    Args:
+        datamodule_name: Identifier string (e.g. ``"COORDINATES"``, ``"COLVAR"``).
+        dataset_args: Argument dict passed through unchanged.
+
+    Raises:
+        ValueError: If *datamodule_name* is not registered.
     """
-    Get the dataloader class and required arguments for a given dataloader name.
-    This function maps a dataloader name to its corresponding dataloader class
-    and retrieves the required arguments for initializing that dataloader.
-
-    Parameters:
-    dataloader_name (str): The name of the dataloader to retrieve.
-    dataset_args (Dict[str, any]): A dictionary of arguments to be passed to the dataloader.
-                                  This dictionary will be updated with the required arguments for
-                                  the specified dataloader.
-
-    Returns:
-    main_dl (type): The dataloader class corresponding to the specified dataloader name.
-    dataset_args (Dict[str, any]): The updated dictionary of arguments including the required
-                                  arguments for the dataloader.
-    """
-
-    if datamodule_name == "XTC" or datamodule_name == "COORDINATES":
-        from collective_encoder.datamodules.coordinates import CoordinatesDataModule as datamodule
-    else:
-        raise ValueError(f"Unknown datamodule name: {datamodule_name}")
-
+    if datamodule_name not in _REGISTRY:
+        raise ValueError(
+            f"Unknown datamodule name: '{datamodule_name}'. "
+            f"Available: {sorted(set(_REGISTRY))}"
+        )
+    module_path, class_name = _REGISTRY[datamodule_name]
+    datamodule = getattr(importlib.import_module(module_path), class_name)
     return datamodule, dataset_args
 
 
 def get_compatible_datareaders(dataloader_name: str) -> List[str]:
-    """
-    Get a list of compatible datareader types for a given dataloader.
-
-    Parameters:
-    dataloader_name (str): The name of the dataloader.
-
-    Returns:
-    List[str]: A list of compatible datareader type names.
-    """
+    """Return the list of compatible datareader identifiers for *dataloader_name*."""
     dataloader_class, _ = get_datamodule(dataloader_name, {})
     return dataloader_class.get_compatible_datareaders()
 
 
 def get_compatible_datasets(dataloader_name: str) -> List[str]:
-    """
-    Get a list of compatible dataset types for a given dataloader.
-
-    Parameters:
-    dataloader_name (str): The name of the dataloader.
-
-    Returns:
-    List[str]: A list of compatible dataset type names.
-    """
+    """Return the list of compatible dataset identifiers for *dataloader_name*."""
     dataloader_class, _ = get_datamodule(dataloader_name, {})
     return dataloader_class.get_compatible_datasets()
-        

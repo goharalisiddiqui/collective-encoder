@@ -1,51 +1,59 @@
-from typing import Dict, List
+from typing import Any, Dict, List
+
+import yaml
 
 REQUIRED_TOP_LEVEL = [
     "nepochs", "lrate", "network_type", "network_args", "datamodule_type", "datamodule_args"
 ]
 
-def validate_duplicate_keys(config_path: str):
+
+class _DuplicateKeyLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_mapping(loader, node):
+    loader.flatten_mapping(node)
+    pairs = loader.construct_pairs(node)
+    keys = [k for k, _ in pairs]
+    if len(keys) != len(set(keys)):
+        dupes = {k for k in keys if keys.count(k) > 1}
+        raise ValueError(f"Duplicate keys in config: {dupes}")
+    return dict(pairs)
+
+
+_DuplicateKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_mapping,
+)
+
+
+def validate_duplicate_keys(config_path: str) -> bool:
     """
     Check for duplicate keys in the YAML config file.
-    Raises an error if duplicates are found, otherwise returns True.
-    
-    Parameters:
-    config_path (str): The file path to the YAML configuration file.
-
-    Returns:
-    bool: True if no duplicate keys are found, otherwise raises a ValueError.
+    Raises ValueError if duplicates are found, otherwise returns True.
     """
     try:
         with open(config_path, 'r') as f:
-            pass
-            #FIXME: Implement a proper duplicate key check using yaml library
+            yaml.load(f, Loader=_DuplicateKeyLoader)
         return True
+    except ValueError:
+        raise
     except Exception as e:
         raise RuntimeError(f"Error reading config: {e}")
-    
 
-def validate_required_fields(config: Dict[str, any], fields : List[str] = REQUIRED_TOP_LEVEL):
+
+def validate_required_fields(config: Dict[str, Any], fields: List[str] = REQUIRED_TOP_LEVEL) -> bool:
     """
     Validate that all required fields are present in the config dictionary.
-    Raises an error if any required field is missing, otherwise returns True.
-    
-    Parameters:
-    config (dict): The configuration dictionary to validate.
-    fields (List[str]): A list of required top-level keys that must be present 
-        in the config dictionary. Defaults to REQUIRED_TOP_LEVEL.
-
-    Returns:
-    bool: True if all required fields are present, otherwise raises a 
-        ValueError indicating which field is
+    Raises ValueError if any required field is missing, otherwise returns True.
     """
     if len(fields) == 0:
-        return True  # Empty config is valid (no required fields)
+        return True
     if config is None:
         raise ValueError("Config is None, expected a dictionary.")
     if len(config) == 0:
         raise ValueError(f"Config is empty, expected a dictionary with required fields: {fields}.")
-    
-    # Check required top-level keys
+
     for k in fields:
         if k not in config:
             raise ValueError(f"Required config key '{k}' missing.")
