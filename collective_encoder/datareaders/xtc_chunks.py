@@ -12,7 +12,7 @@ class XTCChunksReader(XTCReader):
         self.sequence_length = sequence_length
         super().__init__(**kwargs)
 
-        if kwargs.get('verbose', True):
+        if self.verbose:
             print("Atom index mapping (original -> selected):")
             for at in self.mol.atoms:
                 print(f"  Original index: {at.id + 1} -> Selected index: "

@@ -21,7 +21,7 @@ class CEModule(ABC):
     def __init__(self, args: Dict[str, Union[float, int, str]] = None, **kwargs):
         if args is None:
             args = {}
-        self.verbose = kwargs.get("verbose", False)
+        self.verbose = kwargs.get("verbose", True)
 
         if self._REQUIRED_ARGS is not None:
             validate_required_fields(args, fields=self._REQUIRED_ARGS)

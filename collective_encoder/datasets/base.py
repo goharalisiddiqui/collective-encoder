@@ -19,12 +19,6 @@ class BaseDataset(CEModule, ABC):
                  ):
         if dataset_args is None:
             dataset_args = {}
-        validate_required_fields(dataset_args, fields=self._REQUIRED_ARGS)
-        for key, default_value in self._OPTIONAL_ARGS.items():
-            if key not in dataset_args:
-                dataset_args[key] = default_value
-        for key in dataset_args:
-            self.__setattr__(key, dataset_args[key])
         super().__init__(dataset_args, **kwargs)
     
     @abstractmethod

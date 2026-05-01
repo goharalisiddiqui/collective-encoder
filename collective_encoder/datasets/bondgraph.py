@@ -78,7 +78,7 @@ def _compute_graph_worker(args):
         torch.save(graph, os.path.join(graphs_dir, f"graph_{global_idx}.pt"))
 
 
-class BondGraphDataset(Dataset, BaseDataset):
+class BondGraphDataset(BaseDataset, Dataset):
     """Graph dataset where nodes are bonds and edges connect bonds via angles or torsions.
 
     Node (bond) feature vector (length 3):
@@ -111,8 +111,8 @@ class BondGraphDataset(Dataset, BaseDataset):
         bond_indices: list of (i,j) atom index pairs defining bonds (single global list applied to every structure).
         If validate_indices=True, will assert indices are in range for each structure.
         """
-        Dataset.__init__(self)
         BaseDataset.__init__(self, dataset_args=dataset_args, **kwargs)
+        Dataset.__init__(self)
         
         self.structures = structures
         self.labels = labels

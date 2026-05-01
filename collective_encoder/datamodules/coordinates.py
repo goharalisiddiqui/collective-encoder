@@ -198,9 +198,13 @@ class CoordinatesDataModule(BaseDataModule):
                                    failed_per_split[2], split_name="test")
 
         # Create datasets
-        dataset_class, dataset_args, self.dl_cls = \
-            get_dataset_cls_dl(self.hparams.dataset_type, 
-                               self.hparams.dataset_args, self.datareader)
+        (dataset_class, 
+         dataset_args, 
+         self.dl_cls) = get_dataset_cls_dl(
+                                        self.hparams.dataset_type, 
+                                        self.hparams.dataset_args, 
+                                        self.datareader
+                                        )
         
         self.train_data = dataset_class(
             structures=trajs[0],
