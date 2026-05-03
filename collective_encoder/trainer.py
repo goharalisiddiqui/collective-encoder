@@ -90,7 +90,7 @@ def train(config_path: str, debug: bool = False):
     validate_required_fields(config['network_args'], req_fields)
 
     dm_args = config['datamodule_args']
-    dm_cls, dm_args = get_datamodule(dm_type, dm_args)
+    dm_cls = get_datamodule(dm_type)
     validate_required_fields(dm_args, 
                              get_required_init_args(dm_cls))
     
