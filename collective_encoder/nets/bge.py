@@ -67,7 +67,7 @@ class BondGraphEncoderDecoder(CENetBase):
 
         if datamodule is not None:
             self._init_decoder(datamodule)
-        else:
+        else: # Initialize decoder lazily on first decode call (requires trainer/datamodule access)
             self.gnn_dec = None
 
         self.gnn_enc = BondGraphEncoder(**encoder_args)
@@ -116,7 +116,7 @@ class BondGraphEncoderDecoder(CENetBase):
     # ------------------------------------------------------------------
 
     def _init_decoder(self, datamodule) -> None:
-        datasetobject = datamodule.get_dataset()
+        datasetobject = datamodule.get_train_dataset()
         self.template_khop = self.hparams.decoder_args['template_khop']
         template_data = datasetobject.get_template_graph(k=self.template_khop)
         bond_index, angle_index, torsion_index = datasetobject.get_label_indices()
