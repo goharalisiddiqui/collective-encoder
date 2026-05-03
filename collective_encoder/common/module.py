@@ -22,6 +22,9 @@ class CEModule(ABC):
         if args is None:
             args = {}
         self.verbose = kwargs.get("verbose", True)
+        root_logger_name = kwargs.get("root_logger_name", "collective_encoder")
+        self.run_dir = kwargs.get("run_dir", None)
+        self.run_args = kwargs
 
         if self._REQUIRED_ARGS is not None:
             validate_required_fields(args, fields=self._REQUIRED_ARGS)
@@ -34,13 +37,35 @@ class CEModule(ABC):
 
         # Use _ce_log to avoid shadowing pl.LightningModule's self.logger property
         # when CEModule is mixed into Lightning classes.
-        self._ce_log = logging.getLogger(self.__class__.__name__)
+        self._ce_log = logging.getLogger(root_logger_name + "." + self.__class__.__name__)
         if self.verbose:
             self._ce_log.info("=" * 80)
             self._ce_log.info("[Initializing module: %s]", self.__class__.__name__)
             self._ce_log.info("=" * 80)
 
+    def get_run_args(self) -> Dict[str, Any]:
+        """Return the dict of arguments used to initialize this module."""
+        return self.run_args
+
     def warn(self, message: str) -> None:
+        """Emit a WARNING-level log message."""
+        self._ce_log.warning(message)
+    
+    def log_error(self, message: str) -> None:
+        """Emit an ERROR-level log message."""
+        self._ce_log.error(message)
+    
+    def log_info(self, message: str) -> None:
+        self._ce_log.info(message)
+    
+    def log_debug(self, message: str) -> None:
+        self._ce_log.debug(message)
+    
+    def log_exception(self, message: str, exc: Exception) -> None:
+        """Emit an ERROR-level log message with exception info."""
+        self._ce_log.error(message, exc_info=exc)
+    
+    def log_warn(self, message: str) -> None:
         """Emit a WARNING-level log message."""
         self._ce_log.warning(message)
 
@@ -59,7 +84,7 @@ class CEModule(ABC):
     
     def raise_error(self, message: str, error_type: type = ValueError) -> None:
         """Emit an ERROR-level log message and raise a ValueError."""
-        self._ce_log.error(message)
+        self._ce_log.exception(message, exc_info=error_type(message))
         raise error_type(message)
 
     def log_msg_dict(self, message: str, data: Dict[str, Any], indent: int = 2) -> None:

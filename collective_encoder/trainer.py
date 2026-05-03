@@ -63,8 +63,8 @@ def train(config_path: str, debug: bool = False):
         torch.manual_seed(0)
         np.random.seed(0)
         print("Running in debug mode.")
-    validate_required_fields(config)
 
+    validate_required_fields(config)
     _KNOWN_CONFIG_KEYS = {
         'debug', 'outpath', 'outfolder', 'overwrite', 'nexp', 'output_to_file',
         'save_checkpoint', 'save_serial_model', 'nepochs', 'lrate', 'weight_decay',
@@ -112,6 +112,18 @@ def train(config_path: str, debug: bool = False):
     ##################################
     if config['output_to_file']:
         output_to_file(run_dir, filename="out.txt")
+    
+    ##################################
+    # Meta args used in all modules
+    ##################################
+    logging.basicConfig(filename=os.path.join(run_dir, "run.log"),
+                        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                        level=logging.INFO)
+    metargs = {
+        'verbose': config.get('verbose', False),
+        'root_logger_name': __name__,
+        'run_dir': run_dir,
+    }
 
     ##################################
     # Creating Dataset
@@ -137,21 +149,20 @@ def train(config_path: str, debug: bool = False):
         'normIn': config['normIn'],
         'scheduler': config['scheduler'],
         'scheduler_args': config.get('scheduler_args', {}),
-        'outname': run_dir,
-        'datamodule': dm,
     }
     nn_args.update(config.get('network_args', {}))
-    metargs = {
-        'verbose': config.get('verbose', False),
-    }
 
     load_model = config.get('load_model', None)
     if load_model != None:
         checkpoint_file = load_model
         print(f"Loading model from {checkpoint_file}")
-        model = nn_cls.load_from_checkpoint(checkpoint_file, args=nn_args, **metargs)
+        model = nn_cls.load_from_checkpoint(checkpoint_file, 
+                                            datamodule=dm,
+                                            args=nn_args, **metargs)
     else:
-        model = nn_cls(args=nn_args, **metargs)
+        model = nn_cls(datamodule=dm, 
+                       args=nn_args, 
+                       **metargs)
 
     ##################################
     # Training the NN
@@ -226,6 +237,8 @@ def train(config_path: str, debug: bool = False):
             dm.output_trajectory(os.path.join(run_dir, "recon_trajectory.pdb"), pred)
 
     ##################################
+    if config.get('test_plotter_type', False):
+        model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))  
     trainer.test(model, datamodule=dm)
 
     #####################################

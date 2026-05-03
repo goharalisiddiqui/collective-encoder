@@ -1,7 +1,7 @@
 import importlib
 
 _REGISTRY: dict = {
-    "LDplotter": ("collective_encoder.testplotters.latent_space_plotter", "LDplotter"),
+    "LDplotter": ("collective_encoder.testplotters.latentspace", "LDplotter"),
 }
 
 def get_testplotter(model_name: str):

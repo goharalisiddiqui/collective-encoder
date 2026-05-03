@@ -18,7 +18,6 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         'scheduler': False,
         'output_directory': './ce_net_output/untitled_',
         'scheduler_args': None,
-        'test_plotter': None,
         'export_latent': False,
         }
 
@@ -45,8 +44,10 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     def __init__(self, args: Dict[str, Any] = None, **kwargs) -> None:
         pl.LightningModule.__init__(self)
         CEModule.__init__(self, args=args, **kwargs)
-
-        self.register_buffer('normIn', torch.tensor(self.normIn, dtype=torch.bool))
+        
+        normIn = self.normIn
+        delattr(self, 'normIn') # We need to delete this to create it as a buffer.
+        self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
         self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
         
         self.losses = {
@@ -58,6 +59,7 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         self.test_metrics = {
             "mae": self.metric_mae,
         }
+        self.test_plotters = {}
         
     # ------------------------------------------------------------------
     # Normalization
@@ -156,8 +158,8 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         """
         return torch.optim.Adam(
             self.parameters(),
-            lr=self.hparams.lrate,
-            weight_decay=self.hparams.weight_decay,
+            lr=self.lrate,
+            weight_decay=self.weight_decay,
         )
 
     def _get_scheduler_args(self) -> dict:
@@ -173,12 +175,12 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
             "min_lr": 1e-10,
             "cooldown": 10,
         }
-        defaults.update(self.hparams.scheduler_args or {})
+        defaults.update(self.scheduler_args or {})
         return defaults
 
     def configure_optimizers(self):
         optimizer = self._build_optimizer()
-        if not self.hparams.scheduler:
+        if not self.scheduler:
             return optimizer
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, **self._get_scheduler_args()
@@ -201,10 +203,10 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         self.log_msg(f"Starting training {type(self).__name__} module")
         self.log_msg("==================================")
         self.log_msg("[Optimization Settings]")
-        self.log_msg(f"  Learning rate      = {self.hparams.lrate}")
-        self.log_msg(f"  l2 regularization  = {self.hparams.weight_decay}")
-        if self.hparams.scheduler:
-            extra = self.hparams.scheduler_args or {}
+        self.log_msg(f"  Learning rate      = {self.lrate}")
+        self.log_msg(f"  l2 regularization  = {self.weight_decay}")
+        if self.scheduler:
+            extra = self.scheduler_args or {}
             self.log_msg(f"  LR scheduler       = Enabled {extra}")
         else:
             self.log_msg("  LR scheduler       = Disabled")
@@ -233,17 +235,28 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         return self.forward(batch)
     
     def _plot_test(self, inp, latent, output, labels, meta) -> None:
-        if self.test_plotter is None:
-            return
         from collective_encoder.testplotters.resolver import get_testplotter
-        plotter_cls = get_testplotter(self.test_plotter)
-        plotter = plotter_cls(self.output_directory, logger=self.logger)
-        plotter.plot(inp, latent, output, labels, meta)
-    
+        
+        label_names = self.trainer.datamodule.get_label_names()
+        if len(label_names) != labels.shape[1]:
+            self.raise_error(f"Number of label names ({len(label_names)}) does not match number of label columns ({labels.shape[1]}).")
+        labels_dict = {name: labels[:, i] for i, name in enumerate(label_names)}
+        for name, args in self.test_plotters.items():
+            try:
+                plotter_cls = get_testplotter(name)
+                plotter_args = args
+                plotter_args['run_directory'] = self.output_directory
+                plotter_args['logger'] = self.logger
+                plotter = plotter_cls(plotter_args, **self.get_run_args())
+                plotter.plot(inp, latent, output, labels_dict, meta)
+            except Exception as e:
+                self.log_exception(f"Test plotting failed", e)
+        
     def _multiple_calculate(self, 
-                            data: Union[torch.Tensor, Data],
+                            inp: Union[torch.Tensor, Data],
                             latent: torch.Tensor,
-                            pred: torch.Tensor,
+                            output: torch.Tensor,
+                            labels: torch.Tensor,
                             meta: Dict[str, Any],
                             funcs: Dict[str, Callable],
                             stage: str,
@@ -251,7 +264,7 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
                             ) -> dict:
         results = {}
         for name, func in funcs.items():
-            result, result_meta = func(data, latent, pred, meta)
+            result, result_meta = func(inp, latent, output, labels, meta)
             results[name] = result
             if isinstance(result, (int, float)) or (isinstance(result, torch.Tensor) and result.numel() == 1):
                 self.log(f"{stage}_{name}", result.detach(), prog_bar=(stage == "train"),
@@ -262,25 +275,35 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
                              prog_bar=False, on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
             meta.update(result_meta)
         return results
+    
+    def _batch_split(self, batch):
+        if not isinstance(batch, (tuple, list)  ) or len(batch) != 2:
+            self.raise_error(f"Expected batch to be a tuple or list of (data, labels), got "
+                             f"{type(batch)} with length {len(batch) if isinstance(batch, (tuple, list)) else 'N/A'}")
+        data, labels = batch
+        return data, labels
+    
+    def extra_training_step(self, inp, latent, output, labels, meta, losses):
+        return losses
 
     def _step(self, batch, stage: str) -> torch.Tensor:
-        data = batch[0] if isinstance(batch, (list, tuple)) else batch
-        latent, pred, meta = self(data)
+        data, labels = self._batch_split(batch)
+        output, latent, meta = self(data)
         batch_size = self.trainer.datamodule.hparams.batch_size \
             if self.trainer and self.trainer.datamodule else None
 
         with torch.no_grad():
             metrics = self.metrics if stage in ["train", "val"] else self.test_metrics
-            metrics = self._multiple_calculate(data, latent, pred, meta, 
+            metrics = self._multiple_calculate(data, latent, output, labels, meta, 
                                            metrics, stage, batch_size)
     
         if stage == "test":
-            self._plot_test(data, latent, pred, batch[1] if len(batch) > 1 else None, meta)
+            self._plot_test(data, latent, output, labels, meta)
             return metrics.get("mae", torch.tensor(0.0))
 
-        losses = self._multiple_calculate(data, latent, pred, meta, 
+        losses = self._multiple_calculate(data, latent, output, labels, meta, 
                                           self.losses, stage, batch_size)
-        losses = self.extra_training_step(data, latent, pred, meta, losses)
+        losses = self.extra_training_step(data, latent, output, labels, meta, losses)
         loss = self.aggregate_losses(losses)
         self.log(f"{stage}_loss", loss.detach(), prog_bar=(stage == "train"),
                  on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
@@ -317,40 +340,58 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
 
         latent, meta_latent = self._encode(data)
         latent, meta_sample = self.latent_to_decoder_input(latent)
-        pred, meta_dec = self._decode(latent)
+        output, meta_dec = self._decode(latent)
         
         meta.update(meta_latent)
         meta.update(meta_dec)
         meta.update(meta_sample)
 
-        return pred, latent, meta
+        return output, latent, meta
     
     # ------------------------------------------------------------------
     # Losses and metrics
     # ------------------------------------------------------------------
 
-    def loss(self, inp, latent, output, labels, meta):
-        loss = F.mse_loss(output, labels, reduction='none')
+    def loss(self, 
+             inp: Union[torch.Tensor, Data],
+             latent: torch.Tensor, 
+             output: torch.Tensor, 
+             labels: torch.Tensor, 
+             meta: Dict[str, Any]) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        loss = F.mse_loss(inp, output, reduction='none')
         loss = torch.mean(loss)
-        return loss
+        return loss, {}
 
-    def metric_mae(self, inp, latent, output, labels, meta):
-        mae = F.l1_loss(output, labels, reduction='none')
+    def metric_mae(self, 
+                   inp: Union[torch.Tensor, Data],
+                   latent: torch.Tensor,
+                   output: torch.Tensor,
+                   labels: torch.Tensor,
+                   meta: Dict[str, Any]) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        mae = F.l1_loss(inp, output, reduction='none')
         mae = torch.mean(mae)
         return mae, {}
 
     def aggregate_losses(self, losses: dict) -> torch.Tensor:
         return torch.sum(torch.stack(list(losses.values())))
+    
+    # ------------------------------------------------------------------
+    # Test plotting
+    # ------------------------------------------------------------------
 
-
+    def add_test_plotter(self, plotter_name: str, plotter_args: None) -> None:
+        if plotter_name in self.test_plotters.keys():
+            self.raise_error(f"Test plotter '{plotter_name}' already exists. Cannot add duplicate plotter.")
+        self.test_plotters[plotter_name] = plotter_args or {}
+    
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------
 
-    def get_latent(self, data):
+    def get_latent(self, data: torch.Tensor) -> torch.Tensor:
         return self.encode(data)
 
-    def get_decoded(self, latent):
+    def get_decoded(self, latent: torch.Tensor) -> torch.Tensor:
         return self.decode(latent)
     
 

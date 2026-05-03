@@ -30,26 +30,31 @@ class LDplotter(BaseTestPlotter):
     
     def plot(self, data, latent, pred, labels, meta) -> None:
         if labels is not None:
-            for k in labels.keys():
-                labels[k] = labels[k].cpu().numpy()
-
+            if isinstance(labels, dict):
+                for k in labels.keys():
+                    labels[k] = labels[k].cpu().numpy()
+            else:
+                labels = labels.cpu().numpy()
+        
+        latent = latent.detach().cpu().numpy()
+        self.plot_latent(latent, labels = labels, name = "latent")
         mu_latent = meta.get('mu_latent', None)
         if mu_latent is not None:
             mu_latent = mu_latent.detach().cpu().numpy()
             self.plot_latent(mu_latent, labels = labels, name = "mu_latent")
+
         logvar_latent = meta.get('logvar_latent', None)
         if logvar_latent is not None:
             logvar_latent = logvar_latent.detach().cpu().numpy()
             std_latent = np.sqrt(np.exp(logvar_latent))
             self.plot_latent(mu_latent, errors = std_latent, labels = labels, name = "std_latent")
+        self.log_info(f"Plots saved in {self.outpath}")
             
-        return  
-    
     def plot_latent(self, 
                     latent, 
                     labels, 
                     errors = None, 
-                    name = "mu_latent"):
+                    name = "latent"):
         nld = latent.shape[1]
         if nld == 1:
             fig = self.plot_2dline(latent[:, 0], labels=labels, tag="LDplotter")
@@ -74,5 +79,5 @@ class LDplotter(BaseTestPlotter):
                 else:
                     fig = self.plot_2dscatter(latent[:, i], latent[:, j], 
                                               labels=labels, tag=f"{i}_{j}")
-                self.log_image(fig, f"{name}_{i}_{j}")
+                self.log_image(fig, f'{name}_{i}_{j}')
                 plt.close(fig)

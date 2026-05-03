@@ -14,7 +14,6 @@ from collective_encoder.common.module import CEModule
 
 class BaseTestPlotter(CEModule, ABC):
     _IDENTIFIER = ""
-    _REQUIRED_ARGS = ["run_directory"]
     _OPTIONAL_ARGS = {
         'logger': None,
     }
@@ -23,7 +22,7 @@ class BaseTestPlotter(CEModule, ABC):
                  args, 
                  **kwargs):
         super().__init__(args, **kwargs)
-        self.outpath = os.path.join(self.run_directory, type(self).__name__+"_plots")
+        self.outpath = os.path.join(self.run_dir, type(self).__name__+"_plots")
         os.makedirs(self.outpath, exist_ok=True)
 
     @abstractmethod
@@ -33,10 +32,13 @@ class BaseTestPlotter(CEModule, ABC):
     def log_image(self, fig, name):
         fn = os.path.join(self.outpath, f"{name}.png")
         fig.savefig(fn, dpi=150)
-        if self.logger is not None and isinstance(self.logger, wandb.sdk.wandb_run.Run):
+        if self.logger is not None:
             try:
                 import wandb
-                self.logger.log({f"[LDplotter] {name}": wandb.Image(fn)})
+                if isinstance(self.logger, wandb.sdk.wandb_run.Run):
+                    self.logger.log({f"[LDplotter] {name}": wandb.Image(fn)})
+                else:
+                    self.log_warn(f"Logger is unknown type {type(self.logger)}, cannot log image to logger.")
             except ImportError:
                 self.warn("Wandb not installed, cannot log image to wandb.")
                 pass
@@ -69,8 +71,8 @@ class BaseTestPlotter(CEModule, ABC):
                                    fmt='o', c='gray', 
                                    alpha=0.5, ecolor='lightgray', 
                                    elinewidth=1, capsize=2)
-            axes[ind].set_xlabel(f"$LD_{tag}$")
-            axes[ind].set_ylabel(f"$LD_{tag}$")
+            axes[ind].set_xlabel(f"$LD_{tag.split('_')[0]}$")
+            axes[ind].set_ylabel(f"$LD_{tag.split('_')[1]}$")
             fig.colorbar(scatter, ax=axes[ind], label=name)
         plt.tight_layout()
         return fig

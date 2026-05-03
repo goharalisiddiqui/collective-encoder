@@ -36,7 +36,12 @@ class MetatomicModelAE(torch.nn.Module):
 
 
 class AEBase(CENetBase, ABC):
-    _REQUIRED_ARGS = ['dim_data', 'dim_latent']
+    _REQUIRED_ARGS = ['network']
+    _OPTIONAL_ARGS = CENetBase._OPTIONAL_ARGS
+    _OPTIONAL_ARGS.update({
+        'batch_norm': False,  # Whether to use batch normalization in the encoder/decoder
+    })
+    _COMPATIBLE_DATASETS = []
     
     """Base class for dense-tensor autoencoder architectures (VAE, AE, DVAE, EDVAE).
 
@@ -49,18 +54,35 @@ class AEBase(CENetBase, ABC):
     """
 
     def __init__(self,
+                 datamodule,
                  args: Dict[str, Any] = None,
                  **kwargs
                  ):
         super().__init__(args=args, **kwargs)
         self.metatomic_model_cls = MetatomicModelAE
+        
+        if len(self.network) < 2:
+            self.raise_error(f"Network architecture must have at "
+                             f"least 2 layers (input and latent). Got: {self.network}")
+        
+        assert datamodule.hparams.dataset_type in self._COMPATIBLE_DATASETS, (
+            f"Dataset type '{datamodule.hparams.dataset_type}' is not compatible with AE. "
+            f"Compatible types: {self._COMPATIBLE_DATASETS}"
+        )
+        
+        nodes = [int(x) for x in self.network]
+        datapoint_shape = datamodule.get_datapoint_shape()
+        nodes.insert(0, datapoint_shape[0])
+
+        self.network = nodes
+        self.init_network()
 
     # ------------------------------------------------------------------
     # Dense-tensor normalization
     # ------------------------------------------------------------------
     
     def get_norm_len(self) -> int:
-        return self.dim_data
+        return self.network[0]
 
     def _normalize(self, x: torch.Tensor) -> torch.Tensor:
         mean_expanded = self.Mean.view(1, -1).expand_as(x)
@@ -91,52 +113,14 @@ class AEBase(CENetBase, ABC):
     # Subclass hooks
     # ------------------------------------------------------------------
 
-    def latent_to_decoder_input(self, latent) -> Tuple:
-        return latent, {}
-
     def get_metad_output(self,
                          latent: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
                          meta: Dict[str, torch.Tensor]) -> torch.Tensor:
         return latent
 
-    def extra_training_step(self, data, latent, result, meta, losses):
-        return losses
-
-    # ------------------------------------------------------------------
-    # test_step is overridden here: it handles labels, plotter, export
-    # ------------------------------------------------------------------
-
-    def test_step(self, test_batch, batch_idx) -> torch.Tensor:
-        data = test_batch[0]
-        labels = test_batch[1] if len(test_batch) > 1 else None
-        latent, pred, meta = self(data)
-        batch_size = self.trainer.datamodule.hparams.test_batch_size if self.trainer and self.trainer.datamodule else None
-
-        for metric_name, metric_func in self.test_metrics.items():
-            metric, metric_meta = metric_func(data, latent, pred, meta)
-            self.log(f"test_{metric_name}", metric, prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
-            for key, value in metric_meta.items():
-                if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
-                    self.log(f"test_{key}", value, prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
-            meta.update(metric_meta)
-
-        if self.hparams.test_plotter is not None:
-            self._plot_test(data, latent, pred, labels, meta)
-        if self.hparams.export_latent:
-            self.export_latent(latent, labels)
-        return meta['mae'] if 'mae' in meta else torch.tensor(0.0)
-
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------
-
-    
-
-    def get_latent(self, data_x: torch.Tensor) -> torch.Tensor:
-        data_x = data_x.float()
-        data_x = self.normalize(data_x)
-        latent, meta_latent = self.encoder(data_x)
-        return latent
 
     def get_latent_names(self) -> str:
         return "latent"

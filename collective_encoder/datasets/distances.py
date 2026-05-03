@@ -131,7 +131,7 @@ class DistancesDataset(Dataset, BaseDataset):
         return len(self.distances)
 
     def __getitem__(self, index):
-        x = (self.distances[index],self.labels[index])
+        x = (self.distances[index], self.labels[index])
         return x
     
     def get_datapoint_shape(self):

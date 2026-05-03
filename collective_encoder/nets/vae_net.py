@@ -1,11 +1,13 @@
 import numpy as np
-from typing import List, Optional, Tuple, Union, Dict
+from typing import Any, List, Optional, Tuple, Union, Dict
 
 import torch
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
 
 from ase.data import covalent_radii
+
+from gslibs.validation.input import check_mutually_exclusive
 
 from collective_encoder.nets.ae_base import AEBase
 from collective_encoder.nets.modules.variational_encoder import VariationalNN
@@ -48,78 +50,48 @@ class MetatomicModelVAE(torch.nn.Module):
         return mean
 
 class VAE(AEBase):
+    _IDENTIFIER = "VAE"
     _COMPATIBLE_DATASETS = ["DEFAULT", "DISTANCES", "SOAP", "SOAP_PS"]
+    _OPTIONAL_ARGS = AEBase._OPTIONAL_ARGS.copy()
+    _OPTIONAL_ARGS.update({
+        "beta": 1.0,  # Weight for the KL divergence term in the loss function
+        "C_reg": None,  # Tuple of (C_value, start_epoch, end_epoch) for C regularization schedule
+        "C_auto": False,  # Whether to automatically adjust C based on validation loss
+        "D_reg": None,  # Threshold for D regularization (if mean KLD is below this, set reg loss to 0)
+        "use_steric_loss": False,  # Whether to include a steric loss based on atomic distances
+        "use_bond_deviation_loss": False,  # Whether to include a bond deviation loss based on bonded atom pairs
+    })
 
     def __init__(self,
                  datamodule,
-                 network: List[int],
-                 normIn: Optional[bool] = False,
-                 lrate: float = 0.01,
-                 weight_decay: float = 1e-7,
-                 scheduler: bool = True,
-                 scheduler_args: dict = None,
-                 outname: str = './VAE_untitled/VAE_',
-                 test_plotter : str = "LDplotter",
-                 export_latent : bool = False,
-                 beta: float = 1.0,
-                 batch_norm: bool = True,
-                 C_reg: Optional[Tuple[float, int, int]] = None,
-                 C_auto: bool = False,
-                 D_reg: Optional[float] = None,
-                 use_steric_loss = False,
-                 use_bond_deviation_loss = False,
+                 args: Dict[str, Any] = None,
+                 **kwargs
                  ):
         self.save_hyperparameters(ignore=['datamodule'])
+        super().__init__(datamodule=datamodule, args=args, **kwargs)
+
         # Checks
-        assert len(network) >= 3, "Network must have at least 2 layers (input, hidden, output)"
-        assert not all([a != None for a in [C_reg, D_reg]]), "C_reg and D_reg are incompatible, choose one of them"
-        if C_reg is not None:
-            assert len(C_reg) == 3, "C_reg must be a tuple of (C_value, start_epoch, end_epoch)"
-            assert C_reg[0] >= 0.0, "C_value must be non-negative"
-            assert C_reg[1] >= 0 and C_reg[2] >= 0, "start_epoch and end_epoch must be non-negative"
-            assert not all([C_reg[0] != 0.0, C_auto == True]), "C_reg and C_auto are incompatible, choose one of them"
-            assert C_reg[1] <= C_reg[2], f"Start epoch {C_reg[1]} must be less than or equal to end epoch {C_reg[2]} in C regulariser."
-
-        assert datamodule.hparams.dataset_type in self._COMPATIBLE_DATASETS, \
-            f"Datamodule {datamodule.hparams.dataset_type} is not compatible with {type(self).__name__}." \
-            f"Compatible datamodules are: {self._COMPATIBLE_DATASETS}"
-
-        nodes = [int(x) for x in network]
-        datapoint_shape = datamodule.get_datapoint_shape()
-        nodes.insert(0, datapoint_shape[0])
-        super().__init__(dim_data=nodes[0],
-                         dim_latent=nodes[-1],
-                         normIn=normIn,
-                         lrate=lrate,
-                         weight_decay=weight_decay,
-                         scheduler=scheduler,
-                         scheduler_args=scheduler_args,
-                         outname=outname,
-                         test_plotter=test_plotter,
-                         export_latent=export_latent,
-                         )
-        self.metatomic_model_cls = MetatomicModelVAE
-
-        #### Setting up the layers of the network ####
-        self.network = nodes
-        self.init_network()
+        check_mutually_exclusive(C_reg=self.C_reg, D_reg=self.D_reg)
+        if self.C_reg is not None:
+            assert len(self.C_reg) == 3, "C_reg must be a tuple of (C_value, start_epoch, end_epoch)"
+            assert self.C_reg[0] >= 0.0, "C_value must be non-negative"
+            assert self.C_reg[1] >= 0 and self.C_reg[2] >= 0, "start_epoch and end_epoch must be non-negative"
+            assert not all([self.C_reg[0] != 0.0, self.C_auto == True]), "C_reg and C_auto are incompatible, choose one of them"
+            assert self.C_reg[1] <= self.C_reg[2], f"Start epoch {self.C_reg[1]} must be less than or equal to end epoch {self.C_reg[2]} in C regulariser."
+        self.C_default = 1e-6
 
         self.losses = {
             "rec_loss": self.recon_loss,
             "reg_loss": self.reg_loss,
         }
-
-        self.C_default = 1e-6
-
-        if use_bond_deviation_loss:
+        if self.use_bond_deviation_loss:
             self.bond_indices = datamodule.get_bond_indices()
             self.atomic_numbers = datamodule.get_atns()
             self.losses["bond_deviation_loss"] = self.bond_deviation_loss
-        if use_steric_loss:
+        if self.use_steric_loss:
             self.atomic_numbers = datamodule.get_atns()
             self.losses["steric_loss"] = self.steric_loss
-
-        if use_bond_deviation_loss or use_steric_loss:
+        if self.use_bond_deviation_loss or self.use_steric_loss:
             cov_radii = [covalent_radii[el] for el in self.atomic_numbers]
             cov_radii = torch.tensor(cov_radii).float()
             cov_radii = cov_radii.unsqueeze(0)
@@ -127,11 +99,12 @@ class VAE(AEBase):
             cov_mat = cov_radii.unsqueeze(0) + cd_t.unsqueeze(1)
             self.cov_mat = cov_mat.squeeze(1)
 
+        self.metatomic_model_cls = MetatomicModelVAE
     
     def get_metatomic_model(self):
         model = self.metatomic_model_cls(
             encoder=self.encoder_net,
-            normIn=self.hparams.normIn,
+            normIn=self.normIn,
             dmean=self.Mean,
             drange=self.Range,
         )
@@ -143,29 +116,29 @@ class VAE(AEBase):
         return mean
 
     def aggregate_losses(self, losses):
-        loss = losses['rec_loss'] + self.hparams.beta * losses['reg_loss']
+        loss = losses['rec_loss'] + self.beta * losses['reg_loss']
         return loss
 
     def print_hparams(self):
         super().print_hparams()
-        hparams: dict = {"beta": self.hparams.beta}
-        if self.hparams.C_reg is not None:
+        hparams: dict = {"beta": self.beta}
+        if self.C_reg is not None:
             hparams["C_reg"] = {
-                "value": self.hparams.C_reg[0],
-                "start": self.hparams.C_reg[1],
-                "end":   self.hparams.C_reg[2],
+                "value": self.C_reg[0],
+                "start": self.C_reg[1],
+                "end":   self.C_reg[2],
             }
-        if self.hparams.C_auto:
+        if self.C_auto:
             hparams["C_auto"] = True
-        if self.hparams.D_reg is not None:
-            hparams["D_reg"] = self.hparams.D_reg
+        if self.D_reg is not None:
+            hparams["D_reg"] = self.D_reg
         self.log_msg_dict("VAE hparams:", hparams)
 
     def init_network(self):
         self.log_msg(f"[Initializing {type(self).__name__} Module] hidden layers: {self.network}")
         self.print_hparams()
-        self.encoder_net = VariationalNN(layers=self.network, batch_norm=self.hparams.batch_norm)
-        self.decoder_net = VariationalNN(layers=self.network[::-1], batch_norm=self.hparams.batch_norm)
+        self.encoder_net = VariationalNN(layers=self.network, batch_norm=self.batch_norm)
+        self.decoder_net = VariationalNN(layers=self.network[::-1], batch_norm=self.batch_norm)
 
     def encoder(self, x):
         mu, logvar = self.encoder_net(x)
@@ -192,9 +165,9 @@ class VAE(AEBase):
 
         return kld
     
-    def recon_loss(self, x, latent, pred, meta):
+    def recon_loss(self, inp, latent, output, labels, meta):
         # Compute NLL in normalized space so mu_x, logvar_x, and x are on the same scale.
-        x_norm = self.normalize(x)
+        x_norm = self.normalize(inp)
         mu_x = meta["mu_x"]
         logvar_x = meta["logvar_x"]
 
@@ -206,7 +179,7 @@ class VAE(AEBase):
 
         return loss_rec, {}
 
-    def reg_loss(self, x, latent, pred, meta):
+    def reg_loss(self, inp, latent, output, labels, meta):
         z_sample = meta["z_sample"]
         mu_latent = meta["mu_latent"]
         logvar_latent = meta["logvar_latent"]
@@ -215,9 +188,9 @@ class VAE(AEBase):
         loss_reg = torch.mean(loss_kld, dim=0)
         
         meta = {"kld" : loss_reg}
-        if self.hparams.C_reg is not None:
+        if self.C_reg is not None:
             C = self.C_default
-            cmax, c_start, c_end = self.hparams.C_reg[0], self.hparams.C_reg[1], self.hparams.C_reg[2]
+            cmax, c_start, c_end = self.C_reg[0], self.C_reg[1], self.C_reg[2]
             if self.current_epoch >= c_start and self.current_epoch <= c_end:
                 C = cmax * (self.current_epoch - c_start) / (c_end - c_start)
             elif self.current_epoch > c_end:
@@ -225,15 +198,15 @@ class VAE(AEBase):
             loss_reg = torch.abs(loss_kld - C)
             meta["C"] = C
 
-        if self.hparams.D_reg is not None:
-            if torch.mean(loss_reg) < self.hparams.D_reg:
+        if self.D_reg is not None:
+            if torch.mean(loss_reg) < self.D_reg:
                 loss_reg *= 0.0
         
         return loss_reg, meta
     
-    def bond_deviation_loss(self, x, latent, pred, meta):
+    def bond_deviation_loss(self, inp, latent, output, labels, meta):
         bonded_indices = self.bond_indices
-        coordinates = x.view(x.shape[0], -1, 3)
+        coordinates = inp.view(inp.shape[0], -1, 3)
         n_atoms = coordinates.shape[-2]
         flattened_instances = coordinates.reshape(-1, n_atoms, 3)
         n_instances = flattened_instances.shape[0]
@@ -262,8 +235,8 @@ class VAE(AEBase):
         deviation = (dist - cov_distances) ** 2
         return deviation.mean(), {}
     
-    def steric_loss(self, x, latent, pred, meta):
-        coordinates = x.view(x.shape[0], -1, 3)
+    def steric_loss(self, inp, latent, output, labels, meta):
+        coordinates = inp.view(inp.shape[0], -1, 3)
         n_atoms = coordinates.shape[-2]
         flattened_instances = coordinates.reshape(-1, n_atoms, 3)
         n_instances = flattened_instances.shape[0]
@@ -296,7 +269,7 @@ class VAE(AEBase):
         return strain.mean(), {}
     
     def on_validation_epoch_end(self):
-        if self.hparams.C_auto:
+        if self.C_auto:
             val_rec_loss = self.trainer.callback_metrics.get("val_rec_loss")
             val_kld = self.trainer.callback_metrics.get("val_kld")
             if val_rec_loss is not None:

@@ -242,6 +242,10 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
     def set_num_workers(self, num_workers: int):
         """Set the number of workers for data loading."""
         self.hparams.num_workers = num_workers
+    
+    def get_label_names(self) -> List[str]:
+        """Get the names of the label columns produced by the labeler."""
+        return self.label_list
 
     @classmethod
     def get_compatible_datareaders(cls) -> List[str]:
