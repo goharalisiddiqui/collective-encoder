@@ -55,10 +55,3 @@ class AE(AEBase):
         self.encoder_net = SimpleNN(layers=self.network, batch_norm=self.hparams.batch_norm)
         self.decoder_net = SimpleNN(layers=self.network[::-1], batch_norm=self.hparams.batch_norm)
 
-    def encoder(self, x: torch.Tensor) -> Tuple[torch.Tensor, dict]:
-        z = self.encoder_net(x)
-        return z, {}
-
-    def decoder(self, z: torch.Tensor) -> Tuple[torch.Tensor, dict]:
-        x_out = self.decoder_net(z)
-        return x_out, {}

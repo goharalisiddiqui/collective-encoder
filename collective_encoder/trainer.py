@@ -72,7 +72,7 @@ def train(config_path: str, debug: bool = False):
         'scheduler', 'scheduler_args', 'normIn', 'network_type', 'network_args',
         'datamodule_type', 'datamodule_args', 'data_analyser', 'data_args',
         'load_model', 'output_traj', 'save_metatomic', 'early_stopping',
-        'early_stopping_args',
+        'early_stopping_args', 'verbose'
     }
     for key in config:
         if key not in _KNOWN_CONFIG_KEYS:
@@ -141,14 +141,17 @@ def train(config_path: str, debug: bool = False):
         'datamodule': dm,
     }
     nn_args.update(config.get('network_args', {}))
+    metargs = {
+        'verbose': config.get('verbose', False),
+    }
 
     load_model = config.get('load_model', None)
     if load_model != None:
         checkpoint_file = load_model
         print(f"Loading model from {checkpoint_file}")
-        model = nn_cls.load_from_checkpoint(checkpoint_file, **nn_args)
+        model = nn_cls.load_from_checkpoint(checkpoint_file, args=nn_args, **metargs)
     else:
-        model = nn_cls(**nn_args)
+        model = nn_cls(args=nn_args, **metargs)
 
     ##################################
     # Training the NN

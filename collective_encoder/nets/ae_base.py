@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, Union, Dict
+from typing import Any, Tuple, Union, Dict
 
 import torch
 import torch.nn.functional as F
@@ -36,6 +36,8 @@ class MetatomicModelAE(torch.nn.Module):
 
 
 class AEBase(CENetBase, ABC):
+    _REQUIRED_ARGS = ['dim_data', 'dim_latent']
+    
     """Base class for dense-tensor autoencoder architectures (VAE, AE, DVAE, EDVAE).
 
     Handles dense-tensor normalization, reparametrization, the generic training
@@ -47,68 +49,25 @@ class AEBase(CENetBase, ABC):
     """
 
     def __init__(self,
-                 dim_data: int,
-                 dim_latent: int,
-                 normIn: bool = False,
-                 lrate: float = 0.01,
-                 weight_decay: float = 1e-7,
-                 scheduler: bool = False,
-                 scheduler_args: dict = None,
-                 outname: str = './untitled/untitled_',
-                 test_plotter: str = None,
-                 export_latent: bool = False,
+                 args: Dict[str, Any] = None,
+                 **kwargs
                  ):
-        super().__init__()
-
-        self.dim_data = dim_data
-        self.dim_latent = dim_latent
-
-        self.losses = {
-            "rec_loss": self.loss_mse,
-        }
-        self.test_metrics = {
-            "mae": self.metric_mae,
-        }
-        self.val_metrics = {
-            "mae": self.metric_mae,
-        }
-
-        self.metaD = False
-        self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
-        self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
-        self.register_buffer('Mean', torch.zeros(dim_data))
-        self.register_buffer('Range', torch.ones(dim_data))
+        super().__init__(args=args, **kwargs)
         self.metatomic_model_cls = MetatomicModelAE
-
-    # ------------------------------------------------------------------
-    # Optimizer hook — uses get_train_parameters() instead of all params
-    # ------------------------------------------------------------------
-
-    def _build_optimizer(self) -> torch.optim.Optimizer:
-        return torch.optim.Adam(
-            self.get_train_parameters(),
-            lr=self.hparams.lrate,
-            weight_decay=self.hparams.weight_decay,
-        )
 
     # ------------------------------------------------------------------
     # Dense-tensor normalization
     # ------------------------------------------------------------------
+    
+    def get_norm_len(self) -> int:
+        return self.dim_data
 
-    def normalize(self, x: torch.Tensor) -> torch.Tensor:
-        if not self.normIn:
-            return x
-        elif not self.normSet:
-            self.set_norm()
+    def _normalize(self, x: torch.Tensor) -> torch.Tensor:
         mean_expanded = self.Mean.view(1, -1).expand_as(x)
         range_expanded = self.Range.view(1, -1).expand_as(x)
         return (x - mean_expanded) / range_expanded
 
-    def denormalize(self, x: torch.Tensor) -> torch.Tensor:
-        if not self.normIn:
-            return x
-        if not self.normSet:
-            self.set_norm()
+    def _denormalize(self, x: torch.Tensor) -> torch.Tensor:
         mean_expanded = self.Mean.view(1, -1).expand_as(x)
         range_expanded = self.Range.view(1, -1).expand_as(x)
         return x * range_expanded + mean_expanded
@@ -132,17 +91,6 @@ class AEBase(CENetBase, ABC):
     # Subclass hooks
     # ------------------------------------------------------------------
 
-    def get_train_parameters(self):
-        return self.parameters()
-
-    @abstractmethod
-    def encoder(self, x: torch.Tensor):
-        raise NotImplementedError("Subclass must implement encoder()")
-
-    @abstractmethod
-    def decoder(self, z: torch.Tensor):
-        raise NotImplementedError("Subclass must implement decoder()")
-
     def latent_to_decoder_input(self, latent) -> Tuple:
         return latent, {}
 
@@ -153,87 +101,6 @@ class AEBase(CENetBase, ABC):
 
     def extra_training_step(self, data, latent, result, meta, losses):
         return losses
-
-    # ------------------------------------------------------------------
-    # Forward
-    # ------------------------------------------------------------------
-
-    def forward(self, x: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, Dict]]:
-        meta = {}
-        x = self.normalize(x)
-        latent, meta_latent = self.encoder(x)
-
-        if self.metaD:
-            meta.update(meta_latent)
-            return self.get_metad_output(latent, meta)
-
-        latent, meta_sample = self.latent_to_decoder_input(latent)
-
-        pred, meta_dec = self.decoder(latent)
-        pred = self.denormalize(pred)
-
-        meta.update(meta_latent)
-        meta.update(meta_dec)
-        meta.update(meta_sample)
-
-        return latent, pred, meta
-
-    # ------------------------------------------------------------------
-    # Losses and metrics
-    # ------------------------------------------------------------------
-
-    def loss_mse(self, x, latent, pred, meta):
-        loss = F.mse_loss(pred, x, reduction='none')
-        loss = torch.mean(loss)
-        mae = F.l1_loss(pred, x, reduction='none')
-        mae = torch.mean(mae)
-        return loss, {"mae": mae.item()}
-
-    def aggregate_losses(self, losses: dict) -> torch.Tensor:
-        return torch.sum(torch.stack(list(losses.values())))
-
-    def metric_mae(self, x, latent, pred, meta):
-        mae = F.l1_loss(pred, x, reduction='none')
-        mae = torch.mean(mae)
-        return mae, {}
-
-    # ------------------------------------------------------------------
-    # Generic step (used by training_step and validation_step from CENetBase)
-    # ------------------------------------------------------------------
-
-    def step(self, batch, stage: str) -> torch.Tensor:
-        data = batch[0]
-        latent, pred, meta = self(data)
-        batch_size = self.trainer.datamodule.hparams.batch_size if self.trainer and self.trainer.datamodule else None
-
-        losses = {}
-        for loss_name, loss_func in self.losses.items():
-            loss, loss_meta = loss_func(data, latent, pred, meta)
-            self.log(f"{stage}_{loss_name}", loss.detach(), prog_bar=(stage == "train"),
-                     on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
-            losses[loss_name] = loss
-            meta.update(loss_meta)
-        losses = self.extra_training_step(data, latent, pred, meta, losses)
-
-        if stage == "val":
-            for metric_name, metric_func in self.val_metrics.items():
-                metric, metric_meta = metric_func(data, latent, pred, meta)
-                self.log(f"val_{metric_name}", metric.detach(),
-                         prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
-                for key, value in metric_meta.items():
-                    if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
-                        self.log(f"val_{key}", value,
-                                 prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
-                meta.update(metric_meta)
-
-        loss = self.aggregate_losses(losses)
-        self.log(f"{stage}_loss", loss.detach(), prog_bar=(stage == "train"),
-                 on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
-        for key, value in meta.items():
-            if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
-                self.log(f"{stage}_{key}", value,
-                         prog_bar=False, on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
-        return loss
 
     # ------------------------------------------------------------------
     # test_step is overridden here: it handles labels, plotter, export
@@ -252,8 +119,9 @@ class AEBase(CENetBase, ABC):
                 if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
                     self.log(f"test_{key}", value, prog_bar=False, on_step=False, on_epoch=True, batch_size=batch_size)
             meta.update(metric_meta)
+
         if self.hparams.test_plotter is not None:
-            self.plotter(data, latent, pred, labels, meta)
+            self._plot_test(data, latent, pred, labels, meta)
         if self.hparams.export_latent:
             self.export_latent(latent, labels)
         return meta['mae'] if 'mae' in meta else torch.tensor(0.0)
@@ -262,22 +130,7 @@ class AEBase(CENetBase, ABC):
     # Utilities
     # ------------------------------------------------------------------
 
-    def plotter(self, data, latent, pred, labels, meta) -> None:
-        if self.hparams.test_plotter is None:
-            return
-        if self.hparams.test_plotter == "LDplotter":
-            from collective_encoder.plotters.latent_space_plotter import LDplotter
-            labels_names = self.trainer.datamodule.label_list
-            assert len(labels_names) == labels.shape[1], \
-                f"Labels names and labels do not match. {len(labels_names)} != {labels.shape[1]}"
-            labels_dict = {labels_names[i]: labels[:, i] for i in range(labels.shape[1])}
-            LDplotter(data, latent, pred, labels_dict, meta,
-                      logger=self.logger.experiment, outstem=self.hparams.outname)
-        else:
-            raise ValueError(f"Unknown plotter: {self.hparams.test_plotter}")
-
-    def plot_extra(self, data_x, data_y, latents) -> None:
-        return
+    
 
     def get_latent(self, data_x: torch.Tensor) -> torch.Tensor:
         data_x = data_x.float()

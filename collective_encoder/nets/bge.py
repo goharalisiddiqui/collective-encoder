@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Union
+from typing import Any, List, Optional, Dict, Tuple, Union
 
 import numpy as np
 
@@ -11,6 +11,14 @@ from .modules.graph_decoder import BondGraphDecoder
 
 
 class BondGraphEncoderDecoder(CENetBase):
+    _REQUIRED_ARGS = ['encoder_args', 'decoder_args']
+    _OPTIONAL_ARGS = CENetBase._OPTIONAL_ARGS + {
+        'loss_fn': nn.MSELoss(),
+        'loss_weights': [1.0, 1.0, 1.0, 1.0],
+        'out_labels': ['bond_dist', 'angle', 'dihedral_cos', 'dihedral_sin'],
+        'loss_latent_weight': 0.0,
+        
+    }
     """PyTorch Lightning module for bond-graph autoencoder (BGE).
 
     Encodes molecular graphs to a latent space and decodes back to
@@ -34,60 +42,47 @@ class BondGraphEncoderDecoder(CENetBase):
         out_labels: Names for the four output channels.
         outname: Output stem for saved files.
     """
-
+    
     def __init__(
         self,
         encoder_args: Dict[str, Union[int, float]],
         decoder_args: Dict[str, Union[int, float]],
-        datamodule=None,
-        lrate: float = 1e-4,
-        weight_decay: float = 0.0,
-        normIn: bool = False,
-        scheduler: bool = False,
-        scheduler_args: Optional[Dict] = None,
-        loss_fn: Optional[nn.Module] = None,
-        loss_weights: Optional[List[float]] = None,
-        loss_latent_weight: float = 0.0,
-        out_labels: Optional[List[str]] = None,
-        outname: str = './BGE_untitled/BGE_',
+        datamodule = None,
+        args: Dict[str, Any] = None,
+        **kwargs
     ):
         self.save_hyperparameters(ignore=["datamodule"])
-        super().__init__()
+        super().__init__(args=args, **kwargs)
 
-        if out_labels is None:
-            out_labels = ['bond_dist', 'angle', 'dihedral_cos', 'dihedral_sin']
-        assert len(out_labels) == 4, "out_labels must be a list of 4 strings"
+        # Some check
+        assert len(self.out_labels) == 4, "out_labels must be a list of 4 strings"
+        assert len(self.loss_weights) == 4, "loss_weights must be None or a list of 4 floats"
 
-        assert loss_weights is None or len(loss_weights) == 4, \
-            "loss_weights must be None or a list of 4 floats"
-        if loss_weights is None:
-            loss_weights = [1.0, 1.0, 1.0, 1.0]
-        self.loss_weights = loss_weights
         self.latent_dim = encoder_args['latent_dim']
 
         if datamodule is not None:
             self._init_decoder(datamodule)
         else: # Initialize decoder lazily on first decode call (requires trainer/datamodule access)
-            self.gnn_dec = None
+            self.decoder_net = None
 
-        self.gnn_enc = BondGraphEncoder(**encoder_args)
-        self.loss_fn = loss_fn if loss_fn is not None else nn.MSELoss()
-        self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
-        self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
-        num_norm = encoder_args['node_feat'] + encoder_args['edge_feat']
-        self.register_buffer('Mean', torch.zeros(num_norm))
-        self.register_buffer('Range', torch.ones(num_norm))
+        self.encoder_net = BondGraphEncoder(**encoder_args)
+        
+        self.losses = {
+            'encdec': self.loss_encdec,
+        }
+        if self.hparams.loss_latent_weight > 0.0:
+            self.losses['latent'] = self.loss_latent
+        
+        self.metrics = {
+            'encdec': self.metric_encdec
+        }
+
+    def get_norm_len(self):
+        return self.hparams.encoder_args['node_feat'] + self.hparams.encoder_args['edge_feat']
 
     # ------------------------------------------------------------------
     # Optimizer and scheduler hooks
     # ------------------------------------------------------------------
-
-    def _build_optimizer(self) -> torch.optim.Optimizer:
-        return torch.optim.AdamW(
-            self.parameters(),
-            lr=self.hparams.lrate,
-            weight_decay=self.hparams.weight_decay,
-        )
 
     def _get_scheduler_args(self) -> dict:
         defaults: dict = {
@@ -127,13 +122,13 @@ class BondGraphEncoderDecoder(CENetBase):
         }
         gnn_dec_args = self.hparams.decoder_args.copy()
         gnn_dec_args.pop('template_khop', None)
-        self.gnn_dec = BondGraphDecoder(**gnn_dec_kwargs, **gnn_dec_args)
+        self.decoder_net = BondGraphDecoder(**gnn_dec_kwargs, **gnn_dec_args)
 
     # ------------------------------------------------------------------
     # Graph-specific normalization (cannot be shared: operates on PyG Data)
     # ------------------------------------------------------------------
 
-    def normalize(self, data):
+    def _normalize(self, data):
         """Normalize node and edge attributes of a PyG Data object in-place.
 
         Concatenated ``Mean``/``Range`` buffers are split by node/edge dimension.
@@ -175,7 +170,7 @@ class BondGraphEncoderDecoder(CENetBase):
         setattr(data, '_normalized', True)
         return data
 
-    def denormalize(self, data):
+    def _denormalize(self, data):
         """Inverse of :meth:`normalize` for a Data object."""
         if not self.normIn:
             return data
@@ -214,11 +209,8 @@ class BondGraphEncoderDecoder(CENetBase):
     # Encode / decode / forward
     # ------------------------------------------------------------------
 
-    def encode(self, data):
-        data = self.normalize(data)
-        return self.gnn_enc(data)
-
-    def decode(self, latent):
+    def decoder(self, z: torch.Tensor) -> Tuple[torch.Tensor, dict]:
+        # We lazily initialize the decoder if it wasn't initialized at construction time.
         if self.gnn_dec is None:
             try:
                 self.trainer
@@ -228,12 +220,7 @@ class BondGraphEncoderDecoder(CENetBase):
             if datamodule is None:
                 raise RuntimeError("Decoder not initialized and trainer datamodule not found.")
             self._init_decoder(datamodule)
-        return self.gnn_dec(latent)
-
-    def forward(self, data):
-        latent = self.encode(data)
-        pred = self.decode(latent)
-        return pred, latent
+        return super().decoder(z)
 
     # ------------------------------------------------------------------
     # Loss
@@ -250,32 +237,25 @@ class BondGraphEncoderDecoder(CENetBase):
             out_labels[3]: batch.y_torsions_sin.view(num_graphs, -1),
         }
 
-    def loss_encdec(self, pred: dict, labels: dict, stage: str, batch_size=None) -> torch.Tensor:
+    def loss_encdec(self, input, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         losses = {}
         for out_label, weight in zip(self.hparams.out_labels, self.loss_weights):
-            losses[out_label] = self.loss_fn(pred[out_label], labels[out_label]) * weight
-            self.log(f"{stage}_recon_{out_label}_loss", losses[out_label],
-                     prog_bar=False, on_epoch=True, batch_size=batch_size)
+            losses[out_label] = self.loss_fn(output[out_label], labels[out_label]) * weight
 
-        self.log(f"{stage}_recon_loss", sum(losses.values()),
-                 prog_bar=(stage == "train"), on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
+        return sum(losses.values()), losses
 
-        with torch.no_grad():
-            mae = {}
-            for out_label in self.hparams.out_labels:
-                mae[out_label] = (
-                    torch.abs(pred[out_label] - labels[out_label]).mean()
-                    if labels[out_label].numel() > 0
-                    else torch.tensor(0.0, device=pred[out_label].device)
-                )
-                self.log(f"{stage}_recon_{out_label}_mae", mae[out_label],
-                         prog_bar=False, on_epoch=True, batch_size=batch_size)
-            self.log(f"{stage}_recon_mae", sum(mae.values()) / len(mae),
-                     prog_bar=(stage != "train"), on_epoch=True, batch_size=batch_size)
+    def metric_encdec(self, input, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        mae = {}
+        for out_label in self.hparams.out_labels:
+            mae[out_label] = (
+                torch.abs(output[out_label] - labels[out_label]).mean()
+                if labels[out_label].numel() > 0
+                else torch.tensor(0.0, device=output[out_label].device)
+            )
+        recon_mae = sum(mae.values()) / len(mae)
+        return recon_mae, mae
 
-        return sum(losses.values())
-
-    def loss_latent(self, latent: torch.Tensor, stage: str) -> torch.Tensor:
+    def loss_latent(self, input, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Encourage sequential latent points to be close and equidistant."""
         loss_latent = torch.tensor(0.0, device=latent.device)
         if latent.size(0) > 1:
@@ -283,33 +263,12 @@ class BondGraphEncoderDecoder(CENetBase):
             loss_latent = torch.mean(batch_dist)
         if latent.size(0) > 2:
             loss_latent = loss_latent + torch.var(batch_dist)
-        self.log(f"{stage}_loss_latent", loss_latent,
-                 prog_bar=False, on_step=(stage == "train"), on_epoch=True)
-        return loss_latent
-
-    def step(self, batch, stage: str) -> torch.Tensor:
-        pred, latent = self.forward(batch)
-        labels = self.extract_labels(batch)
-        batch_size = self.trainer.datamodule.hparams.batch_size if self.trainer and self.trainer.datamodule else None
-
-        loss = self.loss_encdec(pred, labels, stage, batch_size=batch_size)
-
+        return loss_latent, {}
+    
+    def aggregate_losses(self, losses):
+        loss = losses['encdec']
         if self.hparams.loss_latent_weight > 0.0:
-            loss = loss + self.hparams.loss_latent_weight * self.loss_latent(latent, stage)
-
-        self.log(f"{stage}_loss", loss, prog_bar=(stage == "train"),
-                 on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
+            loss = loss + self.hparams.loss_latent_weight * losses['latent']
         return loss
-
-    # ------------------------------------------------------------------
-    # Utilities
-    # ------------------------------------------------------------------
-
-    def get_latent(self, data):
-        return self.encode(data)
-
-    def get_decoded(self, latent):
-        return self.decode(latent)
-
 
 __all__ = ["BondGraphEncoderDecoder"]
