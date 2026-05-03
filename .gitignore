@@ -13,6 +13,6 @@ wandb/
 .env
 lightning_logs/
 *.log
-*test*
+tests/
 md17_data/
 **.egg-info/
