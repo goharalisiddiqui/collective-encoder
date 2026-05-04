@@ -132,7 +132,7 @@ class VAE(AEBase):
             hparams["C_auto"] = True
         if self.D_reg is not None:
             hparams["D_reg"] = self.D_reg
-        self.log_msg_dict("VAE hparams:", hparams)
+        self.ce_log_dict("VAE hparams:", hparams)
 
     def init_network(self):
         self.log_msg(f"[Initializing {type(self).__name__} Module] hidden layers: {self.network}")

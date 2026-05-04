@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 import yaml
 
@@ -42,7 +42,7 @@ def validate_duplicate_keys(config_path: str) -> bool:
         raise RuntimeError(f"Error reading config: {e}")
 
 
-def validate_required_fields(config: Dict[str, Any], fields: List[str] = REQUIRED_TOP_LEVEL) -> bool:
+def validate_required_fields(config: Dict[str, Any], fields: List[str] = REQUIRED_TOP_LEVEL) -> Union[List[str], bool]:
     """
     Validate that all required fields are present in the config dictionary.
     Raises ValueError if any required field is missing, otherwise returns True.
@@ -54,7 +54,10 @@ def validate_required_fields(config: Dict[str, Any], fields: List[str] = REQUIRE
     if len(config) == 0:
         raise ValueError(f"Config is empty, expected a dictionary with required fields: {fields}.")
 
+    missing_fields = []
     for k in fields:
         if k not in config:
-            raise ValueError(f"Required config key '{k}' missing.")
+            missing_fields.append(k)
+    if len(missing_fields) > 0:
+        return missing_fields
     return True

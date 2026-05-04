@@ -24,6 +24,20 @@ class BaseTestPlotter(CEModule, ABC):
         super().__init__(args, **kwargs)
         self.outpath = os.path.join(self.run_dir, type(self).__name__+"_plots")
         os.makedirs(self.outpath, exist_ok=True)
+        
+        logger_type = None
+        if self.logger is not None:
+            try:
+                import wandb
+                if isinstance(self.logger, wandb.sdk.wandb_run.Run):
+                    logger_type = type(self.logger).__name__
+                else:
+                    self.log_warn(f"Logger is unknown type {type(self.logger)}, cannot log image to logger.")
+            except ImportError:
+                self.warn("Wandb not installed, cannot log image to wandb.")
+                pass
+        self.logger_type = logger_type
+        self.log_info(f"Initialized {type(self).__name__} with logger of type {logger_type} and output path {self.outpath}")
 
     @abstractmethod
     def plot(self, data, latent, pred, labels, meta) -> None:
@@ -32,16 +46,9 @@ class BaseTestPlotter(CEModule, ABC):
     def log_image(self, fig, name):
         fn = os.path.join(self.outpath, f"{name}.png")
         fig.savefig(fn, dpi=150)
-        if self.logger is not None:
-            try:
-                import wandb
-                if isinstance(self.logger, wandb.sdk.wandb_run.Run):
-                    self.logger.log({f"[LDplotter] {name}": wandb.Image(fn)})
-                else:
-                    self.log_warn(f"Logger is unknown type {type(self.logger)}, cannot log image to logger.")
-            except ImportError:
-                self.warn("Wandb not installed, cannot log image to wandb.")
-                pass
+        if self.logger_type == "WandbRun":
+            import wandb
+            self.logger.log({f"[LDplotter] {name}": wandb.Image(fn)})
     
     def plot_2dscatter(self, x: np.ndarray, y: np.ndarray,
                        xerr: np.ndarray=None, yerr: np.ndarray=None,

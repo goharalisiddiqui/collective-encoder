@@ -94,7 +94,6 @@ class BondGraphDataset(BaseDataset, Dataset):
     _IDENTIFIER = "GRAPH"
     _REQUIRED_ARGS = ["bond_indices"]
     _OPTIONAL_ARGS = {
-        'workdir': './.bge.tmp',
         'precompute_graphs': True,
         'parallel': True,
     }
@@ -116,7 +115,7 @@ class BondGraphDataset(BaseDataset, Dataset):
         
         self.structures = structures
         self.labels = labels
-        
+       
         self.bond_indices = [tuple(map(int, b)) for b in self.bond_indices]  # Ensure bond indices are tuples of ints
         # Validate bond indices
         n_atoms0 = len(structures[0])
@@ -124,9 +123,9 @@ class BondGraphDataset(BaseDataset, Dataset):
             assert 0 <= i < n_atoms0 and 0 <= j < n_atoms0, f"Bond index out of range: ({i},{j}) for n_atoms={n_atoms0}"
 
         self._calculate_label_indices()
-        self.log_list("Bond set (atom index pairs)", self.bond_indices)
-        self.log_list("Angle set (atom index triplets)", self.angle_index)
-        self.log_list("Torsion set (atom index quartets)", self.torsion_index)
+        self.ce_log_list("Bond set (atom index pairs)", self.bond_indices)
+        self.ce_log_list("Angle set (atom index triplets)", self.angle_index)
+        self.ce_log_list("Torsion set (atom index quartets)", self.torsion_index)
         
         if self.precompute_graphs:
             self.log_msg("Precomputing graph representations for all structures...")
@@ -136,8 +135,10 @@ class BondGraphDataset(BaseDataset, Dataset):
         self.log_msg(f"Loaded graph dataset with {self.len()} graphs") 
         self.log_msg(f"Number of bonds (nodes): {len(self.bond_indices)}") 
         sample = self.get(0)
-        self.log_msg(f"Node feature size: {sample.x.shape[1]}") 
-        self.log_msg(f"Edge feature size: {sample.edge_attr.shape[1]}") 
+        self.node_feat = sample.x.shape[1]
+        self.edge_feat = sample.edge_attr.shape[1]
+        self.log_msg(f"Node feature size: {self.node_feat}") 
+        self.log_msg(f"Edge feature size: {self.edge_feat}") 
         self.log_msg(f"Total number of edges: {sample.edge_index.shape[1]}") 
     
     def _compute_graph(self, idx: int) -> Data:
@@ -156,7 +157,7 @@ class BondGraphDataset(BaseDataset, Dataset):
         self.torsion_index = torsion_atoms
     
     def _precompute_graphs(self):
-        precomputed_graphs_dir = create_rundir(self.workdir, "precomputed_graphs", 0, overwrite=False)
+        precomputed_graphs_dir = create_rundir(self.run_dir, "precomputed_graphs", 0, overwrite=False)
         os.makedirs(precomputed_graphs_dir, exist_ok=True)
 
         labels_list = self.labels if self.labels is not None else [None] * self.len()
@@ -231,11 +232,17 @@ class BondGraphDataset(BaseDataset, Dataset):
 
     def len(self) -> int: # for PyG Dataset compatibility
         return len(self.structures)
+    
+    def get_num_node_features(self) -> int:
+        return self.node_feat
+
+    def get_num_edge_features(self) -> int:
+        return self.edge_feat
 
     def get(self, idx: int) -> Data:  # for PyG Dataset compatibility
         if self.precompute_graphs:
             graph_path = os.path.join(self.precompute_graphs_dir, f"graph_{idx}.pt")
-            graph = torch.load(graph_path)
+            graph = torch.load(graph_path, weights_only=False)
         else:
             graph = self._compute_graph(idx)
         return graph

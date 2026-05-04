@@ -10,7 +10,7 @@ class BaseDataReader(CEModule, ABC):
     # To be overridden by subclasses
     _IDENTIFIER: str = None
     
-    def __init__(self,**kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     @abstractmethod

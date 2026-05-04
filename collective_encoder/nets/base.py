@@ -205,6 +205,9 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         self.log_msg("[Optimization Settings]")
         self.log_msg(f"  Learning rate      = {self.lrate}")
         self.log_msg(f"  l2 regularization  = {self.weight_decay}")
+        self.log_msg(f"  norm_in            = {self.normIn}")
+        self.log_msg(f"  export_latent      = {self.export_latent}")
+        self.log_msg(f"  ouptut_directory     = {self.output_directory}")
         if self.scheduler:
             extra = self.scheduler_args or {}
             self.log_msg(f"  LR scheduler       = Enabled {extra}")
@@ -238,9 +241,15 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         from collective_encoder.testplotters.resolver import get_testplotter
         
         label_names = self.trainer.datamodule.get_label_names()
-        if len(label_names) != labels.shape[1]:
-            self.raise_error(f"Number of label names ({len(label_names)}) does not match number of label columns ({labels.shape[1]}).")
-        labels_dict = {name: labels[:, i] for i, name in enumerate(label_names)}
+        if isinstance(labels, torch.Tensor):
+            if len(label_names) != labels.shape[1]:
+                self.raise_error(f"Number of label names ({len(label_names)}) "
+                                 f"does not match number of label columns ({labels.shape[1]}).")
+            labels_dict = {name: labels[:, i] for i, name in enumerate(label_names)}
+        elif isinstance(labels, dict):
+            labels_dict = labels
+        else:
+            self.raise_error(f"Unexpected labels type: {type(labels)}")
         for name, args in self.test_plotters.items():
             try:
                 plotter_cls = get_testplotter(name)
@@ -277,7 +286,7 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         return results
     
     def _batch_split(self, batch):
-        if not isinstance(batch, (tuple, list)  ) or len(batch) != 2:
+        if not isinstance(batch, (tuple, list)) or len(batch) != 2:
             self.raise_error(f"Expected batch to be a tuple or list of (data, labels), got "
                              f"{type(batch)} with length {len(batch) if isinstance(batch, (tuple, list)) else 'N/A'}")
         data, labels = batch
@@ -289,7 +298,7 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     def _step(self, batch, stage: str) -> torch.Tensor:
         data, labels = self._batch_split(batch)
         output, latent, meta = self(data)
-        batch_size = self.trainer.datamodule.hparams.batch_size \
+        batch_size = self.trainer.datamodule.batch_size \
             if self.trainer and self.trainer.datamodule else None
 
         with torch.no_grad():

@@ -123,7 +123,7 @@ class DistancesDataset(Dataset, BaseDataset):
         self.num_inputs = len(pairs)
         
         if self.atm_ids is not None:
-            self.log_list("Atom IDs", self.atm_ids)
+            self.ce_log_list("Atom IDs", self.atm_ids)
             for ind, (i, j) in enumerate(pairs):
                 self.log_msg(f"Distance {ind}: {self.atm_ids[i]} <-> {self.atm_ids[j]}")
         

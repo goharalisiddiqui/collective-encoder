@@ -26,15 +26,6 @@ class CEModule(ABC):
         self.run_dir = kwargs.get("run_dir", None)
         self.run_args = kwargs
 
-        if self._REQUIRED_ARGS is not None:
-            validate_required_fields(args, fields=self._REQUIRED_ARGS)
-
-        for key, default_value in self._OPTIONAL_ARGS.items():
-            if key not in args:
-                args[key] = default_value
-        for key in args:
-            self.__setattr__(key, args[key])
-
         # Use _ce_log to avoid shadowing pl.LightningModule's self.logger property
         # when CEModule is mixed into Lightning classes.
         self._ce_log = logging.getLogger(root_logger_name + "." + self.__class__.__name__)
@@ -42,6 +33,18 @@ class CEModule(ABC):
             self._ce_log.info("=" * 80)
             self._ce_log.info("[Initializing module: %s]", self.__class__.__name__)
             self._ce_log.info("=" * 80)
+            self.ce_log_dict("Initialization args", args, indent=2)
+
+        if self._REQUIRED_ARGS is not None:
+            res = validate_required_fields(args, fields=self._REQUIRED_ARGS)
+            if isinstance(res, list):
+                self.raise_error(f"Missing required args: {res} in {self.__class__.__name__} initialization.")
+
+        for key, default_value in self._OPTIONAL_ARGS.items():
+            if key not in args:
+                args[key] = default_value
+        for key in args:
+            self.__setattr__(key, args[key])
 
     def get_run_args(self) -> Dict[str, Any]:
         """Return the dict of arguments used to initialize this module."""
@@ -56,7 +59,8 @@ class CEModule(ABC):
         self._ce_log.error(message)
     
     def log_info(self, message: str) -> None:
-        self._ce_log.info(message)
+        if self.verbose:
+            self._ce_log.info(message)
     
     def log_debug(self, message: str) -> None:
         self._ce_log.debug(message)
@@ -71,10 +75,9 @@ class CEModule(ABC):
 
     def log_msg(self, message: str) -> None:
         """Emit an INFO-level log message (no-op when ``verbose=False``)."""
-        if self.verbose:
-            self._ce_log.info(message)
+        self.log_info(message)
 
-    def log_list(self, message: str, values: List[Any]) -> None:
+    def ce_log_list(self, message: str, values: List[Any]) -> None:
         """Emit an INFO-level log message followed by each item in *values*."""
         if self.verbose:
             self._ce_log.info("%s:", message)
@@ -87,7 +90,7 @@ class CEModule(ABC):
         self._ce_log.exception(message, exc_info=error_type(message))
         raise error_type(message)
 
-    def log_msg_dict(self, message: str, data: Dict[str, Any], indent: int = 2) -> None:
+    def ce_log_dict(self, message: str, data: Dict[str, Any], indent: int = 2) -> None:
         """Emit *message* followed by each key-value pair in *data*, indented.
 
         Nested dicts are printed with an extra level of indentation so the

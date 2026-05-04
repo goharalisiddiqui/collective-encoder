@@ -1,6 +1,5 @@
-import random
-from abc import ABC, abstractmethod
-from typing import List, Any
+from abc import ABC
+from typing import Dict, List, Any
 
 import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -12,7 +11,7 @@ from collective_encoder.common.module import CEModule
 import gslibs.validation as gsv
 
 
-class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
+class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
     """
     Base class for all PyTorch Lightning DataModules in the collective encoder framework.
     Provides common functionality for data normalization, dataloader creation, and batch handling.
@@ -36,37 +35,36 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
     _COMPATIBLE_DATAREADERS: List[str] = []
     _COMPATIBLE_DATASETS: List[str] = []
     _COMPATIBLE_LABELERS: List[str] = []
+    _REQUIRED_ARGS = ['train_size', 'batch_size']
+    _OPTIONAL_ARGS = {
+        'validation_size': 0,
+        'val_batch_size': 0,
+        'test_size': 0,
+        'test_batch_size': 0,
+        'norm_type': 'standard',
+        'num_workers': 1,
+    }
 
     def __init__(self,
-                 train_size: int,
-                 batch_size: int,
-                 validation_size: int = 0,
-                 val_batch_size: int = 0,
-                 test_size: int = 0,
-                 test_batch_size: int = 0,
-                 norm_type: str = 'standard',
-                 num_workers: int = 1,
+                 args: Dict[str, Any] = None,
                  **kwargs,
                  ):
-        super().__init__(**kwargs)
+        pl.LightningDataModule.__init__(self)
+        CEModule.__init__(self, args, **kwargs)
 
         # Input validation
         gsv.check_int(
             non_negative=True,
-            train_size=train_size,
-            batch_size=batch_size,
-            validation_size=validation_size,
-            val_batch_size=val_batch_size,
-            test_size=test_size,
-            test_batch_size=test_batch_size,
-            num_workers=num_workers,
+            train_size=self.train_size,
+            batch_size=self.batch_size,
+            validation_size=self.validation_size,
+            val_batch_size=self.val_batch_size,
+            test_size=self.test_size,
+            test_batch_size=self.test_batch_size,
+            num_workers=self.num_workers,
         )
         self.save_hyperparameters()
 
-        # Common attributes
-        self.train_size = train_size
-        self.validation_size = validation_size
-        self.test_size = test_size
 
         # Initialize common data attributes
         self.train_data = None
@@ -83,25 +81,25 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
 
     def _check_batch_sizes(self):
         """Validate batch sizes against dataset sizes."""
-        if self.hparams.val_batch_size == 0:
-            self.hparams.val_batch_size = self.validation_size
-        if self.hparams.test_batch_size == 0:
-            self.hparams.test_batch_size = self.test_size
+        if self.val_batch_size == 0:
+            self.val_batch_size = self.validation_size
+        if self.test_batch_size == 0:
+            self.test_batch_size = self.test_size
 
-        assert self.hparams.batch_size <= self.train_size, "Batch size must be less than or equal to the training size"
+        assert self.batch_size <= self.train_size, "Batch size must be less than or equal to the training size"
         if self.validation_size > 0:
-            assert self.hparams.val_batch_size <= self.validation_size, "Validation batch size must be less than or equal to the validation size"
+            assert self.val_batch_size <= self.validation_size, "Validation batch size must be less than or equal to the validation size"
         if self.test_size > 0:
-            assert self.hparams.test_batch_size <= self.test_size, "Test batch size must be less than or equal to the test size"
+            assert self.test_batch_size <= self.test_size, "Test batch size must be less than or equal to the test size"
 
     def set_batch_size(self, batch_size: int):
         """Set the batch size for training."""
-        self.hparams.batch_size = batch_size
+        self.batch_size = batch_size
         self._check_batch_sizes()
     
     def set_val_batch_size(self, val_batch_size: int):
         """Set the batch size for validation."""
-        self.hparams.val_batch_size = val_batch_size
+        self.val_batch_size = val_batch_size
         self._check_batch_sizes()
     
     def fit_target_scaler(self):
@@ -109,12 +107,12 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
         if self.target_scaler is not None:
             return
 
-        if self.hparams.norm_type == 'standard':
+        if self.norm_type == 'standard':
             self.target_scaler = StandardScaler()
-        elif self.hparams.norm_type == 'minmax':
+        elif self.norm_type == 'minmax':
             self.target_scaler = MinMaxScaler()
         else:
-            raise ValueError(f"Normalization type {self.hparams.norm_type} not supported")
+            raise ValueError(f"Normalization type {self.norm_type} not supported")
 
         # Collect normalization data from all available datasets
         parts = [self.train_data.get_norm_data()]
@@ -123,6 +121,7 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
         if self.test_data:
             parts.append(self.test_data.get_norm_data())
         data_to_normalize = np.vstack(parts)
+        data_to_normalize = data_to_normalize.reshape(data_to_normalize.shape[0], -1)  # Flatten if necessary
         self.target_scaler.fit(data_to_normalize)
 
     # Common dataloader methods
@@ -134,7 +133,7 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
                 batch_size=batch_size,
                 shuffle=shuffle,
                 drop_last=True,
-                num_workers=self.hparams.num_workers,
+                num_workers=self.num_workers,
                 pin_memory=True
             )
         else:
@@ -143,25 +142,25 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
                 batch_size=batch_size,
                 shuffle=shuffle,
                 drop_last=True,
-                num_workers=self.hparams.num_workers,
+                num_workers=self.num_workers,
                 pin_memory=True
             )
 
     def train_dataloader(self):
         """Return training dataloader."""
-        return self.get_dataloader(self.train_data, self.hparams.batch_size, shuffle=True)
+        return self.get_dataloader(self.train_data, self.batch_size, shuffle=True)
 
     def val_dataloader(self):
         """Return validation dataloader."""
         if self.val_data is None or len(self.val_data) == 0:
             raise ValueError("Validation data is not available")
-        return self.get_dataloader(self.val_data, self.hparams.val_batch_size, shuffle=False)
+        return self.get_dataloader(self.val_data, self.val_batch_size, shuffle=False)
 
     def test_dataloader(self):
         """Return test dataloader."""
         if self.test_data is None or len(self.test_data) == 0:
             raise ValueError("Test data is not available")
-        return self.get_dataloader(self.test_data, self.hparams.test_batch_size, shuffle=False)
+        return self.get_dataloader(self.test_data, self.test_batch_size, shuffle=False)
 
     def predict_dataloader(self):
         """Return prediction dataloader."""
@@ -195,7 +194,7 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
     def get_scaler_mean(self):
         """Get the mean from the target scaler."""
         self.fit_target_scaler()
-        if self.hparams.norm_type == 'minmax':
+        if self.norm_type == 'minmax':
             return self.target_scaler.data_min_
         return self.target_scaler.mean_
 
@@ -241,7 +240,7 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
 
     def set_num_workers(self, num_workers: int):
         """Set the number of workers for data loading."""
-        self.hparams.num_workers = num_workers
+        self.num_workers = num_workers
     
     def get_label_names(self) -> List[str]:
         """Get the names of the label columns produced by the labeler."""
@@ -264,15 +263,12 @@ class BaseDataModule(pl.LightningDataModule, CEModule, ABC):
     
     def check_module_compatibility(self):
         """Check if the provided datareader, dataset, and labeler types are compatible with this DataModule."""
-        if hasattr(self, 'hparams') and hasattr(self.hparams, 'datareader_type') \
-                                and self.hparams.datareader_type is not None:
-            self.check_datareader_compatibility(self.hparams.datareader_type)
-        if hasattr(self, 'hparams') and hasattr(self.hparams, 'dataset_type') \
-                                and self.hparams.dataset_type is not None:
-            self.check_dataset_compatibility(self.hparams.dataset_type)
-        if hasattr(self, 'hparams') and hasattr(self.hparams, 'labeler_type') \
-                                and self.hparams.labeler_type is not None:
-            self.check_labeler_compatibility(self.hparams.labeler_type)
+        if hasattr(self, 'datareader_type') and self.datareader_type is not None:
+            self.check_datareader_compatibility(self.datareader_type)
+        if hasattr(self, 'dataset_type') and self.dataset_type is not None:
+            self.check_dataset_compatibility(self.dataset_type)
+        if hasattr(self, 'labeler_type') and self.labeler_type is not None:
+            self.check_labeler_compatibility(self.labeler_type)
 
     def check_datareader_compatibility(self, datareader_id : str):
         """Check if the provided datareader type is compatible with this DataModule."""

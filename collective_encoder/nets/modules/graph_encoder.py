@@ -25,15 +25,15 @@ class BondGraphEncoder(nn.Module):
     """
     def __init__(
         self,
-        node_feat: int = 3,
-        edge_feat: int = 3,
+        node_feat: int,
+        edge_feat: int,
+        latent_dim: int,
         node_embed_dim: int = 10,
         edge_embed_dim: int = 2,
         hidden_dim: int = 128,
         num_layers: int = 4,
         heads: int = 4,
         set2set_steps: int = 3,
-        latent_dim: int = 256,
         dropout: float = 0.0,
     ):
         super().__init__()

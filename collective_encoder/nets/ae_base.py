@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Tuple, Union, Dict
 
+import numpy as np
+
 import torch
 import torch.nn.functional as F
 
@@ -24,8 +26,8 @@ class MetatomicModelAE(torch.nn.Module):
     def normalize(self, x: torch.Tensor):
         if not self.normIn:
             return x
-        mean_expanded = self.Mean.view(1, -1).expand_as(x)
-        range_expanded = self.Range.view(1, -1).expand_as(x)
+        mean_expanded = self.Mean.view(1, *(x.shape[1:])).expand(x.shape)
+        range_expanded = self.Range.view(1, *(x.shape[1:])).expand(x.shape)
         return (x - mean_expanded) / range_expanded
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -85,13 +87,23 @@ class AEBase(CENetBase, ABC):
         return self.network[0]
 
     def _normalize(self, x: torch.Tensor) -> torch.Tensor:
-        mean_expanded = self.Mean.view(1, -1).expand_as(x)
-        range_expanded = self.Range.view(1, -1).expand_as(x)
+        if self.Mean.numel() != np.prod(x.shape[1:]):
+            self.raise_error(f"Mean and Range buffers must have the same number" 
+                             f" of elements as the input features. Got Mean shape:"
+                             f" {self.Mean.shape}, Range shape: {self.Range.shape},"
+                             f" input shape: {x.shape}")
+        mean_expanded = self.Mean.view(1, *(x.shape[1:])).expand(x.shape)
+        range_expanded = self.Range.view(1, *(x.shape[1:])).expand(x.shape)
         return (x - mean_expanded) / range_expanded
 
     def _denormalize(self, x: torch.Tensor) -> torch.Tensor:
-        mean_expanded = self.Mean.view(1, -1).expand_as(x)
-        range_expanded = self.Range.view(1, -1).expand_as(x)
+        if self.Mean.numel() != np.prod(x.shape[1:]):
+            self.raise_error(f"Mean and Range buffers must have the same number" 
+                             f" of elements as the input features. Got Mean shape:"
+                             f" {self.Mean.shape}, Range shape: {self.Range.shape},"
+                             f" input shape: {x.shape}")
+        mean_expanded = self.Mean.view(1, *(x.shape[1:])).expand(x.shape)
+        range_expanded = self.Range.view(1, *(x.shape[1:])).expand(x.shape)
         return x * range_expanded + mean_expanded
 
     # ------------------------------------------------------------------

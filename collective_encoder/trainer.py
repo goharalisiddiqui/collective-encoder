@@ -63,41 +63,7 @@ def train(config_path: str, debug: bool = False):
         torch.manual_seed(0)
         np.random.seed(0)
         print("Running in debug mode.")
-
     validate_required_fields(config)
-    _KNOWN_CONFIG_KEYS = {
-        'debug', 'outpath', 'outfolder', 'overwrite', 'nexp', 'output_to_file',
-        'save_checkpoint', 'save_serial_model', 'nepochs', 'lrate', 'weight_decay',
-        'nogpu', 'export_latent', 'wandb', 'wandb_project', 'wandb_entity',
-        'scheduler', 'scheduler_args', 'normIn', 'network_type', 'network_args',
-        'datamodule_type', 'datamodule_args', 'data_analyser', 'data_args',
-        'load_model', 'output_traj', 'save_metatomic', 'early_stopping',
-        'early_stopping_args', 'verbose'
-    }
-    for key in config:
-        if key not in _KNOWN_CONFIG_KEYS:
-            _log.warning("Unknown config key '%s' — will be ignored", key)
-
-    ##################################
-    # Importing Lightning Modules
-    ##################################
-    nn_type = config['network_type']
-    dm_type = config['datamodule_type']
-    
-    nn_cls = get_net(nn_type)
-    req_fields = get_required_init_args(nn_cls)
-    req_fields.remove('datamodule')
-    validate_required_fields(config['network_args'], req_fields)
-
-    dm_args = config['datamodule_args']
-    dm_cls = get_datamodule(dm_type)
-    validate_required_fields(dm_args, 
-                             get_required_init_args(dm_cls))
-    
-    dataset_type = dm_args.get('dataset_type', None)
-    if dataset_type not in nn_cls._COMPATIBLE_DATASETS:
-        raise ValueError(f"Network '{nn_type}' is not compatible with dataset" \
-                         f" '{dataset_type}'")
 
     ##################################
     # Output directory
@@ -120,15 +86,52 @@ def train(config_path: str, debug: bool = False):
                         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
                         level=logging.INFO)
     metargs = {
-        'verbose': config.get('verbose', False),
+        'verbose': config.get('verbose', True),
         'root_logger_name': __name__,
         'run_dir': run_dir,
     }
+    
+    ##################################
+    # Config validation
+    ##################################
+    _KNOWN_CONFIG_KEYS = {
+        'debug', 'outpath', 'outfolder', 'overwrite', 'nexp', 'output_to_file',
+        'save_checkpoint', 'save_serial_model', 'nepochs', 'lrate', 'weight_decay',
+        'nogpu', 'export_latent', 'wandb', 'wandb_project', 'wandb_entity',
+        'scheduler', 'scheduler_args', 'normIn', 'network_type', 'network_args',
+        'datamodule_type', 'datamodule_args', 'data_analyser', 'data_args',
+        'load_model', 'output_traj', 'save_metatomic', 'early_stopping',
+        'early_stopping_args', 'verbose', 'metatomic_metadata', 'test_plotter_type', 
+        'test_plotter_args',
+    }
+    for key in config:
+        if key not in _KNOWN_CONFIG_KEYS:
+            _log.warning("Unknown config key '%s' — will be ignored", key)
+
+    ##################################
+    # Importing Lightning Modules
+    ##################################
+    nn_type = config['network_type']
+    dm_type = config['datamodule_type']
+    
+    nn_cls = get_net(nn_type)
+    req_fields = get_required_init_args(nn_cls)
+    validate_required_fields(config['network_args'], req_fields)
+
+    dm_args = config['datamodule_args']
+    dm_cls = get_datamodule(dm_type)
+    validate_required_fields(dm_args, 
+                             get_required_init_args(dm_cls))
+    
+    dataset_type = dm_args.get('dataset_type', None)
+    if dataset_type not in nn_cls._COMPATIBLE_DATASETS:
+        raise ValueError(f"Network '{nn_type}' is not compatible with dataset" \
+                         f" '{dataset_type}'")
 
     ##################################
     # Creating Dataset
     ##################################
-    dm = dm_cls(**dm_args)
+    dm = dm_cls(dm_args, **metargs)
         
     ##################################
     # Data analysis and visualization
