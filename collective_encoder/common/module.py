@@ -25,6 +25,7 @@ class CEModule(ABC):
         root_logger_name = kwargs.get("root_logger_name", "collective_encoder")
         self.run_dir = kwargs.get("run_dir", None)
         self.run_args = kwargs
+        self.args = args
 
         # Use _ce_log to avoid shadowing pl.LightningModule's self.logger property
         # when CEModule is mixed into Lightning classes.
@@ -45,6 +46,10 @@ class CEModule(ABC):
                 args[key] = default_value
         for key in args:
             self.__setattr__(key, args[key])
+    
+    def get_args(self) -> Dict[str, Any]:
+        """Return the dict of arguments used to initialize this module."""
+        return self.args
 
     def get_run_args(self) -> Dict[str, Any]:
         """Return the dict of arguments used to initialize this module."""

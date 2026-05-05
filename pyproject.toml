@@ -63,6 +63,8 @@ all = ["collective-encoder[wandb,metatomic,dev]"]
 
 [project.scripts]
 collective-encoder-train = "collective_encoder.cli:main_train"
+collective-encoder-prepare = "collective_encoder.cli:main_prepare_dmod"
+collective-encoder-test = "collective_encoder.cli:main_test"
 
 [project.urls]
 Homepage = "https://github.com/goharalisiddiqui/collective-encoder"

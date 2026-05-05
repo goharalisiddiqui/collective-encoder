@@ -18,11 +18,3 @@ wandb_project: None
 wandb_entity: None
 scheduler: False
 normIn: False
-
-# Network (must be overridden in user config)
-network_type: VAE
-network_args: {}
-
-# Data (must be overridden in user config)
-datamodule_type: COORDINATES
-datamodule_args: {}

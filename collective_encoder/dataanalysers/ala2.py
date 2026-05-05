@@ -32,13 +32,26 @@ class Ala2DataAnalyser(BaseDataAnalyser):
         'output_chunk_length': None,
         'n_seq_per_sample': 1,
     }
+    
+    def extract_dihedrals_distances(self, data):
+        phi, psi = [], []
+        if data[0][1].shape[0] < 2:
+            self.raise_error("Expected dihedral angles in data[1], but found shape "
+                f"{data[0][1].shape}. Check that the dataset is correctly "
+                "configured for dihedral extraction.")
+        for d in tqdm(data, desc="Extracting dihedrals"):
+            phi.append(d[1][0].cpu().item())
+            psi.append(d[1][1].cpu().item())
+        phi = np.array(phi)
+        psi = np.array(psi)
+        return phi, psi
 
-    def plot_dihedrals(self, data, label = ""):
+    def extract_dihedrals_graph(self, data):
         idx_phi = 6 # [1,3,4,5]
         idx_psi = 10 # [3,4,6,8]
         
         sin_phi, cos_phi, sin_psi, cos_psi = [], [], [], []
-        for d in tqdm(data, desc="Processing dihedrals"):
+        for d in tqdm(data, desc="Extracting dihedrals"):
             sin_phi.append(d.y_torsions_sin[idx_phi].cpu().numpy())
             cos_phi.append(d.y_torsions_cos[idx_phi].cpu().numpy())
             sin_psi.append(d.y_torsions_sin[idx_psi].cpu().numpy())
@@ -46,6 +59,20 @@ class Ala2DataAnalyser(BaseDataAnalyser):
 
         phi = np.arctan2(sin_phi, cos_phi)
         psi = np.arctan2(sin_psi, cos_psi)
+
+        return phi, psi
+
+    def extract_dihedrals(self, data):
+        ds_type = self.datamodule_args.get('dataset_type', None)
+        if ds_type == "GRAPH":
+            return self.extract_dihedrals_graph(data)
+        elif ds_type == "DISTANCES":
+            return self.extract_dihedrals_distances(data)
+        else:
+            self.raise_error(f"Unsupported dataset type {ds_type} for dihedral extraction")
+
+    def plot_dihedrals(self, data, label = ""):
+        phi, psi = self.extract_dihedrals(data)
         
         # Make sequence length alternate color
         if self.input_chunk_length is not None and self.output_chunk_length is not None:

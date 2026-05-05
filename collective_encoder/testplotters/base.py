@@ -2,8 +2,6 @@ import os
 from abc import ABC, abstractmethod
 from typing import Dict
 
-import torch
-
 import numpy as np
 
 from scipy.special import comb
@@ -11,6 +9,13 @@ from scipy.special import comb
 import matplotlib.pyplot as plt
 
 from collective_encoder.common.module import CEModule
+
+try:
+    import wandb
+except ImportError:
+    _WANDB_AVAILABLE = False
+else:
+    _WANDB_AVAILABLE = True
 
 class BaseTestPlotter(CEModule, ABC):
     _IDENTIFIER = ""
@@ -27,17 +32,17 @@ class BaseTestPlotter(CEModule, ABC):
         
         logger_type = None
         if self.logger is not None:
-            try:
-                import wandb
-                if isinstance(self.logger, wandb.sdk.wandb_run.Run):
-                    logger_type = type(self.logger).__name__
-                else:
-                    self.log_warn(f"Logger is unknown type {type(self.logger)}, cannot log image to logger.")
-            except ImportError:
-                self.warn("Wandb not installed, cannot log image to wandb.")
-                pass
+            logger_type = type(self.logger).__name__
+            if logger_type == "WandbLogger":
+                if not _WANDB_AVAILABLE:
+                    self.log_warn("WandbLogger is specified but wandb package is not available. "
+                                  "Please install wandb to enable logging to WandbLogger.")
+            else:
+                self.log_warn(f"Logger is unknown type {logger_type}, "
+                              f"cannot log image to logger.")
         self.logger_type = logger_type
-        self.log_info(f"Initialized {type(self).__name__} with logger of type {logger_type} and output path {self.outpath}")
+        self.log_info(f"Initialized {type(self).__name__} with logger of "
+                      f"type {logger_type} and output path {self.outpath}")
 
     @abstractmethod
     def plot(self, data, latent, pred, labels, meta) -> None:
@@ -46,9 +51,9 @@ class BaseTestPlotter(CEModule, ABC):
     def log_image(self, fig, name):
         fn = os.path.join(self.outpath, f"{name}.png")
         fig.savefig(fn, dpi=150)
-        if self.logger_type == "WandbRun":
-            import wandb
-            self.logger.log({f"[LDplotter] {name}": wandb.Image(fn)})
+        if self.logger_type == "WandbLogger":
+            self.logger.experiment.log({
+                f"[{type(self).__name__}] {name}": wandb.Image(fn)})
     
     def plot_2dscatter(self, x: np.ndarray, y: np.ndarray,
                        xerr: np.ndarray=None, yerr: np.ndarray=None,

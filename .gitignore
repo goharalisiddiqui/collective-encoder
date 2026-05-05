@@ -2,7 +2,7 @@ __pycache__/
 *checkpoint*
 core
 run*/
-*train*/
+*train_*/
 ce_training*/
 run.sh
 run_slurm.sh

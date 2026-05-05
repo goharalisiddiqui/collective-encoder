@@ -10,14 +10,11 @@ class BaseDataAnalyser(CEModule, ABC):
     '''
     Docstring for BaseDataAnalyser
     '''
+    _REQUIRED_ARGS = ['output_dir', 'datamodule_args']
     
     def __init__(self,
-                 output_dir: str,
                  args: dict = None,
                  **kwargs):
-        self.output_dir = output_dir
-        if args is None:
-            args = {}
         super().__init__(args=args, **kwargs)
         os.makedirs(self.output_dir, exist_ok=True)
 

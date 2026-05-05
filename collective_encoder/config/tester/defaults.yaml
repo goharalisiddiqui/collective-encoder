@@ -1,0 +1,6 @@
+debug: False
+outfolder: test
+overwrite: False
+nexp: 1
+output_to_file: False
+verbose: True

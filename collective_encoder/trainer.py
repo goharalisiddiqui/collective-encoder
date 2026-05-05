@@ -30,8 +30,9 @@ from collective_encoder.dataanalysers.resolver import get_dataanalyser
 from gslibs.utils.filesystem import create_rundir, output_to_file
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
-DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'defaults.yaml')
-DEBUG_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'debug.yaml')
+DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'trainer', 'defaults.yaml')
+DEBUG_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'trainer', 'debug.yaml')
+OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 'num_workers']
 torch.set_default_dtype(torch.float64)
 ##################################
 # Arguments
@@ -109,43 +110,58 @@ def train(config_path: str, debug: bool = False):
             _log.warning("Unknown config key '%s' — will be ignored", key)
 
     ##################################
-    # Importing Lightning Modules
-    ##################################
-    nn_type = config['network_type']
-    dm_type = config['datamodule_type']
-    
-    nn_cls = get_net(nn_type)
-    req_fields = get_required_init_args(nn_cls)
-    validate_required_fields(config['network_args'], req_fields)
-
-    dm_args = config['datamodule_args']
-    dm_cls = get_datamodule(dm_type)
-    validate_required_fields(dm_args, 
-                             get_required_init_args(dm_cls))
-    
-    dataset_type = dm_args.get('dataset_type', None)
-    if dataset_type not in nn_cls._COMPATIBLE_DATASETS:
-        raise ValueError(f"Network '{nn_type}' is not compatible with dataset" \
-                         f" '{dataset_type}'")
-
-    ##################################
     # Creating Dataset
     ##################################
-    dm = dm_cls(dm_args, **metargs)
+    if 'load_datamodule' in config:
+        dmod_path = config['load_datamodule']
+        _log.info("Loading datamodule from: " + dmod_path)
+        dmod_ckpt = os.path.join(dmod_path, "datamodule.pth")
+        
+        # torch.serialization.add_safe_globals(torch.serialization.get_unsafe_globals_in_checkpoint(dmod_ckpt)) # !!! Very Unsafe, only do this if you trust the source of the checkpoint !!!
+        dm = torch.load(dmod_ckpt, weights_only=False)
+        dm_args = dm.get_args()
+        dm_override_args = config.get('datamodule_args', {})
+        for key, value in dm_override_args.items():
+            if key not in OVERRIDABLE_DMOD_ARGS:
+                raise ValueError(f"Cannot override datamodule argument '{key}'. "
+                                 f"Allowed keys: {OVERRIDABLE_DMOD_ARGS}")
+            _log.info(f"Overriding datamodule argument '{key}' with "
+                      f"value: {value}, previous value: {getattr(dm, key, 'N/A')}")
+            dm_args[key] = value
+            setattr(dm, key, value)
+    else:
+        dm_type = config['datamodule_type']
+        dm_args = config['datamodule_args']
+        dm_cls = get_datamodule(dm_type)
+        validate_required_fields(dm_args, 
+                                get_required_init_args(dm_cls))
+        
+        dataset_type = dm_args.get('dataset_type', None)
+        if dataset_type not in nn_cls._COMPATIBLE_DATASETS:
+            raise ValueError(f"Network '{nn_type}' is not compatible with dataset" \
+                            f" '{dataset_type}'")
+        dm = dm_cls(dm_args, **metargs)
         
     ##################################
     # Data analysis and visualization
     ##################################
-    if config.get('data_analyser', False):
-        analyser_cls = get_dataanalyser(config['data_analyser'])
-
-        analyser = analyser_cls(output_dir=run_dir+"/data_analysis", 
-                                data_args=config['data_args'])
-        analyser.write_data(dm.get_dataset())
+    da = config.get('data_analyser_type', None)
+    if da != None:
+        analyser_cls = get_dataanalyser(da)    
+        da_args = config.get('data_analyser_args', {})
+        da_args['datamodule_args'] = dm_args
+        da_args['output_dir'] = run_dir + "/data_analysis"
+        analyser = analyser_cls(da_args,**metargs)
+        analyser.write_data(dm.get_train_dataset(), label="train")
+        analyser.write_data(dm.get_val_dataset(), label="val")
 
     ##################################
     # Setting up the NN
     ##################################
+    nn_type = config['network_type']
+    nn_cls = get_net(nn_type)
+    req_fields = get_required_init_args(nn_cls)
+    validate_required_fields(config['network_args'], req_fields)
     nn_args = {
         'lrate': config['lrate'],
         'weight_decay': config['weight_decay'],

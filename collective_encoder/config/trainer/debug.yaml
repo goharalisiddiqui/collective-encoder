@@ -3,7 +3,7 @@
 
 nepochs: 2
 nexp: 0
-outfolder: "debug"
+outfolder: "debug_trainer"
 overwrite: true
 wandb: False
 output_to_file: True

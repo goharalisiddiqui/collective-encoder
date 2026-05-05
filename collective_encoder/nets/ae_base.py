@@ -67,8 +67,8 @@ class AEBase(CENetBase, ABC):
             self.raise_error(f"Network architecture must have at "
                              f"least 2 layers (input and latent). Got: {self.network}")
         
-        assert datamodule.hparams.dataset_type in self._COMPATIBLE_DATASETS, (
-            f"Dataset type '{datamodule.hparams.dataset_type}' is not compatible with AE. "
+        assert datamodule.dataset_type in self._COMPATIBLE_DATASETS, (
+            f"Dataset type '{datamodule.dataset_type}' is not compatible with AE. "
             f"Compatible types: {self._COMPATIBLE_DATASETS}"
         )
         
