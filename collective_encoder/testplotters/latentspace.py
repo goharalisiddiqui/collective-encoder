@@ -35,7 +35,11 @@ class LDplotter(BaseTestPlotter):
     
     def cossin_resolver(self, labels: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """
-        Resolves pairs of cosine and sine labels into angle labels. For each label name ending with '_cos', looks for a corresponding label name ending with '_sin' and combines them into a single label with the original name without the suffix, containing the angle computed from the cosine and sine values.
+        Resolves pairs of cosine and sine labels into angle labels. 
+        For each label name ending with '_cos', looks for a corresponding label 
+        name ending with '_sin' and combines them into a single label with the 
+        original name without the suffix, containing the angle computed from the 
+        cosine and sine values.
         """
         resolved_labels = {}
         for label_name, label_tensor in labels.items():
@@ -48,11 +52,13 @@ class LDplotter(BaseTestPlotter):
                     base_name = label_name[:-4]  # Remove '_cos' suffix
                     resolved_labels[base_name] = angles
                 else:
-                    self.warn(f"Cosine label '{label_name}' has no corresponding sine label '{sin_name}'. Skipping angle resolution for this label.")
+                    self.warn(f"Cosine label '{label_name}' has no corresponding "
+                              f"sine label '{sin_name}'. Skipping angle resolution for this label.")
             elif label_name.endswith('_sin'):
                 cos_name = label_name.replace('_sin', '_cos')
                 if cos_name not in labels:
-                    self.warn(f"Sine label '{label_name}' has no corresponding cosine label '{cos_name}'. Skipping angle resolution for this label.")
+                    self.warn(f"Sine label '{label_name}' has no corresponding "
+                              f"cosine label '{cos_name}'. Skipping angle resolution for this label.")
             else:
                 resolved_labels[label_name] = label_tensor
         return resolved_labels
@@ -70,18 +76,24 @@ class LDplotter(BaseTestPlotter):
         return selected_labels
         
     def plot(self, data, latent, pred, labels, meta) -> None:
+        # Convert tensors to numpy arrays if necessary
         if labels is not None:
             if isinstance(labels, dict):
                 for k in labels.keys():
-                    labels[k] = labels[k].cpu().numpy()
+                    labels[k] = labels[k].cpu().numpy() \
+                        if isinstance(labels[k], torch.Tensor) else labels[k]
             else:
-                labels = labels.cpu().numpy()
+                labels = labels.cpu().numpy() \
+                    if isinstance(labels, torch.Tensor) else labels
         
         labels = self.label_selector(labels)
         labels = self.cossin_resolver(labels)
         
         latent = latent.detach().cpu().numpy()
+
+        
         self.plot_latent(latent, labels = labels, name = "latent")
+        
         mu_latent = meta.get('mu_latent', None)
         if mu_latent is not None:
             mu_latent = mu_latent.detach().cpu().numpy()
@@ -91,7 +103,25 @@ class LDplotter(BaseTestPlotter):
         if logvar_latent is not None:
             logvar_latent = logvar_latent.detach().cpu().numpy()
             std_latent = np.sqrt(np.exp(logvar_latent))
-            self.plot_latent(mu_latent, errors = std_latent, labels = labels, name = "std_latent")
+            self.plot_latent(mu_latent, errors = std_latent, 
+                             labels = labels, name = "std_latent")
+
+        ld_names = [f"LD{i}" for i in range(latent.shape[1])]
+        ref_latent = mu_latent if mu_latent is not None else latent
+
+        fig = self.plot_correlation(ref_latent, ref_latent,
+                                    x_labels=ld_names, y_labels=ld_names)
+        self.log_image(fig, "latent_latent_correlation")
+        plt.close(fig)
+
+        if labels is not None and len(labels) > 0:
+            label_array = np.stack(list(labels.values()), axis=1)
+            label_names = list(labels.keys())
+            fig = self.plot_correlation(ref_latent, label_array,
+                                        x_labels=ld_names, y_labels=label_names)
+            self.log_image(fig, "latent_label_correlation")
+            plt.close(fig)
+
         self.log_info(f"Plots saved in {self.outpath}")
             
     def plot_latent(self, 

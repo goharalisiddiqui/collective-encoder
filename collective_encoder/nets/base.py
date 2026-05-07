@@ -280,7 +280,7 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
                          on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
             for key, value in result_meta.items():
                 if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
-                    self.log(f"{stage}_{key}_{name}", value,
+                    self.log(f"{stage}_{key}", value,
                              prog_bar=False, on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
             meta.update(result_meta)
         return results

@@ -72,6 +72,9 @@ class Ala2DataAnalyser(BaseDataAnalyser):
             self.raise_error(f"Unsupported dataset type {ds_type} for dihedral extraction")
 
     def plot_dihedrals(self, data, label = ""):
+        if len(data) == 0:
+            self.log_warn("No data to plot dihedrals.")
+            return
         phi, psi = self.extract_dihedrals(data)
         
         # Make sequence length alternate color

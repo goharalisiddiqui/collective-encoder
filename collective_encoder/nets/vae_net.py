@@ -1,20 +1,152 @@
 import numpy as np
 from typing import Any, List, Optional, Tuple, Union, Dict
+from abc import ABC, abstractmethod
 
 import torch
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
+import pytorch_lightning as pl
 
 from ase.data import covalent_radii
 
 from gslibs.validation.input import check_mutually_exclusive
 
+from collective_encoder.common.module import CEModule
 from collective_encoder.nets.ae_base import AEBase
 from collective_encoder.nets.modules.variational_encoder import VariationalNN
 
 from metatomic.torch import ModelOutput
 
 EPSILON = 1e-7
+
+# ------------------------------------------------------------------
+# KLD_max Schedulers
+# ------------------------------------------------------------------
+
+class KLDSchedulerBase(CEModule, ABC):
+    _IDENTIFIER = ""
+    _REQUIRED_ARGS = []
+
+    def __init__(self, 
+                 args, 
+                 **kwargs):
+        super().__init__(args=args, **kwargs)
+    
+    @abstractmethod
+    def get_kld_max(self, plmodule: pl.LightningModule) -> float:
+        raise NotImplementedError("get_kld_max must be implemented by subclasses")
+
+    def on_validation_epoch_end(self, plmodule):
+        """Optional hook that can be implemented by subclasses to update internal state at the end of each validation epoch."""
+        pass
+
+class KLDFixedScheduler(KLDSchedulerBase):
+    _IDENTIFIER = "KLDFixedScheduler"
+    _OPTIONAL_ARGS = {
+        "value": 0.0,  # Fixed value for kld_max throughout training
+    }
+
+    def __init__(
+        self,
+        args,
+        **kwargs
+    ):
+        super().__init__(args=args, **kwargs)
+    
+    def get_kld_max(self, plmodule):
+        return self.value
+    
+class KLDLinearScheduler(KLDSchedulerBase):
+    _IDENTIFIER = "KLDLinearScheduler"
+    _REQUIRED_ARGS = ['start_value', 'end_value', 'start_epoch', 'end_epoch']
+
+    def __init__(
+        self,
+        args,
+        **kwargs
+    ):
+        super().__init__(args=args, **kwargs)
+        if self.start_epoch >= self.end_epoch:
+            self.raise_error("start_epoch must be less than end_epoch")
+    
+    def get_kld_max(self, plmodule):
+        epoch = plmodule.current_epoch
+
+        if epoch < self.start_epoch:
+            return self.start_value
+        elif epoch > self.end_epoch:
+            return self.end_value
+        else:
+            progress = (epoch - self.start_epoch) / (self.end_epoch - self.start_epoch)
+            return self.start_value + progress * (self.end_value - self.start_value)
+
+class KLDAutoScheduler(KLDSchedulerBase):
+    _IDENTIFIER = "KLDAutoScheduler"
+    _OPTIONAL_ARGS = {
+        "kld_initial": 0.0,
+        "kld_max":1.0,
+        "increase_factor": 0.1,
+        "monitor_metric": "val_rec_loss",
+    }
+    """
+    Automatically sets kld_max according to the value of the monitored metric at validation epoch end (e.g. validation reconstruction loss).
+    If the monitored metric is improving (decreasing), keeps the current kld_max value to keep improving with same regularization.
+    Otherwise, gradually relax the regularization by the specified factor, allowing the model to focus more on reconstruction.
+    
+    This allows for a dynamic balance between reconstruction and regularization during training, potentially leading to better convergence and performance.
+    
+    """
+    
+    def __init__(
+        self,
+        args,
+        **kwargs
+    ):
+        super().__init__(args=args, **kwargs)
+        self.value = self.kld_initial
+        self.prev_metric = float('inf')
+        
+        if self.kld_initial < 0 or self.kld_max <= 0:
+            self.raise_error("kld_initial must be >= 0 and kld_max must be > 0")
+        if self.increase_factor <= 0:
+            self.raise_error("increase_factor must be > 0")
+
+    def get_kld_max(self, plmodule):
+        return self.value
+    
+    def on_validation_epoch_end(self, plmodule):
+        monitor_metric = self.monitor_metric
+    
+        metric_value = plmodule.trainer.callback_metrics.get(monitor_metric)
+        if metric_value is None:
+            self.raise_error(f"Monitor metric '{monitor_metric}' not found in callback metrics. "
+                             f" Found metrics: {list(plmodule.trainer.callback_metrics.keys())}. ")
+        if metric_value < self.prev_metric:
+            self.prev_metric = metric_value
+        else:
+            self.value = min(self.kld_max, self.value * (1 + self.increase_factor) 
+                             if self.value > 0 else 
+                             self.kld_initial + self.increase_factor 
+                                                * (self.kld_max - self.value))
+            if self.value != self.kld_max:
+                self.log_info(f"Validation metric '{monitor_metric}' did not improve "
+                              f"(current: {metric_value:.4f}, best: {self.prev_metric:.4f}). "
+                              f"Increasing kld_max to {self.value:.4f} for next epoch.")
+
+def KLDResolver(kld_max_type, kld_max_scheduler_args, run_args):
+    __REGISTRY__ = {
+        'Fixed': KLDFixedScheduler,
+        'Linear': KLDLinearScheduler,
+        'Auto': KLDAutoScheduler,
+    }
+    if kld_max_type not in __REGISTRY__:
+        raise ValueError(f"Invalid kld_max_type: {kld_max_type}. "
+                         f"Must be one of {list(__REGISTRY__.keys())}")
+    return __REGISTRY__[kld_max_type](args=kld_max_scheduler_args, **run_args)
+        
+# ------------------------------------------------------------------
+# Metatomic Interface
+# ------------------------------------------------------------------
 
 class MetatomicModelVAE(torch.nn.Module):
     def __init__(self, 
@@ -49,17 +181,21 @@ class MetatomicModelVAE(torch.nn.Module):
         mean, logvar = latent
         return mean
 
+# ------------------------------------------------------------------
+# Model
+# ------------------------------------------------------------------
+
 class VAE(AEBase):
     _IDENTIFIER = "VAE"
     _COMPATIBLE_DATASETS = ["DEFAULT", "DISTANCES", "SOAP", "SOAP_PS"]
     _OPTIONAL_ARGS = AEBase._OPTIONAL_ARGS.copy()
     _OPTIONAL_ARGS.update({
         "beta": 1.0,  # Weight for the KL divergence term in the loss function
-        "C_reg": None,  # Tuple of (C_value, start_epoch, end_epoch) for C regularization schedule
-        "C_auto": False,  # Whether to automatically adjust C based on validation loss
-        "D_reg": None,  # Threshold for D regularization (if mean KLD is below this, set reg loss to 0)
-        "use_steric_loss": False,  # Whether to include a steric loss based on atomic distances
+        "kld_max_type": 'Fixed',
+        "kld_max_scheduler_args": None,
         "use_bond_deviation_loss": False,  # Whether to include a bond deviation loss based on bonded atom pairs
+        "use_steric_loss": False,
+        "use_bond_deviation_loss": False,
     })
 
     def __init__(self,
@@ -70,16 +206,10 @@ class VAE(AEBase):
         self.save_hyperparameters(ignore=['datamodule'])
         super().__init__(datamodule=datamodule, args=args, **kwargs)
 
-        # Checks
-        check_mutually_exclusive(C_reg=self.C_reg, D_reg=self.D_reg)
-        if self.C_reg is not None:
-            assert len(self.C_reg) == 3, "C_reg must be a tuple of (C_value, start_epoch, end_epoch)"
-            assert self.C_reg[0] >= 0.0, "C_value must be non-negative"
-            assert self.C_reg[1] >= 0 and self.C_reg[2] >= 0, "start_epoch and end_epoch must be non-negative"
-            assert not all([self.C_reg[0] != 0.0, self.C_auto == True]), "C_reg and C_auto are incompatible, choose one of them"
-            assert self.C_reg[1] <= self.C_reg[2], f"Start epoch {self.C_reg[1]} must be less than or equal to end epoch {self.C_reg[2]} in C regulariser."
-        self.C_default = 1e-6
-
+        self.kld_scheduler = KLDResolver(self.kld_max_type, 
+                                         self.kld_max_scheduler_args,
+                                         kwargs)
+        
         self.losses = {
             "rec_loss": self.recon_loss,
             "reg_loss": self.reg_loss,
@@ -121,24 +251,13 @@ class VAE(AEBase):
 
     def print_hparams(self):
         super().print_hparams()
-        hparams: dict = {"beta": self.beta}
-        if self.C_reg is not None:
-            hparams["C_reg"] = {
-                "value": self.C_reg[0],
-                "start": self.C_reg[1],
-                "end":   self.C_reg[2],
-            }
-        if self.C_auto:
-            hparams["C_auto"] = True
-        if self.D_reg is not None:
-            hparams["D_reg"] = self.D_reg
-        self.ce_log_dict("VAE hparams:", hparams)
+        self.ce_log_dict("VAE hparams:", self.args)
 
     def init_network(self):
-        self.log_msg(f"[Initializing {type(self).__name__} Module] hidden layers: {self.network}")
-        self.print_hparams()
-        self.encoder_net = VariationalNN(layers=self.network, batch_norm=self.batch_norm)
-        self.decoder_net = VariationalNN(layers=self.network[::-1], batch_norm=self.batch_norm)
+        self.encoder_net = VariationalNN(layers=self.network, 
+                                         batch_norm=self.batch_norm)
+        self.decoder_net = VariationalNN(layers=self.network[::-1], 
+                                         batch_norm=self.batch_norm)
 
     def encoder(self, x):
         mu, logvar = self.encoder_net(x)
@@ -166,21 +285,25 @@ class VAE(AEBase):
         return kld
     
     def recon_loss(self, inp, latent, output, labels, meta):
-        # Compute NLL in normalized space so mu_x, logvar_x, and x are on the same scale.
+        """
+        Gaussian log-likelihood reconstruction loss. 
+        Assumes the decoder outputs mean and log-variance of a Gaussian distribution over the input space.
+        Computes the negative log-likelihood of the true input under this distribution."""
+        
         x_norm = self.normalize(inp)
         mu_x = meta["mu_x"]
         logvar_x = meta["logvar_x"]
 
+        logvar_x = torch.clamp(logvar_x, min=-4.0, max=4.0) # Clamp log-variance to prevent numerical instability in exp/log operations
         sd = torch.exp(0.5 * logvar_x) + EPSILON
         p_x = Normal(mu_x, sd)
-        loss_rec = -torch.mean(p_x.log_prob(x_norm), axis=1)
+        loss_rec = -torch.sum(p_x.log_prob(x_norm), dim=1)
 
         loss_rec = torch.mean(loss_rec)
 
         return loss_rec, {}
 
     def reg_loss(self, inp, latent, output, labels, meta):
-        z_sample = meta["z_sample"]
         mu_latent = meta["mu_latent"]
         logvar_latent = meta["logvar_latent"]
 
@@ -188,21 +311,14 @@ class VAE(AEBase):
         loss_reg = torch.mean(loss_kld, dim=0)
         
         meta = {"kld" : loss_reg}
-        if self.C_reg is not None:
-            C = self.C_default
-            cmax, c_start, c_end = self.C_reg[0], self.C_reg[1], self.C_reg[2]
-            if self.current_epoch >= c_start and self.current_epoch <= c_end:
-                C = cmax * (self.current_epoch - c_start) / (c_end - c_start)
-            elif self.current_epoch > c_end:
-                C = cmax
-            loss_reg = torch.abs(loss_kld - C)
-            meta["C"] = C
-
-        if self.D_reg is not None:
-            if torch.mean(loss_reg) < self.D_reg:
-                loss_reg *= 0.0
+        kld_max = self.kld_scheduler.get_kld_max(self)
+        if loss_reg <= kld_max:
+            loss_reg *= 0.0
         
         return loss_reg, meta
+    
+    def on_validation_epoch_end(self):
+        self.kld_scheduler.on_validation_epoch_end(self)
     
     def bond_deviation_loss(self, inp, latent, output, labels, meta):
         bonded_indices = self.bond_indices
@@ -243,9 +359,9 @@ class VAE(AEBase):
         flattened_coordinates = flattened_instances.reshape(-1, 3)
 
         n_pairs = n_atoms * (n_atoms - 1)
-        mask1 = torch.zeros(n_pairs, device=x.device)
-        mask2 = torch.zeros(n_pairs, device=x.device)
-        cov_distances = torch.zeros(n_pairs, device=x.device)
+        mask1 = torch.zeros(n_pairs, device=inp.device)
+        mask2 = torch.zeros(n_pairs, device=inp.device)
+        cov_distances = torch.zeros(n_pairs, device=inp.device)
 
         ind = 0
         for i in range(n_atoms):
@@ -267,21 +383,6 @@ class VAE(AEBase):
         steric_mask = torch.where(dist > 0.5 * cov_distances, torch.zeros_like(dist), torch.ones_like(dist))
         strain = ((dist - cov_distances) ** 2) * steric_mask
         return strain.mean(), {}
-    
-    def on_validation_epoch_end(self):
-        if self.C_auto:
-            val_rec_loss = self.trainer.callback_metrics.get("val_rec_loss")
-            val_kld = self.trainer.callback_metrics.get("val_kld")
-            if val_rec_loss is not None:
-                prev = getattr(self, "_prev_val_rec_loss", None)
-                if prev is not None and val_rec_loss.item() > prev:
-                    self.C_default = val_kld.item() if val_kld is not None else self.C_default
-                    self.log_msg(f"C_Scheduler: Setting C_default to {self.C_default} based on validation loss increase.")
-                else:
-                    self.C_default = 1e-6
-                    self.log_msg("C_Scheduler: Resetting C_default to 1e-6 based on validation loss decrease.")
-                self._prev_val_rec_loss = val_rec_loss.item()
-        return super().on_validation_epoch_end()
 
     def plot_avg_sigma(self, latent_logvar):
         ld_mean = np.mean(np.exp(0.5 * latent_logvar), axis=0)

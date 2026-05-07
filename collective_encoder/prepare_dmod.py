@@ -122,6 +122,8 @@ def prepare(config_path: str, debug: bool = False):
         analyser = analyser_cls(da_args,**metargs)
         analyser.write_data(dm.get_train_dataset(), label="train")
         analyser.write_data(dm.get_val_dataset(), label="val")
+        if not dm_args.get('test_whole_dataset', False):
+            analyser.write_data(dm.get_test_dataset(), label="test")
     
     ##################################
     # Saving datamodule and config

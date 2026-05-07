@@ -89,6 +89,40 @@ class BaseTestPlotter(CEModule, ABC):
         plt.tight_layout()
         return fig
 
+    def plot_correlation(self, x: np.ndarray, y: np.ndarray,
+                         x_labels: list = None, y_labels: list = None) -> plt.Figure:
+        if x.ndim != 2 or y.ndim != 2:
+            self.raise_error("x and y must be 2D arrays")
+        if x.shape[0] != y.shape[0]:
+            self.raise_error("x and y must have the same number of samples")
+        n_x, n_y = x.shape[1], y.shape[1]
+
+        combined = np.hstack([x, y])
+        full_corr = np.corrcoef(combined.T)
+        corr_matrix = full_corr[:n_x, n_x:]  # (n_x, n_y) cross-correlation block
+
+        if x_labels is None:
+            x_labels = [str(i) for i in range(n_x)]
+        if y_labels is None:
+            y_labels = [str(j) for j in range(n_y)]
+
+        fig, ax = plt.subplots(figsize=(max(4, n_y * 1.2), max(3, n_x * 0.8)))
+        im = ax.imshow(corr_matrix, vmin=-1, vmax=1, cmap='RdBu_r', aspect='auto')
+        fig.colorbar(im, ax=ax, label='Pearson r')
+
+        ax.set_yticks(range(n_x))
+        ax.set_yticklabels(x_labels)
+        ax.set_xticks(range(n_y))
+        ax.set_xticklabels(y_labels, rotation=45, ha='right')
+
+        for i in range(n_x):
+            for j in range(n_y):
+                ax.text(j, i, f"{corr_matrix[i, j]:.2f}",
+                        ha='center', va='center', fontsize=8,
+                        color='white' if abs(corr_matrix[i, j]) > 0.7 else 'black')
+        plt.tight_layout()
+        return fig
+
     def plot_2dline(self, x, labels = None):
         if len(x.shape) != 1:
             self.raise_error("x must be a 1D array")
