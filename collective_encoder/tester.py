@@ -25,9 +25,10 @@ from collective_encoder.dataanalysers.resolver import get_dataanalyser
 from gslibs.utils.filesystem import create_rundir, output_to_file
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
-DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'tester', 'defaults.yaml')
-DEBUG_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'tester', 'debug.yaml')
-OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 'num_workers']
+DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'tester', 'defaults.yaml')
+DEBUG_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'tester', 'debug.yaml')
+OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 
+                         'num_workers', 'test_batch_size']
 torch.set_default_dtype(torch.float64)
 
 

@@ -36,7 +36,7 @@ class CoordinatesDataModule(BaseDataModule):
 
     # Compatible datareaders and datasets
     _IDENTIFIER = "COORDINATES"
-    _COMPATIBLE_DATAREADERS = ["XTC", "XTC_CHUNKS", "XTC_CHUNKS_CG"]  # Add other coordinate-based readers
+    _COMPATIBLE_DATAREADERS = ["XTC"]
     _COMPATIBLE_DATASETS = ["DISTANCES", "POSITIONS", "GRAPH", "GRAPH_LATENT", "SOAP", "SOAP_PS"]
     _COMPATIBLE_LABELERS = ["COORDINATION", "DIHEDRAL", "DISTANCE"]  # Add other coordinate-based labelers
     
@@ -79,7 +79,7 @@ class CoordinatesDataModule(BaseDataModule):
         if self.test_size > 0 and self.test_full_dataset:
             self.raise_error("test_size and test_full_dataset are mutually exclusive")
         
-        if self.max_frames < (self.train_size + self.validation_size + 
+        if self.max_frames < (self.train_size + self.validation_size + self.predict_size +
                          (0 if self.test_full_dataset else self.test_size)):
             raise ValueError(f"Not enough frames ({self.max_frames}) in trajectory " 
                 f"for the requested dataset sizes (train: {self.train_size}, "
@@ -131,7 +131,7 @@ class CoordinatesDataModule(BaseDataModule):
         """Calculate indices for sequential data splitting."""
         self.log_msg(f"Sequential split selected.")
         
-        required_size = self.train_size + self.validation_size
+        required_size = self.train_size + self.validation_size + self.predict_size
         if not self.test_full_dataset:
             required_size += self.test_size
 
@@ -145,12 +145,18 @@ class CoordinatesDataModule(BaseDataModule):
         else:
             self.test_indices  = np.arange(start + self.train_size + self.validation_size,
                                             start + required_size)
+        
+        self.predict_indices = np.arange(start + self.train_size + self.validation_size + self.test_size,
+                                         start + required_size)
 
-        self.log_msg(f"Train indices: {self.train_indices[0]} - {self.train_indices[-1]}")
+        if len(self.train_indices) > 0:
+            self.log_msg(f"Train indices: {self.train_indices[0]} - {self.train_indices[-1]}")
         if len(self.val_indices) > 0:
             self.log_msg(f"Validation indices: {self.val_indices[0]} - {self.val_indices[-1]}")
         if len(self.test_indices) > 0:
             self.log_msg(f"Test indices: {self.test_indices[0]} - {self.test_indices[-1]}")
+        if len(self.predict_indices) > 0:
+            self.log_msg(f"Predict indices: {self.predict_indices[0]} - {self.predict_indices[-1]}")
 
     def _calculate_random_indices(self):
         """Calculate indices for random data splitting."""
@@ -159,15 +165,18 @@ class CoordinatesDataModule(BaseDataModule):
         remainder_indices = [i for i in all_indices if i not in self.train_indices]
         self.val_indices = random.sample(remainder_indices, self.validation_size)
         remainder_indices = [i for i in remainder_indices if i not in self.val_indices]
-
         if self.test_full_dataset:
             self.test_indices = all_indices
         else:
             self.test_indices = random.sample(remainder_indices, self.test_size)
+        remainder_indices = [i for i in remainder_indices if i not in self.test_indices]
+        self.predict_indices = random.sample(remainder_indices, self.predict_size)
+        remainder_indices = [i for i in remainder_indices if i not in self.predict_indices]
 
         self.log_msg(f"Random split selected. Train indices size: {len(self.train_indices)}, "
                      f"Validation indices size: {len(self.val_indices)}, "
-                     f"Test indices size: {len(self.test_indices)}")
+                     f"Test indices size: {len(self.test_indices)}, "
+                     f"Predict indices size: {len(self.predict_indices)}")
 
     def _create_datasets(self):
         """Create datasets for train, validation, and test splits."""
@@ -178,11 +187,12 @@ class CoordinatesDataModule(BaseDataModule):
         # Log sizes
         self.log_msg(f"Train size: {self.train_size}, "
                      f"Validation size: {self.validation_size}, "
-                     f"Test size: {self.test_size}")
+                     f"Test size: {self.test_size}, "
+                     f"Predict size: {self.predict_size}")
 
         # Read trajectory data
         read_result = self.datareader.read_trajectory(
-            indices=[self.train_indices, self.val_indices, self.test_indices],
+            indices=[self.train_indices, self.val_indices, self.test_indices, self.predict_indices],
             labeler_type=self.labeler_type,
             labeler_args=self.labeler_args,
         )
@@ -200,6 +210,8 @@ class CoordinatesDataModule(BaseDataModule):
                                    failed_per_split[1], split_name="val")
         self._validate_traj_length(trajs[2], len(self.test_indices),
                                    failed_per_split[2], split_name="test")
+        self._validate_traj_length(trajs[3], len(self.predict_indices),
+                                   failed_per_split[3], split_name="predict")
 
         # Create datasets
         (dataset_class, 
@@ -215,7 +227,7 @@ class CoordinatesDataModule(BaseDataModule):
             labels=labels[0],
             dataset_args=dataset_args,
             **self.run_args,
-        )
+        ) if self.train_size > 0 else []
         
         self.val_data = dataset_class(
             structures=trajs[1],
@@ -230,16 +242,26 @@ class CoordinatesDataModule(BaseDataModule):
             dataset_args=dataset_args,
             **{**self.run_args, "verbose": False},  # Disable verbose logging for test dataset creation
         ) if self.test_size > 0 else []
+        
+        self.predict_data = dataset_class(
+            structures=trajs[3],
+            labels=labels[3],
+            dataset_args=dataset_args,
+            **{**self.run_args, "verbose": False},  # Disable verbose logging for predict dataset creation
+        ) if self.predict_size > 0 else []
 
         # Set common attributes
-        self.num_frames = len(self.train_data) + len(self.val_data) + len(self.test_data)
-        self.datapoint_shape = self.train_data.get_datapoint_shape()
+        self.num_frames = len(self.train_data) + len(self.val_data) + len(self.test_data) + len(self.predict_data)
+        self.datapoint_shape = self.train_data.get_datapoint_shape() if \
+            len(self.train_data) > 0 else \
+                self.predict_data.get_datapoint_shape()
         self.label_list = self.datareader.label_list
 
         self.log_msg(f"Loaded dataset with {self.num_frames} frames -> "
                      f"Train: {len(self.train_data)}, "
                      f"Validation: {len(self.val_data)}, "
-                     f"Test: {len(self.test_data)}")
+                     f"Test: {len(self.test_data)}, "
+                     f"Predict: {len(self.predict_data)}")
         self.log_msg(f"Datapoint shape: {self.datapoint_shape}")
 
         # Check batch sizes

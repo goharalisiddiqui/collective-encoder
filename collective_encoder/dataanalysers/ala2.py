@@ -78,9 +78,13 @@ class Ala2DataAnalyser(BaseDataAnalyser):
         phi, psi = self.extract_dihedrals(data)
         
         # Make sequence length alternate color
-        if self.input_chunk_length is not None and self.output_chunk_length is not None:
-            sequence_len = self.input_chunk_length + \
-                    self.n_seq_per_sample * self.output_chunk_length
+        if 'input_chunk_length' in self.datamodule_args and \
+                                'output_chunk_length' in self.datamodule_args:
+            input_chunk_length = self.datamodule_args['input_chunk_length']
+            output_chunk_length = self.datamodule_args['output_chunk_length']
+            n_seq_per_sample = self.datamodule_args.get('n_seq_per_sample', 1)
+            sequence_len = input_chunk_length + \
+                                n_seq_per_sample * output_chunk_length
 
             colors = ['red'] * sequence_len + ['blue'] * sequence_len
             colors = colors * (len(phi) // (2 * sequence_len) + 1)

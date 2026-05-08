@@ -72,8 +72,6 @@ class BondGraphEncoderDecoder(CENetBase):
         else: # Initialize decoder lazily on first decode call (requires trainer/datamodule access)
             self.encoder_net = None
             self.decoder_net = None
-
-        
         
         self.losses = {
             'encdec': self.loss_encdec,
@@ -272,14 +270,14 @@ class BondGraphEncoderDecoder(CENetBase):
             out_labels[3]: batch.y_torsions_sin.view(num_graphs, -1),
         }
 
-    def loss_encdec(self, input, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def loss_encdec(self, inp, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         losses = {}
         for out_label, weight in zip(self.out_labels, self.loss_weights):
             losses[out_label] = self.loss_fn(output[out_label], labels[out_label]) * weight
 
         return sum(losses.values()), losses
 
-    def metric_encdec_mae(self, input, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def metric_encdec_mae(self, inp, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         mae = {}
         for out_label in self.out_labels:
             mae[out_label] = (

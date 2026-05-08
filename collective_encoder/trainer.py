@@ -1,5 +1,6 @@
 import logging
 import os
+import wandb
 import yaml
 import shutil
 
@@ -30,9 +31,10 @@ from collective_encoder.dataanalysers.resolver import get_dataanalyser
 from gslibs.utils.filesystem import create_rundir, output_to_file
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
-DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'trainer', 'defaults.yaml')
-DEBUG_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config', 'trainer', 'debug.yaml')
-OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 'num_workers']
+DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'trainer', 'defaults.yaml')
+DEBUG_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'trainer', 'debug.yaml')
+OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 
+                         'num_workers', 'test_batch_size']
 torch.set_default_dtype(torch.float64)
 ##################################
 # Arguments
@@ -234,16 +236,20 @@ def train(config_path: str, debug: bool = False):
     trainer = pl.Trainer(**trainargs)
 
     if config['nepochs'] > 0:
+        _log.info("Starting training for %d epochs...", config['nepochs'])
         trainer.fit(model, datamodule=dm)
+        _log.info("Training completed.")
+        if config.get('wandb', False):
+            wandb.finish()
 
     if config['nepochs'] == 0 and load_model == None:
-        warnings.warn("Both nepochs and load_model are not set. Nothing to do.")
+        _log.warning("Both nepochs and load_model are not set. Nothing to do.")
 
     # Save the best model checkpoint as best.ckpt
     best_checkpoint_path = checkpoint_callback.best_model_path
     if best_checkpoint_path != "":
         shutil.copy(best_checkpoint_path, os.path.dirname(best_checkpoint_path) + "/best.ckpt")
-    print(f"@@ Best model saved at: {best_checkpoint_path}")
+    _log.info(f"Best model saved at: {best_checkpoint_path}")
 
     ##################################
     # Analysing a loaded model
@@ -257,8 +263,10 @@ def train(config_path: str, debug: bool = False):
 
     ##################################
     if config.get('test_plotter_type', False):
-        model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))  
+        model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))
+    _log.info("Starting testing...")
     trainer.test(model, datamodule=dm)
+    _log.info("Testing completed.")
 
     #####################################
     # Save metatomic model

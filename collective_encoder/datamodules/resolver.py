@@ -1,5 +1,5 @@
 import importlib
-from typing import Any, Dict, List
+from typing import List
 
 _REGISTRY: dict = {
     "XTC":         ("collective_encoder.datamodules.coordinates", "CoordinatesDataModule"),

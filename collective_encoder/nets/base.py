@@ -77,25 +77,28 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         yet the call is silently ignored and ``normalize()`` will retry on the
         next forward pass.
         """
-        trainer = getattr(self, 'trainer', None)
-        if trainer is None:
-            return
-        if not trainer.datamodule:
+        if not hasattr(self, 'trainer') or not self.trainer:
+            self.raise_error("Trainer not attached; cannot compute normalization. "
+                             "This method should be called automatically on the "
+                             "first forward pass once the trainer is attached.")
+        if not hasattr(self.trainer, 'datamodule') or not self.trainer.datamodule:
             self.raise_error("Trainer has no datamodule attached; \
                              cannot compute normalization.", RuntimeError)
         self.register_buffer('Mean', torch.zeros(self.get_norm_len()))
         self.register_buffer('Range', torch.ones(self.get_norm_len()))
         with torch.no_grad():
-            dm = trainer.datamodule
-            Mean = torch.tensor(dm.get_scaler_mean(), device=self.device)
-            Range = torch.tensor(dm.get_scaler_scale(), device=self.device)
+            dm = self.trainer.datamodule
+            Mean = dm.get_scaler_mean()
+            Range = dm.get_scaler_scale()
+            self._validate_norm_sizes(Mean, Range)
+            Mean = torch.tensor(Mean, device=self.device)
+            Range = torch.tensor(Range, device=self.device)
             Range = Range.clone()
             Range[Range == 0.0] = 1.0
-            self._validate_norm_sizes(Mean, Range)
-            self.log_msg("Setting normalization for inputs.")
             self.Mean = Mean
             self.Range = Range
             self.normSet = torch.tensor(True, dtype=torch.bool)
+            self.log_msg("Normalization buffers set from datamodule scaler.")
     
     def normalize(self, x: Union[torch.Tensor, Data]) -> Union[torch.Tensor, Data]:
         """Normalize input data using the stored Mean and Range buffers.
@@ -237,9 +240,23 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     def predict_step(self, batch, batch_idx, dataloader_idx: int = 0):
         return self.forward(batch)
     
-    def _plot_test(self, inp, latent, output, labels, meta) -> None:
+    def _plot_test_start(self) -> None:
         from collective_encoder.testplotters.resolver import get_testplotter
-        
+
+        test_plotters = self.test_plotters.copy()
+        for name, args in test_plotters.items():
+            try:
+                plotter_cls = get_testplotter(name)
+                plotter_args = args
+                plotter_args['run_directory'] = self.output_directory
+                plotter_args['logger'] = self.logger
+                plotter = plotter_cls(plotter_args, **self.get_run_args())
+                self.test_plotters[name] = plotter
+            except Exception as e:
+                self.log_exception(f"Test plotting failed", e)
+                self.test_plotters.pop(name)
+    
+    def _plot_test_batch(self, inp, latent, output, labels, meta) -> None:
         label_names = self.trainer.datamodule.get_label_names()
         if isinstance(labels, torch.Tensor):
             if len(label_names) != labels.shape[1]:
@@ -250,16 +267,13 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
             labels_dict = labels
         else:
             self.raise_error(f"Unexpected labels type: {type(labels)}")
-        for name, args in self.test_plotters.items():
-            try:
-                plotter_cls = get_testplotter(name)
-                plotter_args = args
-                plotter_args['run_directory'] = self.output_directory
-                plotter_args['logger'] = self.logger
-                plotter = plotter_cls(plotter_args, **self.get_run_args())
-                plotter.plot(inp, latent, output, labels_dict, meta)
-            except Exception as e:
-                self.log_exception(f"Test plotting failed", e)
+
+        for plotter in self.test_plotters.values():
+            plotter.add_batch(inp, latent, output, labels_dict, meta)
+    
+    def _plot_test_finish(self) -> None:
+        for plotter in self.test_plotters.values():
+            plotter.finish()
         
     def _multiple_calculate(self, 
                             inp: Union[torch.Tensor, Data],
@@ -280,7 +294,7 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
                          on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
             for key, value in result_meta.items():
                 if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
-                    self.log(f"{stage}_{key}", value,
+                    self.log(f"{stage}_{name}_{key}", value,
                              prog_bar=False, on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
             meta.update(result_meta)
         return results
@@ -307,7 +321,8 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
                                            metrics, stage, batch_size)
     
         if stage == "test":
-            self._plot_test(data, latent, output, labels, meta)
+            if len(self.test_plotters) > 0:
+                self._plot_test_batch(data, latent, output, labels, meta)
             return metrics.get("mae", torch.tensor(0.0))
 
         losses = self._multiple_calculate(data, latent, output, labels, meta, 
@@ -318,8 +333,14 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
                  on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
         return loss
     
+    def on_test_start(self):
+        self._plot_test_start()
+    
+    def on_test_end(self):
+        self._plot_test_finish()
+    
     # ------------------------------------------------------------------
-    # Encoder and decoder delegation
+    # Forward pass
     # ------------------------------------------------------------------
     
     def _encode(self, data):

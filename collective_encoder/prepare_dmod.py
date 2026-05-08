@@ -27,9 +27,9 @@ from collective_encoder.utils import check_dict_contains_keys
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 
-                                   'config', 'dmod', 'defaults.yaml')
+                                   'configs', 'dmod', 'defaults.yaml')
 DEBUG_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 
-                                 'config', 'dmod', 'debug.yaml')
+                                 'configs', 'dmod', 'debug.yaml')
 torch.set_default_dtype(torch.float64)
 ##################################
 # Arguments

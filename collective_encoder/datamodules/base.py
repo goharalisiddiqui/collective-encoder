@@ -41,6 +41,8 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
         'val_batch_size': 0,
         'test_size': 0,
         'test_batch_size': 0,
+        'predict_size': 0,
+        'predict_batch_size': 0,
         'norm_type': 'standard',
         'num_workers': 1,
     }
@@ -61,15 +63,19 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
             val_batch_size=self.val_batch_size,
             test_size=self.test_size,
             test_batch_size=self.test_batch_size,
+            predict_size=self.predict_size,
+            predict_batch_size=self.predict_batch_size,
             num_workers=self.num_workers,
         )
+        if self.train_size + self.predict_size == 0:
+            self.raise_error("At least one of train_size or predict_size must be greater than 0")
         self.save_hyperparameters()
-
 
         # Initialize common data attributes
         self.train_data = None
         self.val_data = None
         self.test_data = None
+        self.predict_data = None
         self.target_scaler = None
         self.num_frames = 0
         self.datapoint_shape = None
@@ -85,23 +91,45 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
             self.val_batch_size = self.validation_size
         if self.test_batch_size == 0:
             self.test_batch_size = self.test_size
+        if self.predict_batch_size == 0:
+            self.predict_batch_size = self.predict_size
 
-        assert self.batch_size <= self.train_size, "Batch size must be less than or equal to the training size"
-        if self.validation_size > 0:
-            assert self.val_batch_size <= self.validation_size, "Validation batch size must be less than or equal to the validation size"
-        if self.test_size > 0:
-            assert self.test_batch_size <= self.test_size, "Test batch size must be less than or equal to the test size"
+        if self.batch_size > self.train_size:
+            self.raise_error("Batch size must be less than or equal to the training size")
+        if self.validation_size > 0 and self.val_batch_size > self.validation_size:
+            self.raise_error("Validation batch size must be less than or equal to the validation size")
+        if self.test_size > 0 and self.test_batch_size > self.test_size:
+            self.raise_error("Test batch size must be less than or equal to the test size")
+        if self.predict_size > 0 and self.predict_batch_size > self.predict_size:
+            self.raise_error("Predict batch size must be less than or equal to the predict size")
+
+    def set_batch_sizes(self, sizes: Dict[str, int]):
+        if 'batch_size' in sizes:
+            self.batch_size = sizes['batch_size']
+        if 'val_batch_size' in sizes:
+            self.val_batch_size = sizes['val_batch_size']
+        if 'test_batch_size' in sizes:
+            self.test_batch_size = sizes['test_batch_size']
+        if 'predict_batch_size' in sizes:
+            self.predict_batch_size = sizes['predict_batch_size']
+        self._check_batch_sizes()
 
     def set_batch_size(self, batch_size: int):
         """Set the batch size for training."""
-        self.batch_size = batch_size
-        self._check_batch_sizes()
+        self.set_batch_sizes({'batch_size': batch_size})
     
     def set_val_batch_size(self, val_batch_size: int):
         """Set the batch size for validation."""
-        self.val_batch_size = val_batch_size
-        self._check_batch_sizes()
+        self.set_batch_sizes({'val_batch_size': val_batch_size})
     
+    def set_test_batch_size(self, test_batch_size: int):
+        """Set the batch size for testing."""
+        self.set_batch_sizes({'test_batch_size': test_batch_size})
+    
+    def set_predict_batch_size(self, predict_batch_size: int):
+        """Set the batch size for prediction."""
+        self.set_batch_sizes({'predict_batch_size': predict_batch_size})
+
     def fit_target_scaler(self):
         """Fit the target scaler on training, validation, and test data."""
         if self.target_scaler is not None:
@@ -164,7 +192,7 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
 
     def predict_dataloader(self):
         """Return prediction dataloader."""
-        return self.get_dataloader(self.train_data, len(self.train_data), shuffle=False)
+        return self.get_dataloader(self.predict_data, len(self.predict_data), shuffle=False)
 
     def full_dataloader(self):
         """Return dataloader with all data combined."""
@@ -173,6 +201,8 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
             all_data = torch.utils.data.ConcatDataset([all_data, self.val_data])
         if self.test_data is not None and len(self.test_data) > 0:
             all_data = torch.utils.data.ConcatDataset([all_data, self.test_data])
+        if self.predict_data is not None and len(self.predict_data) > 0:
+            all_data = torch.utils.data.ConcatDataset([all_data, self.predict_data])
         return self.get_dataloader(all_data, len(all_data), shuffle=False)
 
     def get_full_batch(self):
@@ -228,15 +258,15 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
     
     def get_val_dataset(self):
         """Get the validation dataset."""
-        if self.val_data is None:
-            raise ValueError("Validation data is not available")
         return self.val_data
 
     def get_test_dataset(self):
         """Get the test dataset."""
-        if self.test_data is None:
-            raise ValueError("Test data is not available")
         return self.test_data
+
+    def get_predict_dataset(self):
+        """Get the prediction dataset."""
+        return self.predict_data
 
     def set_num_workers(self, num_workers: int):
         """Set the number of workers for data loading."""
