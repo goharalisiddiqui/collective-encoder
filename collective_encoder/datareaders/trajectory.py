@@ -14,8 +14,9 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
     Abstract base class for trajectory readers.
     '''
     def __init__(self,
+                 args,
                  **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(args=args, **kwargs)
 
     @abstractmethod
     def read_trajectory(self) -> Tuple[List[ase.Atoms], List[List[float]]]:

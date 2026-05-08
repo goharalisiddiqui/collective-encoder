@@ -7,6 +7,8 @@ import numpy as np
 from .xtc_chunks import XTCChunksReader
 
 class XTCChunksCGReader(XTCChunksReader):
+    _IDENTIFIER = "XTC_CHUNKS_CG"
+
     def __init__(self,
                  cg_window : int,
                  **kwargs,

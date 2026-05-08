@@ -93,7 +93,8 @@ class CoordinatesDataModule(BaseDataModule):
     def _initialize_datareader(self):
         # Initialize the trajectory reader
         datareader_cls = get_datareader(self.datareader_type)
-        self.datareader = datareader_cls(**self.datareader_args)
+        self.datareader = datareader_cls(args=self.datareader_args
+                                         **self.run_args)
 
         # Store coordinate-specific information
         self.atomic_numbers = self.datareader.get_atomic_numbers()

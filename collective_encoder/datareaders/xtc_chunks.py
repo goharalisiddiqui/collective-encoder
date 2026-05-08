@@ -5,6 +5,7 @@ import numpy as np
 from .xtc import XTCReader
 
 class XTCChunksReader(XTCReader):
+    _IDENTIFIER = "XTC_CHUNKS"
     def __init__(self,
                  sequence_length : int,
                  **kwargs,

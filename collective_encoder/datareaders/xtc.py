@@ -106,55 +106,58 @@ class XTCReader(TrajectoryReaderBase):
         provided.
     """
     _IDENTIFIER = "XTC"
+    _REQUIRED_ARGS = ['tprfile']
+    _OPTIONAL_ARGS = {
+        'xtcfile': None,
+        'xtcfiles': None,
+        'coord_glob': None,
+        'selection': "all",
+        'type_to_elements': None,
+        'parallel': True,
+    }
     
     def __init__(self,
-                 tprfile : str,
-                 xtcfile : str = None,
-                 xtcfiles : List[str] = None,
-                 coord_glob : str = None,
-                 selection : str = "all",
-                 type_to_elements : List[int] = None,
-                 parallel : bool = True,
+                 args,
                  **kwargs,
                  ):
-        super().__init__(**kwargs)
+        super().__init__(args=args, **kwargs)
         
         # Check files
-        gsv.check_exists(tprfile=tprfile)
-        self.log_msg(f"Loading topology from file {tprfile}")
-        gsv.check_mutually_exclusive(xtcfile=xtcfile, 
-                                      coord_glob=coord_glob, 
-                                      xtcfiles=xtcfiles, 
+        gsv.check_exists(tprfile=self.tprfile)
+        self.log_msg(f"Loading topology from file {self.tprfile}")
+        gsv.check_mutually_exclusive(xtcfile=self.xtcfile, 
+                                      coord_glob=self.coord_glob, 
+                                      xtcfiles=self.xtcfiles, 
                                       require_one=True)
-        if coord_glob:
-            self.log_msg(f"Loading trajectory files matching glob pattern: {coord_glob}") 
-            xtcfiles = glob(coord_glob)
+        if self.coord_glob:
+            self.log_msg(f"Loading trajectory files matching glob pattern: {self.coord_glob}") 
+            xtcfiles = glob(self.coord_glob)
             if not xtcfiles:
-                raise FileNotFoundError(f"No files found for pattern {coord_glob}")
+                self.raise_error(f"No files found for pattern {self.coord_glob}")
             self.log_msg(f"Found {len(xtcfiles)} files") 
-            u = mda.Universe(tprfile, *xtcfiles)
+            u = mda.Universe(self.tprfile, *xtcfiles)
         elif xtcfiles:
             self.log_msg("Loading trajectory from multiple files: ")
             self.log_msg(f"- {('\n\t - '.join(xtcfiles))}")
             for xf in xtcfiles:
                 if not os.path.exists(xf):
-                    raise FileNotFoundError(f"File {xf} not found")
-            u = mda.Universe(tprfile, *xtcfiles)
+                    self.raise_error(f"File {xf} not found")
+            u = mda.Universe(self.tprfile, *xtcfiles)
         else:
-            self.log_msg(f"Loading trajectory from file: {xtcfile}") 
-            if not os.path.exists(xtcfile):
-                raise FileNotFoundError(f"File {xtcfile} not found")
-            u = mda.Universe(tprfile, xtcfile)
+            self.log_msg(f"Loading trajectory from file: {self.xtcfile}") 
+            if not os.path.exists(self.xtcfile):
+                self.raise_error(f"File {self.xtcfile} not found")
+            u = mda.Universe(self.tprfile, self.xtcfile)
 
         # Select the atoms
-        self.mol = self.mda_select_atoms(u, selection)
+        self.mol = self.mda_select_atoms(u, self.selection)
         self.u = u
-        self._selection = selection
-        self.parallel = parallel
+        self._selection = self.selection
+        self.parallel = self.parallel
         
         # Extract the atomic numbers
         self.atns, self.at_elements = self.mda_get_atomic_numbers_and_elements(
-                                                self.mol, type_to_elements)
+                                                self.mol, self.type_to_elements)
 
         # Get the atom numbers in the trajectory
         self.atm_ids = self.mda_get_atom_ids(self.mol)
