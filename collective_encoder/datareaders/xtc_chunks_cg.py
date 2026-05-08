@@ -1,4 +1,5 @@
 import os
+from typing import Any, Dict
 
 from tqdm import tqdm
 
@@ -8,13 +9,15 @@ from .xtc_chunks import XTCChunksReader
 
 class XTCChunksCGReader(XTCChunksReader):
     _IDENTIFIER = "XTC_CHUNKS_CG"
+    _REQUIRED_ARGS = XTCChunksReader._REQUIRED_ARGS + [
+        "cg_window"
+    ]
 
     def __init__(self,
-                 cg_window : int,
+                 args: Dict[str, Any] = None,
                  **kwargs,
                  ):
-        self.cg_window = cg_window
-        super().__init__(**kwargs)
+        super().__init__(args=args, **kwargs)
     
     def get_total_frames(self):
         return len(self.u.trajectory) - self.sequence_length * self.cg_window

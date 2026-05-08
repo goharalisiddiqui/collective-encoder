@@ -2,7 +2,7 @@ import os
 from multiprocessing import Pool
 
 from glob import glob
-from typing import List, Dict, Tuple, Union
+from typing import List, Dict, Tuple, Union, Any
 from tqdm import tqdm
 
 import numpy as np
@@ -117,7 +117,7 @@ class XTCReader(TrajectoryReaderBase):
     }
     
     def __init__(self,
-                 args,
+                 args: Dict[str, Any] = None,
                  **kwargs,
                  ):
         super().__init__(args=args, **kwargs)
@@ -136,10 +136,10 @@ class XTCReader(TrajectoryReaderBase):
                 self.raise_error(f"No files found for pattern {self.coord_glob}")
             self.log_msg(f"Found {len(xtcfiles)} files") 
             u = mda.Universe(self.tprfile, *xtcfiles)
-        elif xtcfiles:
+        elif self.xtcfiles:
             self.log_msg("Loading trajectory from multiple files: ")
-            self.log_msg(f"- {('\n\t - '.join(xtcfiles))}")
-            for xf in xtcfiles:
+            self.log_msg(f"- {('\n\t - '.join(self.xtcfiles))}")
+            for xf in self.xtcfiles:
                 if not os.path.exists(xf):
                     self.raise_error(f"File {xf} not found")
             u = mda.Universe(self.tprfile, *xtcfiles)

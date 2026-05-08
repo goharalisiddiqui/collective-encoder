@@ -6,6 +6,7 @@ _REGISTRY: dict = {
     "XTC":           ("collective_encoder.datareaders.xtc",           "XTCReader"),
     "XTC_CHUNKS":    ("collective_encoder.datareaders.xtc_chunks",    "XTCChunksReader"),
     "XTC_CHUNKS_CG": ("collective_encoder.datareaders.xtc_chunks_cg", "XTCChunksCGReader"),
+    "XTC_CHUNKS_CG_PP": ("collective_encoder.datareaders.xtc_chunks_cg_pp", "XTCChunksCGReaderPP"),
     "PLUMED_OUTPUT": ("collective_encoder.datareaders.plumed_output",  "PlumedOutputReader"),
 }
 

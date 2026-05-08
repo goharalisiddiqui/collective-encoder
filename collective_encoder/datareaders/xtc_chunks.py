@@ -1,4 +1,5 @@
 import os
+from typing import Any, Dict
 
 import numpy as np
 
@@ -6,17 +7,20 @@ from .xtc import XTCReader
 
 class XTCChunksReader(XTCReader):
     _IDENTIFIER = "XTC_CHUNKS"
+    _REQUIRED_ARGS = XTCReader._REQUIRED_ARGS + [
+        "sequence_length",
+    ]
+
     def __init__(self,
-                 sequence_length : int,
+                 args: Dict[str, Any] = None,
                  **kwargs,
                  ):
-        self.sequence_length = sequence_length
-        super().__init__(**kwargs)
+        super().__init__(args=args, **kwargs)
 
         if self.verbose:
-            print("Atom index mapping (original -> selected):")
+            self.log_info("Atom index mapping (original -> selected):")
             for at in self.mol.atoms:
-                print(f"  Original index: {at.id + 1} -> Selected index: "
+                self.log_info(f"  Original index: {at.id + 1} -> Selected index: "
                       f"{np.where(self.mol.atoms.indices == at.index)[0][0]} "
                       f"(Element: {at.element}, Name: {at.name}, "
                       f"Type: {at.type}, "

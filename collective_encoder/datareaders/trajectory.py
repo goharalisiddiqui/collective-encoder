@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Tuple
+from typing import List, Tuple, Tuple, Dict, Any
 
 import numpy as np
 import ase
@@ -14,7 +14,7 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
     Abstract base class for trajectory readers.
     '''
     def __init__(self,
-                 args,
+                 args: Dict[str, Any] = None,
                  **kwargs):
         super().__init__(args=args, **kwargs)
 

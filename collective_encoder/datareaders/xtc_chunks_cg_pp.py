@@ -14,7 +14,9 @@ class XTCChunksCGReaderPP(XTCChunksCGReader):
         traj, labels = super()._postprocess_seq(mol_traj, labels)
         idx_to_remove = []
         for i in range(len(labels) - 1):
-            if labels[i,0] > 0 and labels[i,0] < 2.5:
+            if labels[i][0] > 0 and labels[i][0] < 2.5:
                 idx_to_remove.append(i)
+        traj = [frame for i, frame in enumerate(traj) if i not in idx_to_remove]
+        labels = [label for i, label in enumerate(labels) if i not in idx_to_remove]
         
         return traj, labels
