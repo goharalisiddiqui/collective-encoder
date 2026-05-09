@@ -24,7 +24,7 @@ def compute_mfpt_matrix(vals : np.ndarray, minima : np.ndarray, lag: int = 1):
     state_assignments = np.argmin(distances, axis=-1)
     
     n_states = len(minima)
-    lag_time = lag
+    lag_time = int(lag)
 
     # Build transition count matrix
     transition_counts = np.zeros((n_states, n_states))

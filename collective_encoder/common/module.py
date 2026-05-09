@@ -1,6 +1,9 @@
 import logging
 from abc import ABC
+import os
 from typing import List, Any, Dict, Union
+
+import numpy as np
 
 from collective_encoder.common.config_check import validate_required_fields
 
@@ -47,6 +50,67 @@ class CEModule(ABC):
         for key in args:
             self.__setattr__(key, args[key])
     
+    def creater_results_dir(self):
+        results_dir = os.path.join(self.run_dir, f"{self.__class__.__name__}_results")
+        os.makedirs(results_dir, exist_ok=True) 
+        self.results_dir = results_dir
+    
+    def create_results_file(self):
+        if not hasattr(self, "results_dir"):
+            self.creater_results_dir()
+        self.results_file = os.path.join(self.results_dir, f"results.txt")
+    
+    def log_result_msg(self, res: str) -> None:
+        self.log_info(res)
+        if not hasattr(self, "results_file"):
+            self.create_results_file()
+        with open(self.results_file, "a") as f:
+            f.write(res + "\n")
+    
+    def save_npy(self, arr: np.ndarray, label: str) -> None:
+        if not hasattr(self, "results_dir"):
+            self.creater_results_dir()
+        npy_path = os.path.join(self.results_dir, f"{label.lower().replace(' ', '_')}.npy")
+        np.save(npy_path, arr)
+        self.log_result_msg(f"@@ Saved {label} to {npy_path}")
+    
+    def log_result(self, res: Union[str, float, int, list, np.ndarray, Dict], 
+                   label: str = None, save_bin: bool = True) -> None:
+        if isinstance(res, str):
+            self.log_result_msg(f"{label}: {res}" if label else res)
+        elif isinstance(res, (float, int)):
+            self.log_result_msg(f"{label}: {res}" if label else str(res))
+        elif isinstance(res, list):
+            self.log_result_msg("-"*40)
+            res = "\n".join(str(r) for r in res)
+            if not label:
+                label = "Unnmed List"
+            self.log_result_msg(f"{label} (size: {len(res)}):\n{res}")
+            self.log_result_msg("-"*40)
+        elif isinstance(res, np.ndarray):
+            self.log_result_msg("-"*40)
+            res_str = np.array2string(res,
+                                      max_line_width=1000,
+                                      precision=4,
+                                      threshold=1000,
+                                      suppress_small=True)
+            if not label:
+                label = "Unnamed Array"
+            self.log_result_msg(f"{label} (shape: {res.shape}):\n{res_str}")
+            if save_bin:
+                self.save_npy(res, label)
+            self.log_result_msg("-"*40)
+        elif isinstance(res, dict):
+            self.log_result_msg("-"*40)
+            res_str = "\n".join(f"{k}: {v}" for k, v in res.items())
+            if not label:
+                label = "Unnamed Dict"
+            self.log_result_msg(f"{label} (size: {len(res)}):\n{res_str}")
+            self.log_result_msg("-"*40)
+        else:
+            self.log_result_msg(f"{label}: {res}" if label else str(res))
+        
+            
     def get_args(self) -> Dict[str, Any]:
         """Return the dict of arguments used to initialize this module."""
         return self.args
