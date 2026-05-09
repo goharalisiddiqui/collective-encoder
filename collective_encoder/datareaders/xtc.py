@@ -23,15 +23,21 @@ def _read_and_label_parallel(args):
     transforms and creates a fresh labeler so no shared state is needed.
     Takes a single packed tuple so it is compatible with pool.imap.
     """
-    worker_id, u_copy, selection, atns, at_elements, seqs, labeler_type, labeler_args, verbose = args
+    worker_id, u_copy, selection, atns, at_elements, seqs, labeler_type, labeler_args, run_args = args
 
     from MDAnalysis.exceptions import NoDataError
     from collective_encoder.datalabelers.resolver import get_labeler
 
     mol = u_copy.select_atoms(selection)
+    verbose = run_args.get('verbose', True)
 
+    if worker_id > 0:
+        run_args['verbose'] = False  # Only the main process shows progress bars and logs
     labeler_cls = get_labeler(labeler_type)
-    labeler = labeler_cls(universe=u_copy, args=labeler_args)
+    labeler = labeler_cls(universe=u_copy, 
+                          args=labeler_args, 
+                          **run_args,
+                          )
 
     # Cache residue/atom-name info once — constant across all frames
     try:
@@ -196,7 +202,7 @@ class XTCReader(TrajectoryReaderBase):
             if not self.parallel or len(index_list) < 10:  # Threshold for parallel processing
                 # Apply transforms if not already applied
                 args = (0, self.u.copy(), self._selection, self.atns, self.at_elements, index_list,
-                        labeler_type, labeler_args, self.verbose)
+                        labeler_type, labeler_args, self.run_args)
                 traj, label, failed = _read_and_label_parallel(args)
             else:
                 # Distribute sequences across up to 8 workers using interleaved chunks
@@ -209,7 +215,7 @@ class XTCReader(TrajectoryReaderBase):
                 # worker bars occupy positions 0..n_workers-1; outer bar sits below them.
                 args = [
                     (i+1, self.u.copy(), self._selection, self.atns, self.at_elements,
-                    chunk, labeler_type, labeler_args, self.verbose)
+                    chunk, labeler_type, labeler_args, self.run_args)
                     for i, chunk in enumerate(chunks)
                 ]
 

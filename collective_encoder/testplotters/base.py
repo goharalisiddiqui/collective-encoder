@@ -108,6 +108,7 @@ class BaseTestPlotter(CEModule, ABC):
         if self.logger_type == "WandbLogger":
             self.logger.experiment.log({
                 f"[{type(self).__name__}] {name}": wandb.Image(fn)})
+        self.log_info(f"Saved plot '{name}' to {fn}")
     
     def plot_2ddihedral(self, x: np.ndarray, y: np.ndarray) -> Tuple[plt.Figure, List[plt.Axes]]:
         fig, axes = self.plot_2dscatter(x, y, labels=None)
@@ -121,6 +122,23 @@ class BaseTestPlotter(CEModule, ABC):
         axes[0].set_yticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
         
         return fig, axes
+    
+    def plot_matrix(self, 
+                    matrix: np.ndarray, 
+                    label: str, 
+                    tag = "Source_Target") -> Tuple[plt.Figure, plt.Axes]:
+        fig, ax = plt.subplots(figsize=(6, 5))
+        im = ax.imshow(matrix, vmin=0, vmax=1, cmap='viridis')
+        fig.colorbar(im, ax=ax, label=label)
+        ax.set_xlabel(f"{tag.split('_')[1]} State")
+        ax.set_ylabel(f"{tag.split('_')[0]} State")
+        ax.set_xticks(range(matrix.shape[1]))
+        ax.set_yticks(range(matrix.shape[0]))
+        ax.set_xticklabels([str(i) for i in range(matrix.shape[1])], rotation=45, ha='right')
+        ax.set_yticklabels([str(i) for i in range(matrix.shape[0])])
+        plt.tight_layout()
+
+        return fig, ax
     
     def plot_2dscatter(self, x: np.ndarray, y: np.ndarray,
                        xerr: np.ndarray=None, yerr: np.ndarray=None,

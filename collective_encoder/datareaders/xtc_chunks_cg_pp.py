@@ -18,5 +18,7 @@ class XTCChunksCGReaderPP(XTCChunksCGReader):
                 idx_to_remove.append(i)
         traj = [frame for i, frame in enumerate(traj) if i not in idx_to_remove]
         labels = [label for i, label in enumerate(labels) if i not in idx_to_remove]
+        if len(idx_to_remove) > 0:
+            self.log_debug(f"Removed {len(idx_to_remove)} frames from the trajectory.")
         
         return traj, labels

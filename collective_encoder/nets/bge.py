@@ -1,9 +1,7 @@
-from typing import Any, List, Optional, Dict, Tuple, Union
-
-import numpy as np
+from typing import Any, Dict, Tuple
 
 import torch
-from torch import nn, Tensor
+from torch import nn
 
 from collective_encoder.nets.base import CENetBase
 from .modules.graph_encoder import BondGraphEncoder
@@ -130,7 +128,7 @@ class BondGraphEncoderDecoder(CENetBase):
     # ------------------------------------------------------------------
     
     def _init_encoder(self, datamodule) -> None:
-        datasetobject = datamodule.get_train_dataset()
+        datasetobject = datamodule.get_any_dataset()
         self.encoder_args.update(
             node_feat=datasetobject.get_num_node_features(),
             edge_feat=datasetobject.get_num_edge_features(),
@@ -138,7 +136,7 @@ class BondGraphEncoderDecoder(CENetBase):
         self.encoder_net = BondGraphEncoder(**self.encoder_args)
 
     def _init_decoder(self, datamodule) -> None:
-        datasetobject = datamodule.get_train_dataset()
+        datasetobject = datamodule.get_any_dataset()
         self.template_khop = self.decoder_args['template_khop']
         template_data = datasetobject.get_template_graph(k=self.template_khop)
         bond_index, angle_index, torsion_index = datasetobject.get_label_indices()
@@ -233,18 +231,12 @@ class BondGraphEncoderDecoder(CENetBase):
         return data
 
     # ------------------------------------------------------------------
-    # Encode / decode / forward
+    # Forward pass
     # ------------------------------------------------------------------
 
-    def _batch_split(self, batch):
-        return batch, self.extract_labels(batch)
-
-    def decoder(self, z: torch.Tensor) -> Tuple[torch.Tensor, dict]:
-        # We lazily initialize the encoder/decoder if it wasn't initialized at construction time.
+    def setup(self, stage: str):
         if self.decoder_net is None or self.encoder_net is None:
-            try:
-                self.trainer
-            except RuntimeError:
+            if not hasattr(self, 'trainer') or self.trainer is None:
                 self.raise_error("Encoder/Decoder not initialized and trainer not found.", error_type=RuntimeError)
             datamodule = getattr(self.trainer, 'datamodule', None)
             if datamodule is None:
@@ -253,7 +245,9 @@ class BondGraphEncoderDecoder(CENetBase):
                 self._init_encoder(datamodule)
             if self.decoder_net is None:
                 self._init_decoder(datamodule)
-        return super().decoder(z)
+
+    def _batch_split(self, batch):
+        return batch, self.extract_labels(batch)
 
     # ------------------------------------------------------------------
     # Loss
@@ -305,3 +299,16 @@ class BondGraphEncoderDecoder(CENetBase):
         return loss
 
 __all__ = ["BondGraphEncoderDecoder"]
+
+# ------------------------------------------------------------------
+# For backward compatibility with old checkpoints
+# ------------------------------------------------------------------
+BondGraphNetEncoderDecoder = BondGraphEncoderDecoder 
+BondGraphNetEncoder = BondGraphEncoder
+BondGraphNetDecoder = BondGraphDecoder
+from .modules.mp_modules import (
+    ScalarFeatureEmbedding,
+    AttentionMP,
+)
+
+__all__.extend(["BondGraphNetEncoderDecoder", "BondGraphNetEncoder", "BondGraphNetDecoder"])

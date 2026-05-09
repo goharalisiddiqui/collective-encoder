@@ -252,6 +252,18 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
             parts.append(self.test_data)
         return ConcatDataset(parts) if len(parts) > 1 else parts[0]
     
+    def get_any_dataset(self):
+        if self.train_data is not None and len(self.train_data) > 0:
+            return self.train_data
+        elif self.val_data is not None and len(self.val_data) > 0:
+            return self.val_data
+        elif self.test_data is not None and len(self.test_data) > 0:
+            return self.test_data
+        elif self.predict_data is not None and len(self.predict_data) > 0:
+            return self.predict_data
+        else:
+            self.raise_error("No datasets are available to return")
+    
     def get_train_dataset(self):
         """Get the training dataset."""
         return self.train_data
