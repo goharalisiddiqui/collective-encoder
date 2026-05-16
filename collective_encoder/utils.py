@@ -72,8 +72,13 @@ def compute_mfpt_matrix(vals : np.ndarray, minima : np.ndarray, lag: int = 1):
     
     return transition_counts, transition_matrix, mfpt_matrix
 
-def check_dict_contains_keys(d: dict, required_keys: list):
+def check_dict_contains_keys(d: dict, 
+                             required_keys: list, 
+                             no_error: bool = False):
     """Checks if the provided dictionary contains the required keys."""
     missing_keys = [key for key in required_keys if key not in d]
     if missing_keys:
-        raise KeyError(f"Dictionary is missing required keys: {missing_keys}")
+        if not no_error:
+            raise KeyError(f"Dictionary is missing required keys: {missing_keys}")
+        return False
+    return True

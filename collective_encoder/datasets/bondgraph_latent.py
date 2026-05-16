@@ -35,7 +35,7 @@ class BondGraphLatentDataset(BondGraphDataset):
         # Encode the graphs
         self.log_msg("Encoding graphs with provided encoder...")
         with torch.no_grad():
-            self.encoded = [self.encoder.encode(self[i]).flatten() for i in range(len(self))]
+            self.encoded = [self.encoder._encode(self[i])[0].flatten() for i in range(len(self))]
         self.log_msg("Encoding complete.")
         self.encoder = None  # Free up memory
         
