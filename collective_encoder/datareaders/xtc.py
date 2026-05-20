@@ -199,7 +199,7 @@ class XTCReader(TrajectoryReaderBase):
                                desc="Processing sequences",
                                dynamic_ncols=True):
 
-            if not self.parallel or len(index_list) < 10:  # Threshold for parallel processing
+            if not self.parallel or len(index_list) < 8:  # Threshold for parallel processing
                 # Apply transforms if not already applied
                 args = (0, self.u.copy(), self._selection, self.atns, self.at_elements, index_list,
                         labeler_type, labeler_args, self.run_args)

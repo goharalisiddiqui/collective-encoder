@@ -24,7 +24,8 @@ class CEModule(ABC):
     def __init__(self, args: Dict[str, Union[float, int, str]] = None, **kwargs):
         if args is None:
             args = {}
-        self.verbose = kwargs.get("verbose", True)
+        self.verbose_level = kwargs.get("verbose", "INFO")
+        self.verbose = self.verbose_level in [True, "INFO", "DEBUG"]
         root_logger_name = kwargs.get("root_logger_name", "collective_encoder")
         self.run_dir = kwargs.get("run_dir", None)
         self.run_args = kwargs

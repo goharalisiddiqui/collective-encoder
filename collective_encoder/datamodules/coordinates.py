@@ -124,54 +124,64 @@ class CoordinatesDataModule(BaseDataModule):
     def _calculate_indices(self):
         """Calculate train, validation, and test indices based on split configuration."""
         if self.sequential:
+            self.log_debug("Calculating sequential split indices...")
             self._calculate_sequential_indices()
         else:
+            self.log_debug("Calculating random split indices...")
             self._calculate_random_indices()
 
     def _calculate_sequential_indices(self):
         """Calculate indices for sequential data splitting."""
-        self.log_msg(f"Sequential split selected.")
-        
         required_size = self.train_size + self.validation_size + self.predict_size
+        self.log_debug(f"Base required size (train + val + predict): {required_size}")
         if not self.test_full_dataset:
             required_size += self.test_size
+        self.log_debug(f"Total required size (including test): {required_size}")
 
         start = random.randint(0, self.max_frames - required_size)
         self.train_indices = np.arange(start, start + self.train_size)
+        if len(self.train_indices) > 0:
+            self.log_info(f"Train indices: {self.train_indices[0]} - {self.train_indices[-1]}")
+
         self.val_indices   = np.arange(start + self.train_size,
                                         start + self.train_size + self.validation_size)
+        if len(self.val_indices) > 0:
+            self.log_info(f"Validation indices: {self.val_indices[0]} - {self.val_indices[-1]}")
         
         if self.test_full_dataset:
             self.test_indices = np.arange(self.max_frames)
         else:
             self.test_indices  = np.arange(start + self.train_size + self.validation_size,
                                             start + required_size)
+        if len(self.test_indices) > 0:
+            self.log_info(f"Test indices: {self.test_indices[0]} - {self.test_indices[-1]}")
         
         self.predict_indices = np.arange(start + self.train_size + self.validation_size + self.test_size,
                                          start + required_size)
-
-        if len(self.train_indices) > 0:
-            self.log_msg(f"Train indices: {self.train_indices[0]} - {self.train_indices[-1]}")
-        if len(self.val_indices) > 0:
-            self.log_msg(f"Validation indices: {self.val_indices[0]} - {self.val_indices[-1]}")
-        if len(self.test_indices) > 0:
-            self.log_msg(f"Test indices: {self.test_indices[0]} - {self.test_indices[-1]}")
         if len(self.predict_indices) > 0:
-            self.log_msg(f"Predict indices: {self.predict_indices[0]} - {self.predict_indices[-1]}")
+            self.log_info(f"Predict indices: {self.predict_indices[0]} - {self.predict_indices[-1]}")
 
     def _calculate_random_indices(self):
         """Calculate indices for random data splitting."""
         all_indices = list(range(self.max_frames))
         self.train_indices = random.sample(all_indices, self.train_size)
+        self.log_info(f"Selected {len(self.train_indices)} random train indices.")
+        self.log_debug(f"Train indices: {self.train_indices[:10]}{'...' if len(self.train_indices) > 10 else ''}")
         remainder_indices = [i for i in all_indices if i not in self.train_indices]
         self.val_indices = random.sample(remainder_indices, self.validation_size)
+        self.log_info(f"Selected {len(self.val_indices)} random validation indices.")
+        self.log_debug(f"Validation indices: {self.val_indices[:10]}{'...' if len(self.val_indices) > 10 else ''}")
         remainder_indices = [i for i in remainder_indices if i not in self.val_indices]
         if self.test_full_dataset:
             self.test_indices = all_indices
         else:
             self.test_indices = random.sample(remainder_indices, self.test_size)
+        self.log_info(f"Selected {len(self.test_indices)} random test indices.")
+        self.log_debug(f"Test indices: {self.test_indices[:10]}{'...' if len(self.test_indices) > 10 else ''}")
         remainder_indices = [i for i in remainder_indices if i not in self.test_indices]
         self.predict_indices = random.sample(remainder_indices, self.predict_size)
+        self.log_info(f"Selected {len(self.predict_indices)} random predict indices.")
+        self.log_debug(f"Predict indices: {self.predict_indices[:10]}{'...' if len(self.predict_indices) > 10 else ''}")
         remainder_indices = [i for i in remainder_indices if i not in self.predict_indices]
 
         self.log_msg(f"Random split selected. Train indices size: {len(self.train_indices)}, "
@@ -183,7 +193,9 @@ class CoordinatesDataModule(BaseDataModule):
         """Create datasets for train, validation, and test splits."""
 
         # Calculate indices for data splitting
+        self.log_info("Calculating dataset split indices...")
         self._calculate_indices()
+        self.log_info("Dataset split indices calculated.")
 
         # Log sizes
         self.log_msg(f"Train size: {self.train_size}, "
@@ -192,11 +204,13 @@ class CoordinatesDataModule(BaseDataModule):
                      f"Predict size: {self.predict_size}")
 
         # Read trajectory data
+        self.log_info("Reading trajectory data and labels...")
         read_result = self.datareader.read_trajectory(
             indices=[self.train_indices, self.val_indices, self.test_indices, self.predict_indices],
             labeler_type=self.labeler_type,
             labeler_args=self.labeler_args,
         )
+        self.log_info("Finished reading trajectory data and labels.")
         # Readers that track failed frames return a 3-tuple; older/other readers return 2-tuple
         if len(read_result) == 3:
             trajs, labels, failed_per_split = read_result
@@ -223,33 +237,49 @@ class CoordinatesDataModule(BaseDataModule):
                                         self.datareader
                                         )
         
-        self.train_data = dataset_class(
-            structures=trajs[0],
-            labels=labels[0],
-            dataset_args=dataset_args,
-            **self.run_args,
-        ) if self.train_size > 0 else []
+        if self.train_size > 0:
+            self.log_info(f"Creating training dataset with {len(trajs[0])} frames...")
+            self.train_data = dataset_class(
+                structures=trajs[0],
+                labels=labels[0],
+                dataset_args=dataset_args,
+                **{**self.run_args, "tag": 'train'},
+            )
+        else:
+            self.train_data = []
         
-        self.val_data = dataset_class(
-            structures=trajs[1],
-            labels=labels[1],
-            dataset_args=dataset_args,
-            **{**self.run_args, "verbose": False},  # Disable verbose logging for validation dataset creation
-        ) if self.validation_size > 0 else []
+        if self.validation_size > 0:
+            self.log_info(f"Creating validation dataset with {len(trajs[1])} frames...")
+            self.val_data = dataset_class(
+                structures=trajs[1],
+                labels=labels[1],
+                dataset_args=dataset_args,
+                **{**self.run_args, "verbose": False, "tag": 'val'},  # Disable verbose logging for validation dataset creation
+            )
+        else:
+            self.val_data = []
 
-        self.test_data = dataset_class(
-            structures=trajs[2],
-            labels=labels[2],
-            dataset_args=dataset_args,
-            **{**self.run_args, "verbose": False},  # Disable verbose logging for test dataset creation
-        ) if self.test_size > 0 else []
-        
-        self.predict_data = dataset_class(
-            structures=trajs[3],
-            labels=labels[3],
-            dataset_args=dataset_args,
-            **{**self.run_args, "verbose": False},  # Disable verbose logging for predict dataset creation
-        ) if self.predict_size > 0 else []
+        if self.test_size > 0:
+            self.log_info(f"Creating test dataset with {len(trajs[2])} frames...")
+            self.test_data = dataset_class(
+                structures=trajs[2],
+                labels=labels[2],
+                dataset_args=dataset_args,
+                **{**self.run_args, "verbose": False, "tag": 'test'},  # Disable verbose logging for test dataset creation
+            )
+        else:
+            self.test_data = []
+
+        if self.predict_size > 0:
+            self.log_info(f"Creating predict dataset with {len(trajs[3])} frames...")
+            self.predict_data = dataset_class(
+                structures=trajs[3],
+                labels=labels[3],
+                dataset_args=dataset_args,
+                **{**self.run_args, "verbose": False, "tag": 'predict'},  # Disable verbose logging for predict dataset creation
+            )
+        else:
+            self.predict_data = []
 
         # Set common attributes
         self.num_frames = len(self.train_data) + len(self.val_data) + len(self.test_data) + len(self.predict_data)

@@ -115,6 +115,7 @@ class BondGraphDataset(BaseDataset, Dataset):
         
         self.structures = structures
         self.labels = labels
+        self.tag = kwargs.get("tag", None)
        
         self.bond_indices = [tuple(map(int, b)) for b in self.bond_indices]  # Ensure bond indices are tuples of ints
         # Validate bond indices
@@ -157,8 +158,11 @@ class BondGraphDataset(BaseDataset, Dataset):
         self.torsion_index = torsion_atoms
     
     def _precompute_graphs(self):
-        precomputed_graphs_dir = create_rundir(self.run_dir, "precomputed_graphs", 0, overwrite=False)
-        os.makedirs(precomputed_graphs_dir, exist_ok=True)
+        precomputed_graphs_dir = os.path.join(self.run_dir, f"precomputed_graphs_{self.tag}")
+        if self.tag is not None and not os.path.exists(precomputed_graphs_dir):
+            os.makedirs(precomputed_graphs_dir, exist_ok=True)
+        else:
+            precomputed_graphs_dir = create_rundir(self.run_dir, "precomputed_graphs", 0, overwrite=False)
 
         labels_list = self.labels if self.labels is not None else [None] * self.len()
         items = [(idx, struct, lbl)
@@ -234,9 +238,15 @@ class BondGraphDataset(BaseDataset, Dataset):
         return len(self.structures)
     
     def get_num_node_features(self) -> int:
+        if not hasattr(self, 'node_feat'): # For backwards compatibility with old checkpoints that don't have these attributes saved
+            sample = self.get(0)
+            self.node_feat = sample.x.shape[1]
         return self.node_feat
 
     def get_num_edge_features(self) -> int:
+        if not hasattr(self, 'edge_feat'): # For backwards compatibility with old checkpoints that don't have these attributes saved
+            sample = self.get(0)
+            self.edge_feat = sample.edge_attr.shape[1]
         return self.edge_feat
 
     def get(self, idx: int) -> Data:  # for PyG Dataset compatibility

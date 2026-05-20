@@ -24,6 +24,9 @@ class XTCChunksCGReader(XTCChunksReader):
     
     def _prepare_seq(self, seq):
         """Expand start indices using sequence_length * cg_window frames per start."""
+        self.log_info(f"Expanding sequence start indices into frame ranges of length "
+                      f"{self.sequence_length * self.cg_window} (sequence_length "
+                      f"{self.sequence_length} * cg_window {self.cg_window}).")
         expanded_length = self.sequence_length * self.cg_window
         return [j for i in seq for j in range(i, i + expanded_length)]
 
@@ -31,6 +34,7 @@ class XTCChunksCGReader(XTCChunksReader):
         """Coarse-grain raw frames by averaging positions over cg_window windows."""
         cg_window = self.cg_window
         cg_traj = []
+        self.log_info(f"Coarse-graining trajectory with window size {cg_window}.")
         for i in range(0, len(mol_traj), cg_window):
             window_frames = mol_traj[i:i + cg_window]
             cg_frame = window_frames[0]

@@ -46,7 +46,11 @@ class BondGraphEncoderDecoder(CENetBase):
         outname: Output stem for saved files.
     """
     @staticmethod
-    def get_args_from_datamodule(datamodule, khops) -> dict:
+    def extract_args_from_datamodule(datamodule, args) -> dict:
+        try:
+            khops = args['decoder_args']['template_khop']
+        except KeyError:
+            raise ValueError("Missing 'template_khop' in decoder_args")
         datasetobject = datamodule.get_any_dataset()
         encoder_args = {
             'node_feat': datasetobject.get_num_node_features(),
@@ -56,35 +60,24 @@ class BondGraphEncoderDecoder(CENetBase):
             'template_data': datasetobject.get_template_graph(k=khops),
             'label_indices': datasetobject.get_label_indices(),
         }
-        return {
-            'encoder_args': encoder_args,
-            'decoder_args': decoder_args,
-        }
+        args['encoder_args'].update(encoder_args)
+        args['decoder_args'].update(decoder_args)
+        return args
     
     def __init__(
         self,
-        datamodule = None,
         args: Dict[str, Any] = None,
         **kwargs
     ):
-        self.save_hyperparameters(ignore=['datamodule'])
+        self.save_hyperparameters()
         super().__init__(args=args, **kwargs)
-    
-        if datamodule is not None:
-            extra_args = self.get_args_from_datamodule(datamodule, 
-                                                       khops=args['decoder_args'].get('template_khop'))
-            args['encoder_args'].update(extra_args['encoder_args'])
-            args['decoder_args'].update(extra_args['decoder_args'])
-            self.encoder_args = args['encoder_args']
-            self.decoder_args = args['decoder_args']
-
         
         # Some check
         assert len(self.out_labels) == 4, "out_labels must be a list of 4 strings"
         assert len(self.loss_weights) == 4, "loss_weights must be a list of 4 floats"
         check_dict_contains_keys(self.encoder_args, required_keys=['latent_dim'])
-        check_dict_contains_keys(self.decoder_args, required_keys=['template_khop'])
         
+        self.template_khop = self.decoder_args.get('template_khop', None)
         self.latent_dim = self.encoder_args['latent_dim']
 
         self._init_encoder()
@@ -146,28 +139,19 @@ class BondGraphEncoderDecoder(CENetBase):
     # Encoder/Decoder initialization
     # ------------------------------------------------------------------
     
-    def _init_encoder(self, datamodule=None) -> None:
-        if datamodule is not None:
-            extra_args = self.get_args_from_datamodule(datamodule, 
-                                khops=self.decoder_args.get('template_khop', self.template_khop))
-            self.encoder_args.update(extra_args['encoder_args'])
-        if check_dict_contains_keys(self.encoder_args, 
+    def _init_encoder(self) -> None:
+        check_dict_contains_keys(self.encoder_args, 
                                     required_keys=['node_feat', 
                                                    'edge_feat', 
-                                                   'latent_dim']):
-            self.encoder_net = BondGraphEncoder(**self.encoder_args)
+                                                   'latent_dim'])
+        self.encoder_net = BondGraphEncoder(**self.encoder_args)
 
     def _init_decoder(self, datamodule=None) -> None:
-        if datamodule is not None:
-            extra_args = self.get_args_from_datamodule(datamodule, 
-                                khops=self.decoder_args.get('template_khop', self.template_khop))
-            self.decoder_args.update(extra_args['decoder_args'])
-        if check_dict_contains_keys(self.decoder_args, 
+        check_dict_contains_keys(self.decoder_args, 
                                     required_keys=['template_data', 
-                                                   'label_indices']):
-            self.template_khop = self.decoder_args.get('template_khop', None)
-            self.decoder_net = BondGraphDecoder(**{k: v for k, v in self.decoder_args.items() if k != 'template_khop'},
-                                                latent_dim=self.latent_dim)
+                                                   'label_indices'])
+        self.decoder_net = BondGraphDecoder(**self.decoder_args,
+                                            latent_dim=self.latent_dim)
 
     # ------------------------------------------------------------------
     # Graph-specific normalization (cannot be shared: operates on PyG Data)
@@ -253,19 +237,6 @@ class BondGraphEncoderDecoder(CENetBase):
     # ------------------------------------------------------------------
     # Forward pass
     # ------------------------------------------------------------------
-
-    def setup(self, stage: str):
-        if self.decoder_net is None or self.encoder_net is None:
-            if not hasattr(self, 'trainer') or self.trainer is None:
-                self.raise_error("Encoder/Decoder not initialized and trainer not found.", error_type=RuntimeError)
-            datamodule = getattr(self.trainer, 'datamodule', None)
-            if datamodule is None:
-                self.raise_error("Encoder/Decoder not initialized and trainer datamodule not found.", error_type=RuntimeError)
-            
-            if self.encoder_net is None:
-                self._init_encoder(datamodule=datamodule)
-            if self.decoder_net is None:
-                self._init_decoder(datamodule=datamodule)
 
     def _batch_split(self, batch):
         return batch, self.extract_labels(batch)

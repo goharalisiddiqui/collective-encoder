@@ -31,4 +31,5 @@ class XTCChunksReader(XTCReader):
     
     def _prepare_seq(self, seq):
         """Expand start indices into consecutive frame ranges of length sequence_length."""
+        self.log_info(f"Expanding sequence start indices into frame ranges of length {self.sequence_length}.")
         return [j for i in seq for j in range(i, i + self.sequence_length)]

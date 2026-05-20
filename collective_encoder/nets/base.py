@@ -40,6 +40,10 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     saved via ``save_hyperparameters()`` in the concrete subclass ``__init__``:
         ``lrate``, ``weight_decay``, ``scheduler``, ``scheduler_args``
     """
+    
+    @staticmethod
+    def extract_args_from_datamodule(datamodule, args) -> dict:
+        return args
 
     def __init__(self, args: Dict[str, Any] = None, **kwargs) -> None:
         pl.LightningModule.__init__(self)
