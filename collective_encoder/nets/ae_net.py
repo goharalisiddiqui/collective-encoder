@@ -9,12 +9,11 @@ class AE(AEBase):
     _COMPATIBLE_DATASETS = ["DEFAULT", "DISTANCES", "SOAP", "SOAP_PS"]
 
     def __init__(self,
-                 datamodule,
                  args: Dict[str, Any] = None,
                  **kwargs
                  ):
         self.save_hyperparameters(ignore=['datamodule'])
-        super().__init__(datamodule=datamodule, args=args, **kwargs)
+        super().__init__(args=args, **kwargs)
 
     def init_network(self) -> None:
         self.encoder_net = SimpleNN(layers=self.network, batch_norm=self.batch_norm)

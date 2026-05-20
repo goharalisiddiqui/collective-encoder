@@ -45,7 +45,9 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     def extract_args_from_datamodule(datamodule, args) -> dict:
         return args
 
-    def __init__(self, args: Dict[str, Any] = None, **kwargs) -> None:
+    def __init__(self, 
+                 args: Dict[str, Any] = None, 
+                 **kwargs) -> None:
         pl.LightningModule.__init__(self)
         CEModule.__init__(self, args=args, **kwargs)
         

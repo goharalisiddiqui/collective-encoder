@@ -54,9 +54,13 @@ class AEBase(CENetBase, ABC):
     Subclasses must implement ``encoder(x)`` and ``decoder(z)``; they call
     ``save_hyperparameters()`` before ``super().__init__()``.
     """
+    @staticmethod
+    def extract_args_from_datamodule(datamodule, args) -> dict:
+        args['datapoint_shape'] = datamodule.get_datapoint_shape()
+        args['dataset_type'] = datamodule.dataset_type
+        return args
 
     def __init__(self,
-                 datamodule,
                  args: Dict[str, Any] = None,
                  **kwargs
                  ):
@@ -67,14 +71,13 @@ class AEBase(CENetBase, ABC):
             self.raise_error(f"Network architecture must have at "
                              f"least 2 layers (input and latent). Got: {self.network}")
         
-        assert datamodule.dataset_type in self._COMPATIBLE_DATASETS, (
-            f"Dataset type '{datamodule.dataset_type}' is not compatible with AE. "
+        assert self.dataset_type in self._COMPATIBLE_DATASETS, (
+            f"Dataset type '{self.dataset_type}' is not compatible with AE. "
             f"Compatible types: {self._COMPATIBLE_DATASETS}"
         )
         
         nodes = [int(x) for x in self.network]
-        datapoint_shape = datamodule.get_datapoint_shape()
-        nodes.insert(0, datapoint_shape[0])
+        nodes.insert(0, self.datapoint_shape[0])
 
         self.network = nodes
         self.init_network()

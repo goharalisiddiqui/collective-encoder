@@ -197,14 +197,21 @@ class VAE(AEBase):
         "use_steric_loss": False,
         "use_bond_deviation_loss": False,
     })
+    
+    @staticmethod
+    def extract_args_from_datamodule(datamodule, args) -> dict:
+        args = AEBase.extract_args_from_datamodule(datamodule, args)
+        if args.get("use_bond_deviation_loss", False) or args.get("use_steric_loss", False):
+            args['atomic_numbers'] = datamodule.get_atns()
+            args['bond_indices'] = datamodule.get_bond_indices()
+        return args
 
     def __init__(self,
-                 datamodule,
                  args: Dict[str, Any] = None,
                  **kwargs
                  ):
-        self.save_hyperparameters(ignore=['datamodule'])
-        super().__init__(datamodule=datamodule, args=args, **kwargs)
+        self.save_hyperparameters()
+        super().__init__(args=args, **kwargs)
 
         self.kld_scheduler = KLDResolver(self.kld_max_type, 
                                          self.kld_max_scheduler_args,
@@ -215,11 +222,8 @@ class VAE(AEBase):
             "reg_loss": self.reg_loss,
         }
         if self.use_bond_deviation_loss:
-            self.bond_indices = datamodule.get_bond_indices()
-            self.atomic_numbers = datamodule.get_atns()
             self.losses["bond_deviation_loss"] = self.bond_deviation_loss
         if self.use_steric_loss:
-            self.atomic_numbers = datamodule.get_atns()
             self.losses["steric_loss"] = self.steric_loss
         if self.use_bond_deviation_loss or self.use_steric_loss:
             cov_radii = [covalent_radii[el] for el in self.atomic_numbers]
