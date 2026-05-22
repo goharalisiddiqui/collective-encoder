@@ -82,7 +82,7 @@ class LDplotter(BaseTestPlotter):
         labels = self.label_selector(labels)
         labels = self.cossin_resolver(labels)
         
-        latent = latent.detach().cpu().numpy()
+        latent = latent.detach().cpu().numpy() if isinstance(latent, torch.Tensor) else latent
         
         self.plot_latent(latent, labels = labels, name = "latent")
         

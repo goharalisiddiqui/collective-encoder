@@ -9,17 +9,17 @@ class AE(AEBase):
     _COMPATIBLE_DATASETS = ["DEFAULT", "DISTANCES", "SOAP", "SOAP_PS"]
 
     def __init__(self,
-                 args: Dict[str, Any] = None,
+                args: Dict[str, Any] = None,
                  **kwargs
-                 ):
-        self.save_hyperparameters(ignore=['datamodule'])
+                ):
+        self.save_hyperparameters()
         super().__init__(args=args, **kwargs)
 
     def init_network(self) -> None:
-        self.encoder_net = SimpleNN(layers=self.network, batch_norm=self.batch_norm)
-        self.decoder_net = SimpleNN(layers=self.network[::-1], batch_norm=self.batch_norm)
-    
+        self.encoder_net = SimpleNN(layers=self.encoder_network, batch_norm=self.batch_norm)
+        self.decoder_net = SimpleNN(layers=self.decoder_network, batch_norm=self.batch_norm)
+
     def print_hparams(self):
         super().print_hparams()
-        self.log_msg(f"  Network architecture: {self.network}")
+        self.log_msg(f"  Network architecture: {self.encoder_network} -> {self.decoder_network}")
 

@@ -5,7 +5,7 @@ import torch
 
 from collective_encoder.nets.ae_base import AEBase
 from collective_encoder.nets.modules.variational_nn import VariationalNN
-from collective_encoder.losses.recon import CELossRecon
+from collective_encoder.losses.nll import CELossNLL
 from collective_encoder.losses.kld_uniform_gaussian import CELossKLDUniformGaussian
 from collective_encoder.losses.bond_deviation import CELossBondDeviation
 from collective_encoder.losses.steric import CELossSteric
@@ -45,7 +45,7 @@ class VAE(AEBase):
         super().__init__(args=args, **kwargs)
 
         self.losses = {
-            "rec_loss": CELossRecon({}, **kwargs),
+            "rec_loss": CELossNLL({}, **kwargs),
             "reg_loss": CELossKLDUniformGaussian({
                             "kld_max_type": self.kld_max_type,
                             "kld_max_scheduler_args": self.kld_max_scheduler_args,
@@ -62,15 +62,6 @@ class VAE(AEBase):
             }, **kwargs)
 
         self.metatomic_model_cls = MetatomicModelVAE
-    
-    def get_metatomic_model(self):
-        model = self.metatomic_model_cls(
-            encoder=self.encoder_net,
-            normIn=self.normIn,
-            dmean=self.Mean,
-            drange=self.Range,
-        )
-        return model
 
     def get_metad_output(self, latent: Tuple[torch.Tensor, torch.Tensor], meta: Dict[str, torch.Tensor]) -> torch.Tensor:
         # For metaD we use only use the mean of the latent distribution
@@ -86,9 +77,9 @@ class VAE(AEBase):
         self.ce_log_dict("VAE hparams:", self.args)
 
     def init_network(self):
-        self.encoder_net = VariationalNN(layers=self.network, 
+        self.encoder_net = VariationalNN(layers=self.encoder_network, 
                                         batch_norm=self.batch_norm)
-        self.decoder_net = VariationalNN(layers=self.network[::-1], 
+        self.decoder_net = VariationalNN(layers=self.decoder_network, 
                                         batch_norm=self.batch_norm)
 
     def encoder(self, x):
@@ -123,6 +114,15 @@ class VAE(AEBase):
 
     def get_latent_names(self):
         return "mu_latent", "logvar_latent"
+
+    def get_metatomic_model(self):
+        model = self.metatomic_model_cls(
+            encoder=self.encoder_net,
+            normIn=self.normIn,
+            dmean=self.Mean,
+            drange=self.Range,
+        )
+        return model
 
 # ------------------------------------------------------------------
 # Metatomic Interface

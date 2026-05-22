@@ -1,8 +1,10 @@
 import importlib
 
 _REGISTRY: dict = {
-    "VAE":    ("collective_encoder.nets.vae_net",   "VAE"),
     "AE":     ("collective_encoder.nets.ae_net",    "AE"),
+    "sAE":    ("collective_encoder.nets.sae_net",   "sAE"),
+    "VAE":    ("collective_encoder.nets.vae_net",   "VAE"),
+    "sVAE":   ("collective_encoder.nets.svae_net",  "sVAE"),
     "DVAE":   ("collective_encoder.nets.dvae_net",  "DVAE"),
     "EDVAE":  ("collective_encoder.nets.edvae_net", "EDVAE"),
     "BGE":    ("collective_encoder.nets.bge",    "BondGraphEncoderDecoder"),
