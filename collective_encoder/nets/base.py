@@ -318,13 +318,14 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     def _step(self, batch, stage: str) -> torch.Tensor:
         data, labels = self._batch_split(batch)
         output, latent, meta = self(data)
+        data = self.normalize(data)
         batch_size = self.trainer.datamodule.batch_size \
             if self.trainer and self.trainer.datamodule else None
 
         with torch.no_grad():
             metrics = self.metrics if stage in ["train", "val"] else self.test_metrics
             metrics = self._multiple_calculate(data, latent, output, labels, meta, 
-                                           metrics, stage, batch_size)
+                                        metrics, stage, batch_size)
     
         if stage == "test":
             if len(self.test_plotters) > 0:
@@ -332,11 +333,11 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
             return metrics.get("mae", torch.tensor(0.0))
 
         losses = self._multiple_calculate(data, latent, output, labels, meta, 
-                                          self.losses, stage, batch_size)
+                                        self.losses, stage, batch_size)
         losses = self.extra_training_step(data, latent, output, labels, meta, losses)
         loss = self.aggregate_losses(losses)
         self.log(f"{stage}_loss", loss.detach(), prog_bar=(stage == "train"),
-                 on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
+                on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
         return loss
     
     def on_test_start(self):

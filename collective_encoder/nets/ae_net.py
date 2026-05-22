@@ -1,7 +1,7 @@
 from typing import Dict, Any
 
 from collective_encoder.nets.ae_base import AEBase
-from collective_encoder.nets.modules.simple_encoder import SimpleNN
+from collective_encoder.nets.modules.simple_nn import SimpleNN
 
 
 class AE(AEBase):

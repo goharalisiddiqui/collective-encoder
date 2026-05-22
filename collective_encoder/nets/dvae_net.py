@@ -3,8 +3,8 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-from collective_encoder.nets.modules.variational_encoder import VariationalNN
-from collective_encoder.nets.modules.simple_encoder import SimpleNN
+from collective_encoder.nets.modules.variational_nn import VariationalNN
+from collective_encoder.nets.modules.simple_nn import SimpleNN
 
 from collective_encoder.nets.vae_net import VAE
 
