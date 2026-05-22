@@ -14,11 +14,6 @@ class CELossNLL(CELossBase):
         'logvar_name': 'logvar_x',
     }
     
-    def __init__(self, 
-                args: Dict[str, Any] = None, 
-                **kwargs) -> None:
-        super().__init__(self, args, **kwargs)
-
     def forward(self, 
                 inp: torch.Tensor, 
                 latent: torch.Tensor, 

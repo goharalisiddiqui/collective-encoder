@@ -1,11 +1,6 @@
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
-
 import torch
 
 from .kld_uniform_gaussian import CELossKLDUniformGaussian
-
-EPSILON = 1e-7
 
 
 class CELossKLDGaussianMixture(CELossKLDUniformGaussian):

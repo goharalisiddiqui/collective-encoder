@@ -7,6 +7,10 @@ from collective_encoder.nets.base import CENetBase
 from .modules.graph_encoder import BondGraphEncoder
 from .modules.graph_decoder import BondGraphDecoder
 
+from collective_encoder.losses.mse_dict import CELossMSEDict
+from collective_encoder.losses.latent import CELossLatent
+from collective_encoder.metrics.mae_dict import CEMetricMAEDict
+
 from collective_encoder.utils import check_dict_contains_keys
 
 
@@ -84,15 +88,20 @@ class BondGraphEncoderDecoder(CENetBase):
         self._init_decoder()
         
         self.losses = {
-            'encdec': self.loss_encdec,
+            'encdec': CELossMSEDict({
+                'keys': self.outlabels,
+                'weights': self.loss_weights,
+                }, **kwargs),
         }
         if self.loss_latent_weight > 0.0:
-            self.losses['latent'] = self.loss_latent
+            self.losses['latent'] = CELossLatent({}, **kwargs)
         
         self.metrics = {
-            'mae': self.metric_encdec_mae
+            'mae': CEMetricMAEDict({}, **kwargs)
         }
-        self.test_metrics = self.metrics.copy()
+        self.test_metrics = {
+            'mae': CEMetricMAEDict({}, **kwargs)
+        }
 
     def get_norm_len(self):
         return self.encoder_args['node_feat'] + self.encoder_args['edge_feat']
@@ -256,34 +265,6 @@ class BondGraphEncoderDecoder(CENetBase):
             out_labels[3]: batch.y_torsions_sin.view(num_graphs, -1),
         }
 
-    def loss_encdec(self, inp, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        losses = {}
-        for out_label, weight in zip(self.out_labels, self.loss_weights):
-            losses[out_label] = self.loss_fn(output[out_label], labels[out_label]) * weight
-
-        return sum(losses.values()), losses
-
-    def metric_encdec_mae(self, inp, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        mae = {}
-        for out_label in self.out_labels:
-            mae[out_label] = (
-                torch.abs(output[out_label] - labels[out_label]).mean()
-                if labels[out_label].numel() > 0
-                else torch.tensor(0.0, device=output[out_label].device)
-            )
-        recon_mae = sum(mae.values()) / len(mae)
-        return recon_mae, mae
-    
-    def loss_latent(self, input, latent, output, labels, meta) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        """Encourage sequential latent points to be close and equidistant."""
-        loss_latent = torch.tensor(0.0, device=latent.device)
-        if latent.size(0) > 1:
-            batch_dist = torch.norm(latent[1:] - latent[:-1], dim=1)
-            loss_latent = torch.mean(batch_dist)
-        if latent.size(0) > 2:
-            loss_latent = loss_latent + torch.var(batch_dist)
-        return loss_latent, {}
-    
     def aggregate_losses(self, losses):
         loss = losses['encdec']
         if self.loss_latent_weight > 0.0:

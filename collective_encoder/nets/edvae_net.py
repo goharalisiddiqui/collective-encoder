@@ -16,22 +16,18 @@ class EDVAE(DVAE):
     })
     
     def __init__(self,
-                 datamodule,
-                 args: Dict[str, Any] = None,
-                 **kwargs
-                 ):
+                args: Dict[str, Any] = None,
+                **kwargs
+                ):
         self.save_hyperparameters(ignore=['datamodule'])
         
-        raw_shape = datamodule.get_datapoint_shape()
-        self._raw_datapoint_shape = raw_shape
-        
-        super().__init__(datamodule=datamodule, args=args, **kwargs)
+        super().__init__(args=args, **kwargs)
         
     def init_network(self) -> None:
-        raw_shape = self._raw_datapoint_shape
+        raw_shape = self.datapoint_shape
         embedded_length = int(np.prod(raw_shape))
         
-        self.network[0] = embedded_length
+        self.encoder_network[0] = embedded_length
 
         if self.embedding_type == "flatten":
             self.embedding = nn.Flatten()
