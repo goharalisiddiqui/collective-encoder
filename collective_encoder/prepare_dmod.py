@@ -91,7 +91,7 @@ def prepare(config_path: str, debug: bool = False):
     if not hasattr(logging, logging_level.upper()):
         raise ValueError(f"Invalid logging level: {logging_level}. "
                          f"Valid levels: {logging._nameToLevel.keys()}")
-    logging_level = getattr(logging, config.get('verbose', 'INFO').upper(), logging.INFO)
+    logging_level = getattr(logging, logging_level.upper(), logging.INFO)
     logging.basicConfig(filename=os.path.join(run_dir, "run.log"),
                         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
                         level=logging_level)
