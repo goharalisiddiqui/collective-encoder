@@ -6,7 +6,7 @@ import torch
 from collective_encoder.nets.ae_base import AEBase
 from collective_encoder.nets.modules.variational_nn import VariationalNN
 from collective_encoder.losses.nll import CELossNLL
-from collective_encoder.losses.kld_uniform_gaussian import CELossKLDUniformGaussian
+from collective_encoder.losses.kld_resolver import create_kld_loss
 from collective_encoder.losses.bond_deviation import CELossBondDeviation
 from collective_encoder.losses.steric import CELossSteric
 
@@ -21,8 +21,8 @@ class VAE(AEBase):
     _OPTIONAL_ARGS = AEBase._OPTIONAL_ARGS.copy()
     _OPTIONAL_ARGS.update({
         "beta": 1.0,  # Weight for the KL divergence term in the loss function
-        "kld_max_type": 'Fixed',
-        "kld_max_scheduler_args": None,
+        "kld_type": "gaussian",  # Prior distribution for the latent space (supports 'gaussian', ')
+        "kld_args": None,  # Additional arguments for the KLD loss (e.g., number of components for Gaussian Mixture)
         "use_bond_deviation_loss": False,  # Whether to include a bond deviation loss based on bonded atom pairs
         "use_steric_loss": False,
         "use_bond_deviation_loss": False,
@@ -43,13 +43,15 @@ class VAE(AEBase):
                 ):
         self.save_hyperparameters()
         super().__init__(args=args, **kwargs)
+        
+        if self.kld_type == 'nflow':
+            if self.kld_args is None:
+                self.kld_args = {}
+            self.kld_args['latent_dim'] = self.latent_dim
 
         self.losses = {
             "rec_loss": CELossNLL({}, **kwargs),
-            "reg_loss": CELossKLDUniformGaussian({
-                            "kld_max_type": self.kld_max_type,
-                            "kld_max_scheduler_args": self.kld_max_scheduler_args,
-                        }, **kwargs),
+            "reg_loss": create_kld_loss(self.kld_type, self.kld_args, **kwargs),
         }
         if self.use_bond_deviation_loss:
             self.losses["bond_deviation_loss"] = CELossBondDeviation({

@@ -16,7 +16,7 @@ class CELossMSE(CELossBase):
     def __init__(self, 
                 args: Dict[str, Any] = None, 
                 **kwargs) -> None:
-        super().__init__(self, args, **kwargs)
+        super().__init__(args, **kwargs)
         self.mse = torch.nn.MSELoss(reduction=self.reduction)
 
     def forward(self, 

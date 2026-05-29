@@ -10,7 +10,7 @@ from collective_encoder.nets.base import CENetBase
 
 
 class AEBase(CENetBase, ABC):
-    _REQUIRED_ARGS = ['network']
+    _REQUIRED_ARGS = ['encoder_network', 'decoder_network']
     _OPTIONAL_ARGS = CENetBase._OPTIONAL_ARGS
     _OPTIONAL_ARGS.update({
         'batch_norm': False,  # Whether to use batch normalization in the encoder/decoder

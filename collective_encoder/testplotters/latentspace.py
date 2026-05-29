@@ -88,12 +88,12 @@ class LDplotter(BaseTestPlotter):
         
         mu_latent = meta.get('mu_latent', None)
         if mu_latent is not None:
-            mu_latent = mu_latent.detach().cpu().numpy()
+            mu_latent = mu_latent.detach().cpu().numpy() if isinstance(mu_latent, torch.Tensor) else mu_latent
             self.plot_latent(mu_latent, labels = labels, name = "mu_latent")
 
         logvar_latent = meta.get('logvar_latent', None)
         if logvar_latent is not None:
-            logvar_latent = logvar_latent.detach().cpu().numpy()
+            logvar_latent = logvar_latent.detach().cpu().numpy() if isinstance(logvar_latent, torch.Tensor) else logvar_latent
             std_latent = np.sqrt(np.exp(logvar_latent))
             self.plot_latent(mu_latent, errors = std_latent, 
                              labels = labels, name = "std_latent")
@@ -101,7 +101,7 @@ class LDplotter(BaseTestPlotter):
         ld_names = [f"LD{i}" for i in range(latent.shape[1])]
         ref_latent = mu_latent if mu_latent is not None else latent
 
-        fig = self.plot_correlation(ref_latent, ref_latent,
+        fig, axes = self.plot_correlation(ref_latent, ref_latent,
                                     x_labels=ld_names, y_labels=ld_names)
         self.log_image(fig, "latent_latent_correlation")
         plt.close(fig)
@@ -109,7 +109,7 @@ class LDplotter(BaseTestPlotter):
         if labels is not None and len(labels) > 0:
             label_array = np.stack(list(labels.values()), axis=1)
             label_names = list(labels.keys())
-            fig = self.plot_correlation(ref_latent, label_array,
+            fig, axes = self.plot_correlation(ref_latent, label_array,
                                         x_labels=ld_names, y_labels=label_names)
             self.log_image(fig, "latent_label_correlation")
             plt.close(fig)
