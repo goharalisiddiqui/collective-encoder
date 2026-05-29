@@ -9,6 +9,9 @@ import pytorch_lightning as pl
 
 from collective_encoder.common.module import CEModule
 
+from collective_encoder.losses.mse import CELossMSE
+from collective_encoder.metrics.mae import CEMetricMAE
+
 
 class CENetBase(pl.LightningModule, CEModule, ABC):
     _OPTIONAL_ARGS = {
@@ -46,8 +49,8 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         return args
 
     def __init__(self, 
-                 args: Dict[str, Any] = None, 
-                 **kwargs) -> None:
+                args: Dict[str, Any] = None, 
+                **kwargs) -> None:
         pl.LightningModule.__init__(self)
         CEModule.__init__(self, args=args, **kwargs)
         
@@ -57,13 +60,13 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
         
         self.losses = {
-            "loss": self.loss,
+            "loss": CELossMSE({}, **kwargs),
         }
         self.metrics = {
-            "mae": self.metric_mae,
+            "mae": CEMetricMAE({}, **kwargs),
         }  
         self.test_metrics = {
-            "mae": self.metric_mae,
+            "mae": CEMetricMAE({}, **kwargs),
         }
         self.test_plotters = {}
         
@@ -318,13 +321,14 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     def _step(self, batch, stage: str) -> torch.Tensor:
         data, labels = self._batch_split(batch)
         output, latent, meta = self(data)
+        data = self.normalize(data)
         batch_size = self.trainer.datamodule.batch_size \
             if self.trainer and self.trainer.datamodule else None
 
         with torch.no_grad():
             metrics = self.metrics if stage in ["train", "val"] else self.test_metrics
             metrics = self._multiple_calculate(data, latent, output, labels, meta, 
-                                           metrics, stage, batch_size)
+                                        metrics, stage, batch_size)
     
         if stage == "test":
             if len(self.test_plotters) > 0:
@@ -332,11 +336,11 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
             return metrics.get("mae", torch.tensor(0.0))
 
         losses = self._multiple_calculate(data, latent, output, labels, meta, 
-                                          self.losses, stage, batch_size)
+                                        self.losses, stage, batch_size)
         losses = self.extra_training_step(data, latent, output, labels, meta, losses)
         loss = self.aggregate_losses(losses)
         self.log(f"{stage}_loss", loss.detach(), prog_bar=(stage == "train"),
-                 on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
+                on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
         return loss
     
     def on_test_start(self):
@@ -387,26 +391,6 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     # ------------------------------------------------------------------
     # Losses and metrics
     # ------------------------------------------------------------------
-
-    def loss(self, 
-             inp: Union[torch.Tensor, Data],
-             latent: torch.Tensor, 
-             output: torch.Tensor, 
-             labels: torch.Tensor, 
-             meta: Dict[str, Any]) -> Tuple[torch.Tensor, Dict[str, Any]]:
-        loss = F.mse_loss(inp, output, reduction='none')
-        loss = torch.mean(loss)
-        return loss, {}
-
-    def metric_mae(self, 
-                   inp: Union[torch.Tensor, Data],
-                   latent: torch.Tensor,
-                   output: torch.Tensor,
-                   labels: torch.Tensor,
-                   meta: Dict[str, Any]) -> Tuple[torch.Tensor, Dict[str, Any]]:
-        mae = F.l1_loss(inp, output, reduction='none')
-        mae = torch.mean(mae)
-        return mae, {}
 
     def aggregate_losses(self, losses: dict) -> torch.Tensor:
         return torch.sum(torch.stack(list(losses.values())))
