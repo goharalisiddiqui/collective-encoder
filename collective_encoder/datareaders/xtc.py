@@ -144,7 +144,8 @@ class XTCReader(TrajectoryReaderBase):
             u = mda.Universe(self.tprfile, *xtcfiles)
         elif self.xtcfiles:
             self.log_msg("Loading trajectory from multiple files: ")
-            self.log_msg(f"- {('\n\t - '.join(self.xtcfiles))}")
+            files = '\n\t - '.join(self.xtcfiles)
+            self.log_msg(f"- {files}")
             for xf in self.xtcfiles:
                 if not os.path.exists(xf):
                     self.raise_error(f"File {xf} not found")

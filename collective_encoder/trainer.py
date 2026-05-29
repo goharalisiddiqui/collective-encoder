@@ -147,10 +147,6 @@ def train(config_path: str, debug: bool = False):
         validate_required_fields(dm_args, 
                                 get_required_init_args(dm_cls))
         
-        dataset_type = dm_args.get('dataset_type', None)
-        if dataset_type not in nn_cls._COMPATIBLE_DATASETS:
-            raise ValueError(f"Network '{nn_type}' is not compatible with dataset" \
-                            f" '{dataset_type}'")
         dm = dm_cls(dm_args, **metargs)
         
     ##################################
