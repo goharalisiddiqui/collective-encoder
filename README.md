@@ -1,6 +1,6 @@
 # Collective Encoder
 
-**A modular, scalable framework for building surrogate machine learning models that predict the dynamics of molecular systems.**
+**A modular, scalable framework for building machine learning models that encode collective motions in atomistic systems.**
 
 ---
 
@@ -22,7 +22,7 @@ Collective Encoder is an open-source toolkit designed to accelerate research in 
 
 ### Prerequisites
 
-- Python 3.12
+- Python 3.10
 - [PyTorch Lightning](https://pytorch-lightning.readthedocs.io/)
 - (Optional) [Weights & Biases](https://wandb.ai/)
 
@@ -31,96 +31,52 @@ Collective Encoder is an open-source toolkit designed to accelerate research in 
 Clone the repository:
 
 ```bash
-git clone https://github.com/your-username/collective-encoder.git
-cd collective-encoder
+git clone https://github.com/goharalisiddiqui/collective-encoder.git --branch v0.1.0
+pip install -e ./collective-encoder  # Install as editable package
 ```
 
-Set up your Python environment:
+Via pip:
 
 ```bash
-pip install -r requirements.txt  # Install dependencies
+pip install git+https://github.com/goharalisiddiqui/collective-encoder.git@v0.1.0
 ```
 *If you use conda or venv, create/activate your environment beforehand.*
 
 ### Project Structure
 
+The codebase is organized into modular subpackages for clarity and extensibility. Each subpackage contains a file to define the main class and any necessary utilities. If there is shared code (e.g pytorch modules), it is placed in a subfolder with appropriate name. Each module folder also contains an `__init__.py` file, a `base.py` file for abstract base classes (it should define the main interface for that module), and a `resolver.py` file that provides a method to resolve the modules based on string identifiers supplied in the config file. The main training script (`trainer.py`) and other modules use these resolvers to instantiate the appropriate classes based on the configuration.
+
 ```text
 collective-encoder/
 ├── collective_encoder/
-│   ├── common/            # Shared utilities, config checkers, modules
-│   ├── dataloaders/       # Data loader classes for XTC, MD17, KMC, etc.
+│   ├── common/            # Shared utilities, config checkers, root module for common functionality (e.g. logging)
+│   ├── datamodules/       # Datamodules classes for different data modalities (Coordinates, COLVAR files etc.)
+│   ├── datareaders/       # Data readers/parsers for different file formats (XTC, XYZ, COLVAR)
 │   ├── datasets/          # Feature extraction for distances, positions, SOAP, etc.
-│   ├── nets/              # Neural network architectures and encoders
-│   ├── plotters/          # Tools for analyzing/visualizing latent spaces
+│   ├── nets/              # Neural network architectures
+│   ├── losses/            # Loss functions for training
+│   ├── metrics/           # Metrics for evaluating model performance
+│   ├── testplotters/      # Tools for analyzing/visualizing the results (e.g. latent space plots, reconstructions)
 │   ├── mtomic/            # Metatomic wrapper/export utilities
-│   ├── config.py          # Config management
-│   └── engine.py          # Main training orchestrator
-├── examples/              # Example configs and SLURM scripts
-├── CLAUDE.md              # Guidance for Claude Code users
-├── README.md
-└── requirements.txt
+│   ├── configs/           # Default config templates
+│   └── trainer.py         # Main training orchestrator
+│   └── prepare_dmod.py    # Script to prepare datamodules and save them for later use in training
+│   └── test.py            # Script for model evaluation and testing
+│   └── utils.py           # Some common utilities
+│   └── cli.py             # Command line interface for data preparation, training and testing
+├── examples/              # Example systems with configs and SLURM scripts for quick run
+└── README.md
 ```
-Each submodule is designed for modularity and extensibility. For example, to add a new dataset type, create a new class in `datasets/` that inherits from the appropriate base class and register it in the config resolver.
-
-### Preparing Your Run
-
-1. **Edit the configuration:**
-   Copy and modify an example config (e.g., `examples/ala2_tutorial/ala2_config.yaml`). Set your architecture, data paths, training hyperparameters, etc.
-
-2. **(Optional) Test with Debug Mode:**
-   Before launching your full experiment, run:
-
-   ```bash
-   python trainer.py --config path/to/config.yaml --debug
-   ```
-
-   This uses a smaller dataset and two epochs for rapid validation.
-
-3. **Launch Full Training (Command Line):**
-
-   ```bash
-   python trainer.py --config path/to/config.yaml
-   ```
-
-4. **Run on HPC with SLURM:**
-   Use the provided example SLURM script:
-
-   ```bash
-   sbatch ./example_run.sh
-   ```
-
-5. **Check Results:**
-   Outputs, logs, and checkpoints will appear in the `train_runs/` (or configured `outpath`) directory.
-
-### Configuration File Explained
-
-Key fields in your YAML config:
-
-```yaml
-network_name: VAE            # Architecture (e.g. VAE, AE, DVAE, ...)
-data_name: XTC               # Data type (e.g. XTC, MD17, ...)
-nepochs: 50                  # Training epochs
-outpath: ./results           # Results directory
-data_args:                   # Dataset/dataloader options
-    tprfile: ./data/file.tpr
-    xtcfile: ./data/file.xtc
-    batch_size: 32
-network_args:                # Architecture parameters
-    network: [256, 128, 2]
-    beta: 1.0
-```
-For full documentation, see `examples/full_config.yaml`.
+Each submodule is designed for modularity and extensibility. For example, to add a new dataset type, create a new class in `datasets/` that inherits from the base class and register it in the resolver.
 
 ## Development & Contributing
 
-- Please open issues or pull requests for bug reports, improvements, or new features.
-- Follow PEP8 and maintain docstrings. Tests for new features are highly recommended.
-- When adding new datasets, inherit from the relevant base data loader and register in the config resolver.
+- The project is in early stages for any meaningful contribution, but feel free to fork and experiment. Contributions will be considered as the project matures.
 
 ## Support & Questions
 
-For setup or usage questions, open a GitHub issue or reach out to [goharalisiddiqui@gmail.com](mailto:goharalisiddiqui@gmail.com).
+Feel free to reach out to [goharalisiddiqui@gmail.com](mailto:goharalisiddiqui@gmail.com).
 
 ---
 
-**Collective Encoder** — Empowering molecular ML for diverse data and deployable surrogates.
+**Collective Encoder** — Empowering data-driven collective variables for molecular dynamics.

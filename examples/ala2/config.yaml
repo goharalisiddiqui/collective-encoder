@@ -5,7 +5,7 @@
 # TRAINING SETTINGS
 # =============================================================================
 debug: False                   # Set to True for quick testing (2 epochs, small dataset)
-nepochs: 50                    # Number of training epochs
+nepochs: 5                    # Number of training epochs
 lrate: 0.001                   # Learning rate
 weight_decay: 0.0001           # L2 regularization
 scheduler: True                # Use learning rate scheduling
@@ -26,10 +26,9 @@ wandb: False                   # Set to True for Weights & Biases tracking
 # =============================================================================
 # NETWORK ARCHITECTURE
 # =============================================================================
-network_type: SVAE             # Network type: SVAE (Symmetric Variational Autoencoder)
+network_type: sVAE             # Network type: sVAE (Symmetric Variational Autoencoder)
 network_args:
-    encoder_network: [128, 64, 2]       # Encoder layers: input -> 128 -> 64 -> 2D latent
-    decoder_network: [32]               # Decoder layers: 2D latent -> 32 -> output
+    network: [128, 64, 2]       # Encoder layers: input -> 128 -> 64 -> 2D latent
     normIn: True                        # Normalize input data
     beta: 1.0                           # KL divergence weight for VAE
     batch_norm: True                    # Use batch normalization
@@ -48,7 +47,7 @@ datamodule_args:
 
         # Atom selection (using MDAnalysis selection syntax (https://userguide.mdanalysis.org/stable/selections.html))
         selection: "(resname ALA or resname ACE or resname NME) and not element H"
-        parallel: True              # Use parallel processing for data loading
+        parallel: False              # Use parallel processing for data loading
 
     # Dataset parameters
     max_frames: 1000           # Number of frames to use from trajectory
@@ -78,4 +77,4 @@ datamodule_args:
             - phi_2
             - psi_2
 
-    test_plotter_type: LDplotter
+test_plotter_type: LDplotter
