@@ -7,16 +7,18 @@ class sVAE(VAE):
     _IDENTIFIER = "sVAE"
     
     """
-    Simple Variational Autoencoder (sVAE) with symmetric encoder and decoder architectures.
+    Symmetric Variational Autoencoder (sVAE) with symmetric encoder and decoder architectures.
     The encoder and decoder architectures are determined by the provided network
     """
 
     def __init__(self,
-                 network: list,
                  args: Dict[str, Any] = None,
                  **kwargs
                  ):
         self.save_hyperparameters()
+        network = args.pop('network', None)
+        if network is None:
+            raise ValueError("Argument 'network' is required for sVAE")
         args['encoder_network'] = network
         args['decoder_network'] = network[:-1][::-1]
         super().__init__(args=args, **kwargs)
