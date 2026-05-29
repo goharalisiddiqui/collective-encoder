@@ -76,7 +76,10 @@ Documentation = "https://github.com/goharalisiddiqui/collective-encoder"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["collective_encoder*"]
+include = ["collective_encoder*", "collective_encoder.configs"]
+
+[tool.setuptools.package-data]
+collective_encoder = ["configs/**/*"]
 
 [tool.black]
 line-length = 88
