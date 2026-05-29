@@ -74,11 +74,9 @@ Repository = "https://github.com/goharalisiddiqui/collective-encoder.git"
 Documentation = "https://github.com/goharalisiddiqui/collective-encoder"
 "Bug Tracker" = "https://github.com/goharalisiddiqui/collective-encoder/issues"
 
-[tool.setuptools]
-packages = ["collective_encoder"]
-
-[tool.setuptools.package-dir]
-collective_encoder = "collective_encoder"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["collective_encoder*"]
 
 [tool.black]
 line-length = 88
