@@ -8,107 +8,6 @@ from torch.utils.data import Dataset
 
 from .base import BaseDataset
 
-try:
-    import featomic.torch
-    import metatensor.torch as mts
-    import metatensor
-    import metatomic.torch as mta
-except ImportError:
-    pass
-
-class MetatomicSOAPDataset(torch.nn.Module):
-    def __init__(self, spex, 
-                 selected_keys, 
-                 selected_atoms: List[int],
-                 included_types: List[int]
-                ):
-        super().__init__()
-
-        self.spex = spex
-        self.selected_keys = selected_keys
-        self.selected_atoms = selected_atoms
-
-        self.register_buffer(
-            "included_types",
-            torch.tensor(included_types, dtype=torch.int32).reshape(-1, 1)
-        )
-    
-    def get_atomic_types(self):
-        return [a for a in range(0, 119)]  # all elements
-
-    def get_interaction_range(self):
-        return torch.inf
-
-    def get_length_unit(self):
-        return "angstrom"
-
-    def forward(
-        self,
-        systems: List[mta.System],
-        outputs: Dict[str, mta.ModelOutput],
-        selected_atoms: Optional[mts.Labels],
-    ) -> torch.Tensor:
-
-        if selected_atoms is None:
-            warnings.warn(
-                "No selected_atoms provided to MetatomicSoapPowerSpectrumDataset, "
-                "using predefined selected_atoms which can be incorrect."
-            )
-            selected_cores: mts.Labels = mts.Labels(
-                "atom", torch.tensor(self.selected_atoms).reshape(-1, 1)
-            )
-        else:
-            selected_cores: mts.Labels = selected_atoms
-    
-        # computes the spherical expansion
-        spex = self.spex(
-            systems, selected_samples=selected_atoms, selected_keys=self.selected_keys
-        )
-
-        # then manipulate the tensormap to remove some of the sparsity
-        spex = mts.remove_dimension(spex, axis="keys", name="o3_sigma")
-        spex = spex.keys_to_properties("neighbor_type")
-        spex = spex.keys_to_samples("center_type")
-
-        # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
-
-        atom_desc = []
-        selected_atom_indices: torch.Tensor = selected_cores.values
-        if selected_atom_indices.shape[1] > 1:
-            selected_atom_indices = selected_atom_indices[:, 1]
-        selected_atom_indices = selected_atom_indices.flatten()
-        selected_atom_indices_list: List[int] = selected_atom_indices.to(torch.int64).tolist()
-        for atom in selected_atom_indices_list:
-            desc_block = []
-            sel_map = mts.slice(
-                            spex,
-                            axis="samples",
-                            selection=mts.Labels(
-                                "atom", torch.tensor([atom]).reshape(-1, 1)
-                            ),
-                        )
-            sel_map = mts.slice(
-                            sel_map,
-                            axis="properties",
-                            selection=mts.Labels(
-                                "neighbor_type", 
-                                self.included_types,
-                            ),
-                        )
-            for block in sel_map.blocks():
-                desc = block.values
-                desc_block.append(desc)
-            atom_desc.append(torch.concatenate(desc_block, dim=-2))
-        descriptors = torch.concatenate([d.unsqueeze(1) for d in atom_desc], dim=1)
-
-        # sum the atoms dimension
-        descriptors = descriptors.sum(dim=1)
-
-        # flatten all but the first dimension
-        descriptors = descriptors.reshape(descriptors.shape[0], -1)
-
-
-        return descriptors
 
 class SOAPDataset(Dataset, BaseDataset):
     '''
@@ -231,3 +130,115 @@ class SOAPDataset(Dataset, BaseDataset):
                                     self.selected_keys, 
                                     self.selected_atoms,
                                     included_types=self.included_types)
+
+# ------------------------------------------------------------------
+# Matatomic interface
+# ------------------------------------------------------------------
+
+try:
+    import featomic.torch
+    
+    import metatensor
+    import metatensor.torch as mts
+    from metatensor.torch import Labels
+
+    import metatomic.torch as mta
+    from metatomic.torch import System, ModelOutput
+
+
+    class MetatomicSOAPDataset(torch.nn.Module):
+        def __init__(self, spex, 
+                    selected_keys, 
+                    selected_atoms: List[int],
+                    included_types: List[int]
+                    ):
+            super().__init__()
+
+            self.spex = spex
+            self.selected_keys = selected_keys
+            self.selected_atoms = selected_atoms
+
+            self.register_buffer(
+                "included_types",
+                torch.tensor(included_types, dtype=torch.int32).reshape(-1, 1)
+            )
+        
+        def get_atomic_types(self):
+            return [a for a in range(0, 119)]  # all elements
+
+        def get_interaction_range(self):
+            return torch.inf
+
+        def get_length_unit(self):
+            return "angstrom"
+
+        def forward(
+            self,
+            systems: List[System],
+            outputs: Dict[str, ModelOutput],
+            selected_atoms: Optional[Labels],
+        ) -> torch.Tensor:
+
+            if selected_atoms is None:
+                warnings.warn(
+                    "No selected_atoms provided to MetatomicSoapPowerSpectrumDataset, "
+                    "using predefined selected_atoms which can be incorrect."
+                )
+                selected_cores: mts.Labels = mts.Labels(
+                    "atom", torch.tensor(self.selected_atoms).reshape(-1, 1)
+                )
+            else:
+                selected_cores: mts.Labels = selected_atoms
+        
+            # computes the spherical expansion
+            spex = self.spex(
+                systems, selected_samples=selected_atoms, selected_keys=self.selected_keys
+            )
+
+            # then manipulate the tensormap to remove some of the sparsity
+            spex = mts.remove_dimension(spex, axis="keys", name="o3_sigma")
+            spex = spex.keys_to_properties("neighbor_type")
+            spex = spex.keys_to_samples("center_type")
+
+            # We want to return a tensor of shape (n_structures, n_selected_atoms, *descriptor_dimensions)
+
+            atom_desc = []
+            selected_atom_indices: torch.Tensor = selected_cores.values
+            if selected_atom_indices.shape[1] > 1:
+                selected_atom_indices = selected_atom_indices[:, 1]
+            selected_atom_indices = selected_atom_indices.flatten()
+            selected_atom_indices_list: List[int] = selected_atom_indices.to(torch.int64).tolist()
+            for atom in selected_atom_indices_list:
+                desc_block = []
+                sel_map = mts.slice(
+                                spex,
+                                axis="samples",
+                                selection=mts.Labels(
+                                    "atom", torch.tensor([atom]).reshape(-1, 1)
+                                ),
+                            )
+                sel_map = mts.slice(
+                                sel_map,
+                                axis="properties",
+                                selection=mts.Labels(
+                                    "neighbor_type", 
+                                    self.included_types,
+                                ),
+                            )
+                for block in sel_map.blocks():
+                    desc = block.values
+                    desc_block.append(desc)
+                atom_desc.append(torch.concatenate(desc_block, dim=-2))
+            descriptors = torch.concatenate([d.unsqueeze(1) for d in atom_desc], dim=1)
+
+            # sum the atoms dimension
+            descriptors = descriptors.sum(dim=1)
+
+            # flatten all but the first dimension
+            descriptors = descriptors.reshape(descriptors.shape[0], -1)
+
+
+            return descriptors
+
+except ImportError:
+    pass

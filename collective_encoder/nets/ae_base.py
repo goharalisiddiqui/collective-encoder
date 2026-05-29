@@ -56,6 +56,12 @@ class AEBase(CENetBase, ABC):
         self.encoder_network = encoder_nodes
         self.decoder_network = decoder_nodes
         self.init_network()
+    
+    @abstractmethod
+    def init_network(self):
+        """Initialize the encoder and decoder networks. Called by __init__() after
+        processing hyperparameters. Subclasses must implement this method."""
+        pass
 
     # ------------------------------------------------------------------
     # Dense-tensor normalization

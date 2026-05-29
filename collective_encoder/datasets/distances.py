@@ -7,53 +7,8 @@ import torch
 from torch.utils.data import Dataset
 from torch.nn.functional import pairwise_distance
 
-try:
-    from metatensor.torch import Labels
-
-    from metatomic.torch import (
-        ModelOutput,
-        System,
-    )
-except ImportError:
-    pass
-
 from .base import BaseDataset
 from gslibs.utils.common import parse_slice
-
-class MetatomicDistanceDataset(torch.nn.Module):
-    def __init__(self, pairs: List[tuple]):
-        super().__init__()
-        self.pairs = pairs
-
-        mask_i = []
-        mask_j = []
-        for i, j in self.pairs:
-            mask_i.append(i)
-            mask_j.append(j)
-        self.register_buffer("mask_i", torch.tensor(mask_i, dtype=torch.long))
-        self.register_buffer("mask_j", torch.tensor(mask_j, dtype=torch.long))
-    
-    def get_atomic_types(self):
-        return [a for a in range(0, 119)],  # all elements
-
-    def get_interaction_range(self):
-        return torch.inf
-
-    def get_length_unit(self):
-        return "nanometer"
-
-    def forward(
-        self,
-        systems: List[System],
-        outputs: Dict[str, ModelOutput],
-        selected_atoms: Optional[Labels] = None,
-    ) -> torch.Tensor:
-
-        pd_batch = torch.stack(
-            [pairwise_distance(systems[i].positions.view(-1,3)[self.mask_i], 
-                               systems[i].positions.view(-1,3)[self.mask_j]) 
-            for i in range(len(systems))], dim=0)
-        return pd_batch
 
 
 class DistancesDataset(Dataset, BaseDataset):
@@ -145,3 +100,53 @@ class DistancesDataset(Dataset, BaseDataset):
     
     def get_metatomic_dataprocessor(self):
         return MetatomicDistanceDataset(self.pairs)
+
+# ------------------------------------------------------------------
+# Matatomic interface
+# ------------------------------------------------------------------
+
+try:
+    from metatensor.torch import Labels
+
+    from metatomic.torch import (
+        ModelOutput,
+        System,
+    )
+    
+    class MetatomicDistanceDataset(torch.nn.Module):
+        def __init__(self, pairs: List[tuple]):
+            super().__init__()
+            self.pairs = pairs
+
+            mask_i = []
+            mask_j = []
+            for i, j in self.pairs:
+                mask_i.append(i)
+                mask_j.append(j)
+            self.register_buffer("mask_i", torch.tensor(mask_i, dtype=torch.long))
+            self.register_buffer("mask_j", torch.tensor(mask_j, dtype=torch.long))
+        
+        def get_atomic_types(self):
+            return [a for a in range(0, 119)],  # all elements
+
+        def get_interaction_range(self):
+            return torch.inf
+
+        def get_length_unit(self):
+            return "nanometer"
+
+        def forward(
+            self,
+            systems: List[System],
+            outputs: Dict[str, ModelOutput],
+            selected_atoms: Optional[Labels] = None,
+        ) -> torch.Tensor:
+
+            pd_batch = torch.stack(
+                [pairwise_distance(systems[i].positions.view(-1,3)[self.mask_i], 
+                                systems[i].positions.view(-1,3)[self.mask_j]) 
+                for i in range(len(systems))], dim=0)
+            return pd_batch
+
+except ImportError:
+    pass
