@@ -7,10 +7,14 @@ import torch
 from torch.utils.data import Dataset
 
 from .base import BaseDataset
-import featomic.torch
-import metatensor.torch as mts
-import metatensor
-import metatomic.torch as mta
+
+try:
+    import featomic.torch
+    import metatensor.torch as mts
+    import metatensor
+    import metatomic.torch as mta
+except ImportError:
+    pass
 
 class MetatomicSOAPDataset(torch.nn.Module):
     def __init__(self, spex, 

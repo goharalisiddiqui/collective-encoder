@@ -7,12 +7,15 @@ import torch
 from torch.utils.data import Dataset
 
 from .base import BaseDataset
-import featomic.torch
-import metatensor.torch as mts
 
-import metatensor
-import metatomic.torch as mta
-import warnings
+try:
+    import featomic.torch
+    import metatensor.torch as mts
+    import metatensor
+    import metatomic.torch as mta
+    import warnings
+except ImportError:
+    pass
 
 
 class MetatomicSoapPowerSpectrumDataset(torch.nn.Module):

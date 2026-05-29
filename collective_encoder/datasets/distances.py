@@ -7,15 +7,15 @@ import torch
 from torch.utils.data import Dataset
 from torch.nn.functional import pairwise_distance
 
-from metatensor.torch import Labels, TensorBlock, TensorMap
+try:
+    from metatensor.torch import Labels
 
-from metatomic.torch import (
-    AtomisticModel,
-    ModelCapabilities,
-    ModelMetadata,
-    ModelOutput,
-    System,
-)
+    from metatomic.torch import (
+        ModelOutput,
+        System,
+    )
+except ImportError:
+    pass
 
 from .base import BaseDataset
 from gslibs.utils.common import parse_slice

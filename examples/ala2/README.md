@@ -25,33 +25,18 @@ ala2_tutorial/
 ├── data/
 │   ├── ala2.tpr              # GROMACS topology file
 │   └── ala2.xtc              # Molecular dynamics trajectory
-├── ala2_config.yaml          # Training configuration
-├── README.md                 # This tutorial
-├── run_training.py           # Python script for training
-└── analyze_results.py        # Analysis and visualization script
+├── config.yaml               # Training configuration
+├── requirements.txt          # Python dependencies
+├── run.sh                    # Main script to run the tutorial
+├── run_cpu.sh                # Contains SLURM directives for CPU execution
+├── run_gpu.sh                # Contains SLURM directives for GPU execution
+└── README.md                 # This file
 ```
 
 ## 🚀 Quick Start
 
-### 1. Install collective-encoder (if not already done)
 ```bash
-cd ../../  # Go back to main package directory
-pip install -e .
-cd examples/ala2_tutorial/  # Return to tutorial
-```
-
-### 2. Run training with CLI
-```bash
-# Quick test (debug mode: 2 epochs, small dataset)
-collective-encoder-train --config ala2_config.yaml --debug
-
-# Full training
-collective-encoder-train --config ala2_config.yaml
-```
-
-### 3. Or run with Python script
-```bash
-python run_training.py
+bash run.sh -c config.yaml
 ```
 
 ## 🔬 Understanding the Configuration
@@ -67,9 +52,9 @@ selection: "(resname ALA or resname ACE or resname NME) and not element H"
 ### **Feature Representation**
 ```yaml
 dataset_type: "DISTANCES"
-dataset_args:
-    group1: "0:11"    # First 11 heavy atoms
-    group2: "11:22"   # Next 11 heavy atoms
+dataset_args: # Defines two groups of atoms for distances calculation ()
+    group1: "0:10"
+    group2: "0:10"
 ```
 - Uses **pairwise distances** between atom groups
 - Translation and rotation invariant
@@ -77,10 +62,10 @@ dataset_args:
 
 ### **Network Architecture**
 ```yaml
-network: [256, 128, 64, 2]  # 256 → 128 → 64 → 2D latent space
+network: [128, 64, 2]  # 128 → 64 → 2D latent space
 ```
 - **Input**: ~121 pairwise distances (11×11)
-- **Hidden layers**: 256 → 128 → 64 neurons
+- **Hidden layers**: 128 → 64 neurons
 - **Output**: 2D latent representation
 - **Decoder**: Mirrors encoder to reconstruct input
 
@@ -88,7 +73,7 @@ network: [256, 128, 64, 2]  # 256 → 128 → 64 → 2D latent space
 
 ### **Training Output**
 ```
-results/ala2_vae/
+results/ala2/
 ├── checkpoints/
 │   └── best.ckpt             # Best model checkpoint
 ├── out.txt                   # Training logs
