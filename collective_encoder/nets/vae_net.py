@@ -10,8 +10,6 @@ from collective_encoder.losses.kld_resolver import create_kld_loss
 from collective_encoder.losses.bond_deviation import CELossBondDeviation
 from collective_encoder.losses.steric import CELossSteric
 
-from metatomic.torch import ModelOutput
-
 EPSILON = 1e-7
 
 
@@ -130,35 +128,41 @@ class VAE(AEBase):
 # Metatomic Interface
 # ------------------------------------------------------------------
 
-class MetatomicModelVAE(torch.nn.Module):
-    def __init__(self, 
-                encoder: torch.nn.Module,
-                normIn: bool = False,
-                dmean: torch.Tensor = torch.zeros(1), 
-                drange: torch.Tensor = torch.ones(1),
-                ):
-        super().__init__()
-        self.encoder = encoder
+try:
+    from metatomic.torch import ModelOutput
 
-        self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
-        self.register_buffer('Mean', dmean)
-        self.register_buffer('Range', drange)
-    
-    def get_metatomic_outputs(self):
-        return {"features": ModelOutput(quantity="", unit="none", per_atom=False),}
+    class MetatomicModelVAE(torch.nn.Module):
+        def __init__(self, 
+                    encoder: torch.nn.Module,
+                    normIn: bool = False,
+                    dmean: torch.Tensor = torch.zeros(1), 
+                    drange: torch.Tensor = torch.ones(1),
+                    ):
+            super().__init__()
+            self.encoder = encoder
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
+            self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
+            self.register_buffer('Mean', dmean)
+            self.register_buffer('Range', drange)
+        
+        def get_metatomic_outputs(self):
+            return {"features": ModelOutput(quantity="", unit="none", per_atom=False),}
 
-        if self.normIn:
-            # TorchScript-compatible broadcasting
-            # Reshape Mean and Range to match x dimensions for broadcasting
-            mean_expanded = self.Mean.view(1, -1).expand_as(x)
-            range_expanded = self.Range.view(1, -1).expand_as(x)
-            
-            x = (x - mean_expanded) / range_expanded
-        latent = self.encoder(x)
-        mean, logvar = latent
-        return mean
+        def forward(
+            self,
+            x: torch.Tensor
+        ) -> torch.Tensor:
+
+            if self.normIn:
+                # TorchScript-compatible broadcasting
+                # Reshape Mean and Range to match x dimensions for broadcasting
+                mean_expanded = self.Mean.view(1, -1).expand_as(x)
+                range_expanded = self.Range.view(1, -1).expand_as(x)
+                
+                x = (x - mean_expanded) / range_expanded
+            latent = self.encoder(x)
+            mean, logvar = latent
+            return mean
+
+except ImportError:
+    pass
