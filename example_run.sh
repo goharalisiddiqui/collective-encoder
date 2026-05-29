@@ -1,46 +1,43 @@
-#! /bin/bash
-#SBATCH -J CollectiveEncoder
-#SBATCH -N 1
-#SBATCH -n 1
-#SBATCH -c 8
-#SBATCH -p ###PARTITION###
-#SBATCH --mem=4G
-#SBATCH --gres=####GPU_RESOURCES###
-#SBATCH --time=100:00:00
-#SBATCH --export=ALL
-#SBATCH -o ./slurm_logs/slurm-%J.out
-#SBATCH -e ./slurm_logs/slurm-%J.err
+#!/bin/sh
+
+####### PREPARE ENV #######
+if [ ! -d ".venv" ]; then
+    read -p "No virtual environment found. Create one? (y/n) " answer
+    if [ "$answer" != "y" ]; then
+        echo "Exiting. Please create a virtual environment and install dependencies before running."
+        exit 1
+    fi
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+else
+    source .venv/bin/activate
+fi
+########################################
 
 unset $pref
 if [ ! -z "${SLURM_JOB_ID}" ]; then
     echo "Running on compute node"
     pref='srun'
     mkdir -p slurm_logs
+
 else 
     echo "Running on local machine"
     pref=''
 fi
 
-if test ! -d .venv; then
-    echo "Creating local virtual environment"
-    python -m venv .venv
-    source .venv/bin/activate
-    pip install .
-else
-    echo "Activating local virtual environment in .venv"
-    source .venv/bin/activate
-fi
-
 #Read command line arguments
-while getopts d flag
+config_path="config.yaml"
+extra_args=""
+command="collective-encoder-train"
+while getopts dc:pt flag
 do
     case "${flag}" in
-        d) debug=1;;
+        d) extra_args="--debug";;
+        c) config_path="${OPTARG}";;
+        p) command="collective-encoder-prepare";;
+        t) command="collective-encoder-test";;
     esac
 done
 
-if [ "$debug" == 1 ]; then
-    $pref collective-encoder-train --config config.yaml --debug
-else
-    $pref collective-encoder-train --config config.yaml
-fi
+$pref $command --config $config_path $extra_args
