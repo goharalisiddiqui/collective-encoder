@@ -14,7 +14,7 @@ class CEMetricMAEDict(CEMetricBase):
         'accumulation': 'sum',
     }
     
-    def forward(self, 
+    def calculate(self, 
                 inp: torch.Tensor, 
                 latent: torch.Tensor, 
                 output: torch.Tensor, 

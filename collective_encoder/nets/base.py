@@ -160,7 +160,10 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         different optimization hyperparameters for different parameter subsets.
         The default is ``self.parameters()`` with no per-parameter options.
         """
-        return self.parameters()
+        prams_from_losses = []
+        for loss in self.losses.values():
+            prams_from_losses.extend(loss.parameters())
+        return self.parameters() + prams_from_losses
     
     def _build_optimizer(self) -> torch.optim.Optimizer:
         """Return the optimizer instance.

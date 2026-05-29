@@ -15,9 +15,9 @@ class CEMetricMAE(CEMetricBase):
     def __init__(self, 
                 args: Dict[str, Any] = None, 
                 **kwargs) -> None:
-        super().__init__(self, args, **kwargs)
+        super().__init__(args, **kwargs)
 
-    def forward(self, 
+    def calculate(self, 
                 inp: torch.Tensor, 
                 latent: torch.Tensor, 
                 output: torch.Tensor, 

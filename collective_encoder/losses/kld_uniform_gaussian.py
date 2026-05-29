@@ -21,7 +21,7 @@ class CELossKLDUniformGaussian(CELossBase):
     def __init__(self, 
                 args: Dict[str, Any] = None, 
                 **kwargs) -> None:
-        super().__init__(self, args, **kwargs)
+        super().__init__(args, **kwargs)
         
         self.kld_scheduler = KLDResolver(self.kld_max_type, 
                                         self.kld_max_scheduler_args,
@@ -30,7 +30,19 @@ class CELossKLDUniformGaussian(CELossBase):
     def on_validation_epoch_end(self, plmodule):
         self.kld_scheduler.on_validation_epoch_end(plmodule)
     
-    def kld(self, mu, logvar):
+    def kld(self, 
+                inp: torch.Tensor, 
+                latent: torch.Tensor, 
+                output: torch.Tensor, 
+                labels: torch.Tensor, 
+                meta: Dict[str, torch.Tensor],
+                ) -> torch.Tensor:
+        """
+        KLD between the Gaussian latent distribution and a Normalizing flow (neural spline flows with a RealNVP structure) prior.
+
+        """
+        mu = meta[self.mu_name]
+        logvar = meta[self.logvar_name]
         # KLD between univariate gaussian to Standard, explanation here:
         # https://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
         # Second Gaussian is zero mean and variance of 1, the prior on z
@@ -46,10 +58,7 @@ class CELossKLDUniformGaussian(CELossBase):
                 meta: Dict[str, torch.Tensor],
                 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         
-        mu_latent = meta[self.mu_name]
-        logvar_latent = meta[self.logvar_name]
-
-        loss_kld = self.kld(mu_latent, logvar_latent)
+        loss_kld = self.kld(inp, latent, output, labels, meta)
         loss_reg = torch.mean(loss_kld, dim=0)
         
         meta = {"kld" : loss_reg}

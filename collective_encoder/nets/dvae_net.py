@@ -20,8 +20,8 @@ class DVAE(VAE):
         self.losses['rec_loss'] = CELossMSE({}, **kwargs)
 
     def init_network(self):
-        self.encoder_net = VariationalNN(layers=self.network, batch_norm=self.batch_norm)
-        self.decoder_net = SimpleNN(layers=self.network[::-1], batch_norm=self.batch_norm)
+        self.encoder_net = VariationalNN(layers=self.encoder_network, batch_norm=self.batch_norm)
+        self.decoder_net = SimpleNN(layers=self.decoder_network, batch_norm=self.batch_norm)
 
     def decoder(self, z):
         z = self.decoder_net(z)

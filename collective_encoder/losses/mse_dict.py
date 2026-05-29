@@ -18,7 +18,7 @@ class CELossMSEDict(CELossBase):
     def __init__(self, 
                 args: Dict[str, Any] = None, 
                 **kwargs) -> None:
-        super().__init__(self, args, **kwargs)
+        super().__init__(args, **kwargs)
         if self.weights == None:
             self.weights = [1.0] * len(self.keys)
         

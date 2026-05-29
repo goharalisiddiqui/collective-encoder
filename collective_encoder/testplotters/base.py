@@ -159,7 +159,7 @@ class BaseTestPlotter(CEModule, ABC):
         if ncols == 1:
             axes = [axes]
         for ind, (name, value) in enumerate(labels.items()):
-            if value != None and (len(value.shape) != 1 or value.shape[0] != x.shape[0]):
+            if not isinstance(value, np.ndarray) or (len(value.shape) != 1 or value.shape[0] != x.shape[0]):
                 self.raise_error(f"Label {name} must be a 1D array with the same length as x and y")
             scatter = axes[ind].scatter(x, y, 
                                         c=value, 
@@ -179,7 +179,7 @@ class BaseTestPlotter(CEModule, ABC):
         return fig, axes
 
     def plot_correlation(self, x: np.ndarray, y: np.ndarray,
-                         x_labels: list = None, y_labels: list = None) -> plt.Figure:
+                         x_labels: list = None, y_labels: list = None) -> Tuple[plt.Figure, plt.Axes]:
         if x.ndim != 2 or y.ndim != 2:
             self.raise_error("x and y must be 2D arrays")
         if x.shape[0] != y.shape[0]:

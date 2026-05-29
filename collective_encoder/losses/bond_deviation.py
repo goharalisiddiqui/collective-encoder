@@ -16,7 +16,7 @@ class CELossBondDeviation(CELossBase):
     def __init__(self, 
                 args: Dict[str, Any] = None, 
                 **kwargs) -> None:
-        super().__init__(self, args, **kwargs)
+        super().__init__(args, **kwargs)
         
         cov_radii = [covalent_radii[el] for el in self.atomic_numbers]
         cov_radii = torch.tensor(cov_radii).float()
