@@ -61,8 +61,6 @@ class VAE(AEBase):
                 "atomic_numbers": self.atomic_numbers,
             }, **kwargs)
 
-        self.metatomic_model_cls = MetatomicModelVAE
-
     def get_metad_output(self, latent: Tuple[torch.Tensor, torch.Tensor], meta: Dict[str, torch.Tensor]) -> torch.Tensor:
         # For metaD we use only use the mean of the latent distribution
         mean, logvar = latent
@@ -116,7 +114,7 @@ class VAE(AEBase):
         return "mu_latent", "logvar_latent"
 
     def get_metatomic_model(self):
-        model = self.metatomic_model_cls(
+        model = MetatomicModelVAE(
             encoder=self.encoder_net,
             normIn=self.normIn,
             dmean=self.Mean,
