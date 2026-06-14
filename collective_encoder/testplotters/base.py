@@ -45,6 +45,13 @@ class BaseTestPlotter(CEModule, ABC):
         self.log_info(f"Initialized {type(self).__name__} with logger of "
                       f"type {logger_type} and output path {self.outpath}")
     
+    def create_data_path(self):
+        if not hasattr(self, "datapath"):
+            datapath = os.path.join(self.run_dir, type(self).__name__+"_data")
+            os.makedirs(datapath, exist_ok=True)
+            self.datapath = datapath
+            self.log_info(f"Created data path at {self.datapath}")
+    
     def convert_data(self, data):
         return np.atleast_1d(data.cpu().numpy() if isinstance(data, torch.Tensor) else np.asarray(data))
 
@@ -101,6 +108,14 @@ class BaseTestPlotter(CEModule, ABC):
     @abstractmethod
     def plot(self, data, latent, pred, labels, meta) -> None:
         pass
+    
+    def save_data(self, data, name):
+        if not isinstance(data, np.ndarray):
+            self.raise_error("Data must be a numpy array to be saved.")
+        self.create_data_path()
+        fn = os.path.join(self.datapath, f"{name}.npy")
+        np.save(fn, data)
+        self.log_info(f"Saved data '{name}' to {fn}")
 
     def log_image(self, fig, name):
         fn = os.path.join(self.outpath, f"{name}.png")
