@@ -19,6 +19,21 @@ else:
     _WANDB_AVAILABLE = True
 
 class BaseTestPlotter(CEModule, ABC):
+    """
+    Base class for test plotters. 
+    This class provides a framework for collecting data in batches during testing and generating plots at the end. 
+    It supports logging to various loggers, including WandbLogger if available.
+    
+    During each testing batch, the `add_batch` method is called to collect data, latent representations, predictions, labels, and metadata.
+    The `finish` method is called at the end of testing to generate plots based on the collected data. 
+    Subclasses must implement the `collection_list` and `plot` methods to specify which data to collect and how to plot it, respectively.
+    
+    Plots are saved to a directory named after the plotter class in the run directory.
+    
+    Attributes:
+        logger_type (str): Type of logger to use. Currently supports WandbLogger if available.
+    """
+
     _IDENTIFIER = ""
     _OPTIONAL_ARGS = {
         'logger': None,
@@ -52,27 +67,65 @@ class BaseTestPlotter(CEModule, ABC):
             self.datapath = datapath
             self.log_info(f"Created data path at {self.datapath}")
     
-    def convert_data(self, data):
-        return np.atleast_1d(data.cpu().numpy() if isinstance(data, torch.Tensor) else np.asarray(data))
+    @abstractmethod
+    def collection_list(self) -> List[str]:
+        """
+        Returns a list of data types to collect during testing.
+        Can include any combination of "data", "latent", "pred", "labels", and "meta".
+        """
+        pass
+    
+    @abstractmethod
+    def plot(self, data, latent, pred, labels, meta) -> None:
+        """
+        Generates plots based on the collected data.
+        This method is called at the end of testing after all batches have been processed.
+        Subclasses must implement this method to define how to plot the collected data.
+        
+        Arguments are 'data', 'latent', 'pred', 'labels', and 'meta', which correspond 
+        to the collected data types specified in `collection_list`.
+        
+        Arguments:
+            data: Collected input data.
+            latent: Collected latent representations.
+            pred: Collected predictions.
+            labels: Collected labels.
+            meta: Collected metadata.
+        """
+        pass
+    
+    def _convert_data(self, data):
+        """
+        Converts data to a numpy array. If the data is a torch.Tensor, it is moved to CPU and converted to numpy.
+        If the data is not a torch.Tensor, it is converted to a numpy array using np.asarray. The resulting array is ensured to be at least 1D using np.atleast_1d.
+        """
+        if isinstance(data, torch.Tensor):
+            data = data.detach().cpu().numpy()
+        else:
+            try:
+                data = np.asarray(data)
+            except (ValueError, TypeError):
+                self.log_error(f"Failed to convert data of type {type(data)} to numpy array.")
+        return np.atleast_1d(data)
 
-    def collect_data(self, data, name):
+    def _collect_data(self, data, name):
         if isinstance(data, dict):
             if not hasattr(self, f"collected_{name}"):
                 converted = {
-                    k: self.convert_data(v)
+                    k: self._convert_data(v)
                     for k, v in data.items()
                 }
                 setattr(self, f"collected_{name}", converted)
             else:
                 for k in data.keys():
-                    data_np = self.convert_data(data[k])
+                    data_np = self._convert_data(data[k])
                     if k in getattr(self, f"collected_{name}"):
                         getattr(self, f"collected_{name}")[k] = np.concatenate(
                             (getattr(self, f"collected_{name}")[k], data_np), axis=0)
                     else:
                         getattr(self, f"collected_{name}")[k] = data_np
         else:
-            data_np = self.convert_data(data)
+            data_np = self._convert_data(data)
             if not hasattr(self, f"collected_{name}"):
                 setattr(self, f"collected_{name}", data_np)
             else:
@@ -82,19 +135,15 @@ class BaseTestPlotter(CEModule, ABC):
     def add_batch(self, data, latent, pred, labels, meta):
         collection_list = self.collection_list()
         if "data" in collection_list:
-            self.collect_data(data, "data")
+            self._collect_data(data, "data")
         if "latent" in collection_list:
-            self.collect_data(latent, "latent")
+            self._collect_data(latent, "latent")
         if "pred" in collection_list:
-            self.collect_data(pred, "pred")
+            self._collect_data(pred, "pred")
         if "labels" in collection_list:
-            self.collect_data(labels, "labels")
+            self._collect_data(labels, "labels")
         if "meta" in collection_list:
-            self.collect_data(meta, "meta")
-
-    @abstractmethod
-    def collection_list(self) -> List[str]:
-        pass
+            self._collect_data(meta, "meta")
     
     def finish(self) -> None:
         self.plot(
@@ -105,10 +154,6 @@ class BaseTestPlotter(CEModule, ABC):
             meta=getattr(self, "collected_meta", None)
         )
 
-    @abstractmethod
-    def plot(self, data, latent, pred, labels, meta) -> None:
-        pass
-    
     def save_data(self, data, name):
         if not isinstance(data, np.ndarray):
             self.raise_error("Data must be a numpy array to be saved.")

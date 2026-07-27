@@ -4,11 +4,10 @@ import torch
 
 import numpy as np
 
-from scipy.special import comb
-
 import matplotlib.pyplot as plt
 
 from .base import BaseTestPlotter
+from .labels_selector import cos_sin_to_angle, label_selector
 
 def combinations(n, r):
     # Generate all combinations of n items taken r at a time
@@ -33,69 +32,27 @@ class LDplotter(BaseTestPlotter):
         'labels_selection_map': None,  # Optional dict mapping the entries in label dict from model to that from labeler (e.g. {"psi_cos": (dihedral_cos, 6)})
     })
     
-    def cossin_resolver(self, labels: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        """
-        Resolves pairs of cosine and sine labels into angle labels. 
-        For each label name ending with '_cos', looks for a corresponding label 
-        name ending with '_sin' and combines them into a single label with the 
-        original name without the suffix, containing the angle computed from the 
-        cosine and sine values.
-        """
-        resolved_labels = {}
-        for label_name, label_tensor in labels.items():
-            if label_name.endswith('_cos'):
-                sin_name = label_name.replace('_cos', '_sin')
-                if sin_name in labels:
-                    cos_values = label_tensor
-                    sin_values = labels[sin_name]
-                    angles = np.arctan2(sin_values, cos_values)
-                    base_name = label_name[:-4]  # Remove '_cos' suffix
-                    resolved_labels[base_name] = angles
-                else:
-                    self.warn(f"Cosine label '{label_name}' has no corresponding "
-                              f"sine label '{sin_name}'. Skipping angle resolution for this label.")
-            elif label_name.endswith('_sin'):
-                cos_name = label_name.replace('_sin', '_cos')
-                if cos_name not in labels:
-                    self.warn(f"Sine label '{label_name}' has no corresponding "
-                              f"cosine label '{cos_name}'. Skipping angle resolution for this label.")
-            else:
-                resolved_labels[label_name] = label_tensor
-        return resolved_labels
-
-    def label_selector(self, labels: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        if self.labels_selection_map is None:
-            return labels
-        selected_labels = {}
-        for label_name, sel in self.labels_selection_map.items():
-            label_ident, label_idx = sel[0], sel[1]
-            if label_ident not in labels:
-                self.raise_error(f"Model label '{label_ident}' specified in "
-                                 f"labels_selection_map not found in labels from model.")
-            selected_labels[label_name] = labels[label_ident][:, label_idx]
-        return selected_labels
-    
     def collection_list(self) -> List[str]:
         return ["latent", "labels", "meta"]
         
     def plot(self, data, latent, pred, labels, meta) -> None:
-        labels = self.label_selector(labels)
-        labels = self.cossin_resolver(labels)
+        labels = label_selector(labels, self.labels_selection_map)
+        labels = cos_sin_to_angle(labels)
         
         latent = latent.detach().cpu().numpy() if isinstance(latent, torch.Tensor) else latent
         
-        self.plot_latent(latent, labels = labels, name = "latent")
+        self._plot_latent(latent, labels = labels, name = "latent")
         
         mu_latent = meta.get('mu_latent', None)
         if mu_latent is not None:
             mu_latent = mu_latent.detach().cpu().numpy() if isinstance(mu_latent, torch.Tensor) else mu_latent
-            self.plot_latent(mu_latent, labels = labels, name = "mu_latent")
+            self._plot_latent(mu_latent, labels = labels, name = "mu_latent")
 
         logvar_latent = meta.get('logvar_latent', None)
         if logvar_latent is not None:
             logvar_latent = logvar_latent.detach().cpu().numpy() if isinstance(logvar_latent, torch.Tensor) else logvar_latent
             std_latent = np.sqrt(np.exp(logvar_latent))
-            self.plot_latent(mu_latent, errors = std_latent, 
+            self._plot_latent(mu_latent, errors = std_latent, 
                              labels = labels, name = "std_latent")
 
         ld_names = [f"LD{i}" for i in range(latent.shape[1])]
@@ -116,7 +73,7 @@ class LDplotter(BaseTestPlotter):
 
         self.log_info(f"Plots saved in {self.outpath}")
             
-    def plot_latent(self, 
+    def _plot_latent(self, 
                     latent, 
                     labels, 
                     errors = None, 
