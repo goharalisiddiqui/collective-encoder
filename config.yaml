@@ -10,7 +10,7 @@ save_serial_model: False
 # load_model: <path_to_model>
 
 # Trainer Settings
-nepochs: 1000
+nepochs: 10
 weight_decay: 0.0
 nogpu: False
 export_latent: False
@@ -24,8 +24,8 @@ datamodule_type: COORDINATES
 datamodule_args:
     datareader_type: XTC
     datareader_args:
-      tprfile: ./examples/ala2_tutorial/data/ala2.tpr
-      xtcfile: ./examples/ala2_tutorial/data/ala2.xtc
+      tprfile: ./examples/ala2/data/ala2.tpr
+      xtcfile: ./examples/ala2/data/ala2.xtc
       selection: "(resname ALA or resname ACE or resname NME) and not element H"
       parallel: False
     sequential: False
@@ -33,6 +33,7 @@ datamodule_args:
     batch_size : 8
     validation_size : 20
     val_batch_size : 5
+    test_full_dataset: True
     max_frames: 150
     norm_type : "minmax"
     dataset_type : "DISTANCES"
@@ -43,7 +44,7 @@ datamodule_args:
         - psi_2
     num_workers : 4
 
-network_type: VAE
+network_type: sVAE
 network_args:
     network: [256, 64, 3]
     beta: 1.0
