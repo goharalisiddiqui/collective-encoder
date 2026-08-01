@@ -54,6 +54,7 @@ class CoordinatesDataModule(BaseDataModule):
         "sequential": False,
         "max_frames": None,
         "non_readability_tolerance": 0.02,  # Allow up to 2% of frames to be unreadable before raising an error
+        "data_analysers": None,
     })
 
     def __init__(self,
@@ -89,6 +90,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.test_size = self.max_frames
 
         self._create_datasets()
+        self._analyze_data()
     
     def _initialize_datareader(self):
         # Initialize the trajectory reader

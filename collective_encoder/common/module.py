@@ -6,6 +6,7 @@ from typing import List, Any, Dict, Union
 import numpy as np
 
 from collective_encoder.common.config_check import validate_required_fields
+from gslibs.utils.filesystem import create_rundir
 
 class CEModule(ABC):
     """
@@ -50,6 +51,19 @@ class CEModule(ABC):
                 args[key] = default_value
         for key in args:
             self.__setattr__(key, args[key])
+            
+    def safe_create_dir(self, dir_path: str) -> None:
+        """Create a directory if it doesn't exist, and log the action."""
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
+        else:
+            stem = os.path.basename(dir_path)
+            dir_path = create_rundir(path=os.path.dirname(dir_path), 
+                          stem=stem, 
+                          nexp=1,
+                          overwrite=False)
+        self.log_info(f"Created directory: {dir_path}")
+        return dir_path
     
     def creater_results_dir(self):
         results_dir = os.path.join(self.run_dir, f"{self.__class__.__name__}_results")

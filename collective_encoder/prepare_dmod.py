@@ -128,7 +128,7 @@ def prepare(config_path: str, debug: bool = False):
         da_args = config.get('data_analyser_args', {})
         da_args['datamodule_args'] = dm_args
         da_args['output_dir'] = run_dir + "/data_analysis"
-        analyser = analyser_cls(da_args,**metargs)
+        analyser = analyser_cls(da_args, **metargs)
         analyser.write_data(dm.get_train_dataset(), label="train")
         analyser.write_data(dm.get_val_dataset(), label="val")
         if not dm_args.get('test_whole_dataset', False):
