@@ -1,15 +1,9 @@
 import logging
 import os
 import wandb
-import yaml
 import shutil
 
-import argparse
-import warnings
-
 _log = logging.getLogger(__name__)
-
-import numpy as np
 
 import torch
 
@@ -18,179 +12,19 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
-from gslibs.utils.common import recursive_update
-from gslibs.utils.common import get_required_init_args
+import collective_encoder.ce_run_base as crb
 
-from collective_encoder.nets.resolver import get_net
-from collective_encoder.datamodules.resolver import get_datamodule
-from collective_encoder.common.config_check import (
-    validate_duplicate_keys, 
-    validate_required_fields 
-)
-from collective_encoder.dataanalysers.resolver import get_dataanalyser
-from gslibs.utils.filesystem import create_rundir, output_to_file
+_SETTINGS = {
+    'module': 'trainer',
+}
 
-warnings.filterwarnings("ignore", ".*does not have many workers.*")
-DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'trainer', 'defaults.yaml')
-DEBUG_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'trainer', 'debug.yaml')
-OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 
-                         'num_workers', 'test_batch_size']
-torch.set_default_dtype(torch.float64)
-##################################
-# Arguments
-##################################
-def parse_args():
-    desc = "Surrogate model to predict dynamics of molecular systems as time series data"
-    parser = argparse.ArgumentParser(description=desc)
-
-    # Run Settings
-    parser.add_argument('--config', required=True, type=str,
-                        help='')
-    parser.add_argument('--debug', action='store_true',
-                        help='Run in debug mode with small data and epochs')
-    
-    args = parser.parse_args()
-
-    return args
-
-def train(config_path: str, debug: bool = False):
+def train():
     """Train a collective encoder model based on the provided configuration."""
-    if not os.path.isfile(config_path):
-        raise FileNotFoundError(f"Config file not found at {config_path}")
-    validate_duplicate_keys(config_path)
-    config = yaml.safe_load(open(DEFAULT_CONFIG_PATH, 'r'))
-    recursive_update(config, yaml.safe_load(open(config_path, 'r')))
-    if debug or config.get('debug', False):
-        # Load debug config and override values
-        recursive_update(config, yaml.safe_load(open(DEBUG_CONFIG_PATH, 'r')))
-        torch.manual_seed(0)
-        np.random.seed(0)
-        print("Running in debug mode.")
-    validate_required_fields(config)
-
-    ##################################
-    # Output directory
-    ##################################
-    run_dir = create_rundir(config['outpath'], 
-                        config['outfolder'], 
-                        config['nexp'], 
-                        overwrite=config['overwrite'])
-
-    ##################################
-    # Output to file
-    ##################################
-    if config['output_to_file']:
-        output_to_file(run_dir, filename="out.txt")
     
-    ##################################
-    # Meta args used in all modules
-    ##################################
-    logging_level = config.get('verbose', 'INFO')
-    if logging_level is True:
-        logging_level = 'INFO'
-    if logging_level is False:
-        logging_level = 'WARNING'
-    if not hasattr(logging, logging_level.upper()):
-        raise ValueError(f"Invalid logging level: {logging_level}. "
-                         f"Valid levels: {logging._nameToLevel.keys()}")
-    logging_level = getattr(logging, logging_level.upper(), logging.INFO)
-    logging.basicConfig(filename=os.path.join(run_dir, "run.log"),
-                        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                        level=logging_level)
-    metargs = {
-        'verbose': config.get('verbose', True),
-        'root_logger_name': __name__,
-        'run_dir': run_dir,
-    }
-    
-    ##################################
-    # Config validation
-    ##################################
-    _KNOWN_CONFIG_KEYS = {
-        'debug', 'outpath', 'outfolder', 'overwrite', 'nexp', 'output_to_file',
-        'save_checkpoint', 'save_serial_model', 'nepochs', 'lrate', 'weight_decay',
-        'nogpu', 'export_latent', 'wandb', 'wandb_project', 'wandb_entity',
-        'scheduler', 'scheduler_args', 'normIn', 'network_type', 'network_args',
-        'datamodule_type', 'datamodule_args', 'data_analyser', 'data_args',
-        'load_model', 'output_traj', 'save_metatomic', 'early_stopping',
-        'early_stopping_args', 'verbose', 'metatomic_metadata', 'test_plotter_type', 
-        'test_plotter_args',
-    }
-    for key in config:
-        if key not in _KNOWN_CONFIG_KEYS:
-            _log.warning("Unknown config key '%s' — will be ignored", key)
-
-    ##################################
-    # Creating Dataset
-    ##################################
-    if 'load_datamodule' in config:
-        dmod_path = config['load_datamodule']
-        _log.info("Loading datamodule from: " + dmod_path)
-        dmod_ckpt = os.path.join(dmod_path, "datamodule.pth")
-        
-        # torch.serialization.add_safe_globals(torch.serialization.get_unsafe_globals_in_checkpoint(dmod_ckpt)) # !!! Very Unsafe, only do this if you trust the source of the checkpoint !!!
-        dm = torch.load(dmod_ckpt, weights_only=False)
-        dm_args = dm.get_args()
-        dm_override_args = config.get('datamodule_args', {})
-        for key, value in dm_override_args.items():
-            if key not in OVERRIDABLE_DMOD_ARGS:
-                raise ValueError(f"Cannot override datamodule argument '{key}'. "
-                                 f"Allowed keys: {OVERRIDABLE_DMOD_ARGS}")
-            _log.info(f"Overriding datamodule argument '{key}' with "
-                      f"value: {value}, previous value: {getattr(dm, key, 'N/A')}")
-            dm_args[key] = value
-            setattr(dm, key, value)
-    else:
-        dm_type = config['datamodule_type']
-        dm_args = config['datamodule_args']
-        dm_cls = get_datamodule(dm_type)
-        validate_required_fields(dm_args, 
-                                get_required_init_args(dm_cls))
-        
-        dm = dm_cls(dm_args, **metargs)
-        
-    ##################################
-    # Data analysis and visualization
-    ##################################
-    da = config.get('data_analyser_type', None)
-    if da != None:
-        analyser_cls = get_dataanalyser(da)    
-        da_args = config.get('data_analyser_args', {})
-        da_args['datamodule_args'] = dm_args
-        da_args['output_dir'] = run_dir + "/data_analysis"
-        analyser = analyser_cls(da_args,**metargs)
-        analyser.write_data(dm.get_train_dataset(), label="train")
-        analyser.write_data(dm.get_val_dataset(), label="val")
-
-    ##################################
-    # Setting up the NN
-    ##################################
-    nn_type = config['network_type']
-    nn_cls = get_net(nn_type)
-    req_fields = get_required_init_args(nn_cls)
-    validate_required_fields(config['network_args'], req_fields)
-    nn_args = {
-        'lrate': config['lrate'],
-        'weight_decay': config['weight_decay'],
-        'normIn': config['normIn'],
-        'scheduler': config['scheduler'],
-        'scheduler_args': config.get('scheduler_args', {}),
-    }
-    nn_args.update(config.get('network_args', {}))
-
-    load_model = config.get('load_model', None)
-    if load_model != None:
-        if len(config['network_args']) > 0:
-            _log.warning("network_args will be ignored when loading a model.")
-            config['network_args'] = {}
-        checkpoint_file = load_model
-        print(f"Loading model from {checkpoint_file}")
-        model = nn_cls.load_from_checkpoint(checkpoint_file,
-                                            args=nn_args, **metargs)
-    else:
-        nn_args = nn_cls.extract_args_from_datamodule(dm, nn_args)
-        model = nn_cls(args=nn_args, 
-                       **metargs)
+    config, metargs = crb.prepare(_SETTINGS)
+    dm = crb.load_datamodule(config, metargs)
+    model = crb.load_model(config, metargs, dm)
+    run_dir = metargs['run_dir']
 
     ##################################
     # Training the NN
@@ -201,6 +35,8 @@ def train(config_path: str, debug: bool = False):
     if not config.get('nogpu', False):
         trainargs["accelerator"] = 'auto'
         trainargs["devices"] = 'auto'
+    
+    ## External logging
     if config.get('wandb', False):
         wandb_logger = WandbLogger(project=config['wandb_project'],
                                  entity=config['wandb_entity'],
@@ -210,6 +46,7 @@ def train(config_path: str, debug: bool = False):
         # wandb_logger.watch(model, log_graph=True)
         trainargs["logger"] = wandb_logger
 
+    ## PL Callbacks
     callbacks = []
     # Learning rate monitor
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
@@ -249,7 +86,7 @@ def train(config_path: str, debug: bool = False):
         if config.get('wandb', False):
             wandb.finish()
 
-    if config['nepochs'] == 0 and load_model == None:
+    if config['nepochs'] == 0 and 'load_model' not in config:
         _log.warning("Both nepochs and load_model are not set. Nothing to do.")
 
     # Save the best model checkpoint as best.ckpt
@@ -257,17 +94,10 @@ def train(config_path: str, debug: bool = False):
     if best_checkpoint_path != "":
         shutil.copy(best_checkpoint_path, os.path.dirname(best_checkpoint_path) + "/best.ckpt")
     _log.info(f"Best model saved at: {best_checkpoint_path}")
-
+    
+    
     ##################################
-    # Analysing a loaded model
-    ##################################
-    if config.get('output_traj', False):
-        if not config['datamodule_type'] in ["COORDINATES", "XTC"]:
-            raise ValueError(f"Unsupported data type: {config['datamodule_type']} for trajectory output")
-        else:
-            pred = model(dm.get_full_batch()[0])[0].detach().cpu().numpy()
-            dm.output_trajectory(os.path.join(run_dir, "recon_trajectory.pdb"), pred)
-
+    # Testing the NN
     ##################################
     if config.get('test_plotter_type', False):
         model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))
@@ -347,8 +177,7 @@ def train(config_path: str, debug: bool = False):
 
 def main():
     """Main entry point for the collective encoder training."""
-    args = parse_args()
-    train(args.config, args.debug)
+    train()
 
 if __name__ == "__main__":
     main()

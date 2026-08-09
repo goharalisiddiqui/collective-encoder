@@ -59,6 +59,10 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
         self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
         
+        ## These have to be defined here so checkponts can be loaded.
+        self.register_buffer('Mean', torch.zeros(self.get_norm_len()))
+        self.register_buffer('Range', torch.ones(self.get_norm_len()))
+        
         self.losses = {
             "loss": CELossMSE({}, **kwargs),
         }
@@ -68,7 +72,7 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         self.test_metrics = {
             "mae": CEMetricMAE({}, **kwargs),
         }
-        self.test_plotters = {}
+        self.test_plotters = []
         
     # ------------------------------------------------------------------
     # Normalization
@@ -93,8 +97,6 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         if not hasattr(self.trainer, 'datamodule') or not self.trainer.datamodule:
             self.raise_error("Trainer has no datamodule attached; \
                              cannot compute normalization.", RuntimeError)
-        self.register_buffer('Mean', torch.zeros(self.get_norm_len()))
-        self.register_buffer('Range', torch.ones(self.get_norm_len()))
         with torch.no_grad():
             dm = self.trainer.datamodule
             Mean = dm.get_scaler_mean()
@@ -255,19 +257,18 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     def _plot_test_start(self) -> None:
         from collective_encoder.testplotters.resolver import get_testplotter
 
-        test_plotters = self.test_plotters.copy()
-        for name, args in test_plotters.items():
+        initialized_plotters = []
+        for name, args in self.test_plotters:
             try:
                 plotter_cls = get_testplotter(name)
-                plotter_args = args
-                plotter_args['run_directory'] = self.output_directory
+                plotter_args = args or {}
                 plotter_args['logger'] = self.logger
                 plotter = plotter_cls(plotter_args, **self.get_run_args())
-                self.test_plotters[name] = plotter
+                initialized_plotters.append(plotter)
             except Exception as e:
-                self.log_exception(f"Test plotting failed", e)
-                self.test_plotters.pop(name)
-    
+                self.log_exception(f"Test plotter '{name}' failed to initialize: {e}", RuntimeError)
+        self.test_plotters = initialized_plotters
+                
     def _plot_test_batch(self, inp, latent, output, labels, meta) -> None:
         label_names = self.trainer.datamodule.get_label_names()
         if isinstance(labels, torch.Tensor):
@@ -280,11 +281,11 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
         else:
             self.raise_error(f"Unexpected labels type: {type(labels)}")
 
-        for plotter in self.test_plotters.values():
+        for plotter in self.test_plotters:
             plotter.add_batch(inp, latent, output, labels_dict, meta)
     
     def _plot_test_finish(self) -> None:
-        for plotter in self.test_plotters.values():
+        for plotter in self.test_plotters:
             plotter.finish()
         
     def _multiple_calculate(self, 
@@ -403,9 +404,7 @@ class CENetBase(pl.LightningModule, CEModule, ABC):
     # ------------------------------------------------------------------
 
     def add_test_plotter(self, plotter_name: str, plotter_args: None) -> None:
-        if plotter_name in self.test_plotters.keys():
-            self.raise_error(f"Test plotter '{plotter_name}' already exists. Cannot add duplicate plotter.")
-        self.test_plotters[plotter_name] = plotter_args or {}
+        self.test_plotters.append((plotter_name, plotter_args))
     
     # ------------------------------------------------------------------
     # Utilities

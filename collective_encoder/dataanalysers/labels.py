@@ -17,7 +17,7 @@ class LabelsAnalyser(BaseDataAnalyser):
     ]
     _OPTIONAL_ARGS = {
         'extra_2d': [],
-        
+        'correlation': [],
     }
 
     def write_data(self, data, label = ""):
@@ -84,6 +84,11 @@ class LabelsAnalyser(BaseDataAnalyser):
         fig.savefig(self.output_dir + f"/dihedral_{label}.png", dpi=300)
         plt.close(fig)
         
+        self._plot_extra_2d(labels, label, colors)
+        self._plot_correlation(labels, label)
+    
+    def _plot_extra_2d(self, labels, label = "", colors = 'blue'):
+        
         for sel in self.extra_2d:
             label_x, label_y = sel.split(':')
             if label_x not in labels:
@@ -100,4 +105,34 @@ class LabelsAnalyser(BaseDataAnalyser):
             ax.set_ylabel(label_y)
             self._plot_axes_modifier(ax, yonly=False)
             fig.savefig(self.output_dir + f"/2d_{sel.replace(':', '_')}_{label}.png", dpi=300)
+            plt.close(fig)
+    
+    def _plot_correlation(self, labels, label = ""):
+        
+        for sel in self.correlation:
+            fields = sel.split(':')
+            if len(fields) < 2:
+                self.log_warn(f"Correlation selection '{sel}' does not have two fields. Skipping.")
+                continue
+            for field in fields:
+                if field not in labels:
+                    self.log_warn(f"Label '{field}' not found in labels. Skipping correlation plot for '{sel}'.")
+                    continue
+            l = len(labels[fields[0]])
+            for f in fields[1:]:
+                if len(labels[f]) != l:
+                    self.log_warn(f"Label '{f}' has a different length than '{fields[0]}'. Skipping correlation plot for '{sel}'.")
+                    continue
+            
+
+            fig, ax = plt.subplots(1, 1, figsize=(5,5))
+            correlation = np.corrcoef([labels[f] for f in fields])
+            ax.matshow(correlation, cmap='coolwarm', vmin=-1, vmax=1)
+            for (i, j), val in np.ndenumerate(correlation):
+                ax.text(j, i, f"{val:.2f}", ha='center', va='center', color='white' if abs(val) > 0.5 else 'black')
+            ax.set_xticks(range(len(fields)))
+            ax.set_xticklabels(fields, rotation=45)
+            ax.set_yticks(range(len(fields)))
+            ax.set_yticklabels(fields)
+            fig.savefig(self.output_dir + f"/correlation_{sel.replace(':', '_')}_{label}.png", dpi=300)
             plt.close(fig)

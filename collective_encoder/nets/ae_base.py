@@ -10,10 +10,13 @@ from collective_encoder.nets.base import CENetBase
 
 
 class AEBase(CENetBase, ABC):
-    _REQUIRED_ARGS = ['encoder_network', 'decoder_network']
+    _REQUIRED_ARGS = ['encoder_network', 'decoder_network', 
+                      'datapoint_shape', 'dataset_type']
     _OPTIONAL_ARGS = CENetBase._OPTIONAL_ARGS
     _OPTIONAL_ARGS.update({
         'batch_norm': False,  # Whether to use batch normalization in the encoder/decoder
+        'activation': 'relu',  # Activation function
+        'activation_args': None,  # Arguments for the activation function
     })
     _COMPATIBLE_DATASETS = []
     
@@ -68,7 +71,7 @@ class AEBase(CENetBase, ABC):
     # ------------------------------------------------------------------
     
     def get_norm_len(self) -> int:
-        return self.encoder_network[0]
+        return self.datapoint_shape[0]
 
     def _normalize(self, x: torch.Tensor) -> torch.Tensor:
         if self.Mean.numel() != np.prod(x.shape[1:]):

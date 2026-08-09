@@ -56,7 +56,8 @@ def label_selector(labels: Dict[str, np.ndarray],
         label_ident, label_idx = sel[0], sel[1]
         if label_ident not in labels:
             raise ValueError(f"Model label '{label_ident}' specified in "
-                             f"labels_selection_map not found in labels from model.")
+                             f"labels_selection_map not found in labels from model."
+                             f" Available labels: {list(labels.keys())}.")
         if label_idx >= labels[label_ident].shape[1]:
             raise ValueError(f"Index {label_idx} for label '{label_name}' exceeds the available data length "
                              f"for '{label_ident}' (length {labels[label_ident].shape[1]}). Check the labels_selection_map and the dataset configuration.")

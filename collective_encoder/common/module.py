@@ -149,7 +149,7 @@ class CEModule(ABC):
     def log_debug(self, message: str) -> None:
         self._ce_log.debug(message)
     
-    def log_exception(self, message: str, exc: Exception) -> None:
+    def log_exception(self, message: str, exc: Exception = ValueError) -> None:
         """Emit an ERROR-level log message with exception info."""
         self._ce_log.error(message, exc_info=exc)
     

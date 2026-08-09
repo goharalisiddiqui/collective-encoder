@@ -76,9 +76,13 @@ class VAE(AEBase):
 
     def init_network(self):
         self.encoder_net = VariationalNN(layers=self.encoder_network, 
-                                        batch_norm=self.batch_norm)
+                                        batch_norm=self.batch_norm,
+                                        activation=self.activation,
+                                        activation_args=self.activation_args)
         self.decoder_net = VariationalNN(layers=self.decoder_network, 
-                                        batch_norm=self.batch_norm)
+                                        batch_norm=self.batch_norm,
+                                        activation=self.activation,
+                                        activation_args=self.activation_args)
 
     def encoder(self, x):
         mu, logvar = self.encoder_net(x)
@@ -123,6 +127,30 @@ class VAE(AEBase):
         return model
 
 # ------------------------------------------------------------------
+# Symmetric Variational Autoencoder (sVAE)
+# ------------------------------------------------------------------
+
+class sVAE(VAE):
+    _IDENTIFIER = "sVAE"
+    
+    """
+    Symmetric Variational Autoencoder (sVAE) with symmetric encoder and decoder architectures.
+    The encoder and decoder architectures are determined by the provided network
+    """
+
+    def __init__(self,
+                 args: Dict[str, Any] = None,
+                 **kwargs
+                 ):
+        self.save_hyperparameters()
+        network = args.pop('network', None)
+        if network is None:
+            raise ValueError("Argument 'network' is required for sVAE")
+        args['encoder_network'] = network
+        args['decoder_network'] = network[:-1][::-1]
+        super().__init__(args=args, **kwargs)
+
+# ------------------------------------------------------------------
 # Metatomic Interface
 # ------------------------------------------------------------------
 
@@ -164,3 +192,4 @@ try:
 
 except ImportError:
     pass
+

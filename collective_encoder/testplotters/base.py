@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import torch
 
 from collective_encoder.common.module import CEModule
+from .labels_selector import cos_sin_to_angle
 
 try:
     import wandb
@@ -37,14 +38,23 @@ class BaseTestPlotter(CEModule, ABC):
     _IDENTIFIER = ""
     _OPTIONAL_ARGS = {
         'logger': None,
+        'data_selection': None,  
+        'latents_selection': None,  
+        'labels_selection': None,
+        'pred_selection': None,
+        'meta_selection': None,
+        'transformed_values': None,
     }
     
     def __init__(self, 
                  args, 
                  **kwargs):
         super().__init__(args, **kwargs)
-        self.outpath = os.path.join(self.run_dir, type(self).__name__+"_plots")
-        os.makedirs(self.outpath, exist_ok=True)
+        output_dir = self.safe_create_dir(
+          os.path.join(self.run_dir, 
+                       f"test_plotter_{self._IDENTIFIER.lower()}")
+        )
+        self.outpath = output_dir
         
         logger_type = None
         if self.logger is not None:
@@ -59,13 +69,10 @@ class BaseTestPlotter(CEModule, ABC):
         self.logger_type = logger_type
         self.log_info(f"Initialized {type(self).__name__} with logger of "
                       f"type {logger_type} and output path {self.outpath}")
-    
-    def create_data_path(self):
-        if not hasattr(self, "datapath"):
-            datapath = os.path.join(self.run_dir, type(self).__name__+"_data")
-            os.makedirs(datapath, exist_ok=True)
-            self.datapath = datapath
-            self.log_info(f"Created data path at {self.datapath}")
+        
+    ############################################################################
+    # Abstract Methods to be implemented by subclasses
+    ############################################################################
     
     @abstractmethod
     def collection_list(self) -> List[str]:
@@ -93,6 +100,10 @@ class BaseTestPlotter(CEModule, ABC):
             meta: Collected metadata.
         """
         pass
+
+    ############################################################################
+    # Batch Data Collection
+    ############################################################################
     
     def _convert_data(self, data):
         """
@@ -154,6 +165,87 @@ class BaseTestPlotter(CEModule, ABC):
             meta=getattr(self, "collected_meta", None)
         )
 
+    ############################################################################
+    # Functions for Selection Parsing and Validation
+    ############################################################################
+    
+    def _check_selections_validity(self, selection, data, dataname):
+        if selection is not None:
+            if type(selection) is not dict:
+                raise ValueError(f"{selection} must be a dictionary.")
+            sel_type = type(selection.values().__iter__().__next__())
+            if sel_type not in [int, str, list]:
+                raise ValueError(f"Selection values must be either int or list.")
+            for value in selection.values():
+                if not isinstance(value, sel_type):
+                    raise ValueError(f"All values in selection must be of the same type: {sel_type}.")
+            if sel_type is int:
+                if not isinstance(data, np.ndarray):
+                    raise ValueError(f"Data must be a numpy array when selection values are integers.")
+                if len(data.shape) < 2:
+                    raise ValueError(f"Data must be at least 2D to select an index.")
+                for idx in selection.values():
+                    if idx >= data.shape[1]:
+                        raise ValueError(f"Index {idx} exceeds the available data length "
+                                         f"(length {data.shape[1]}).")
+            elif sel_type in [list, str]:
+                if not isinstance(data, dict):
+                    raise ValueError("Data must be a dictionary when selection values are tuples.")
+                if sel_type is str:
+                    for key in selection.values():
+                        if key not in data:
+                            raise ValueError(f"Key '{key}' from selection not found in data.")
+                else:  # sel_type is list
+                    for value in selection.values():
+                        if len(value) != 2 or not isinstance(value[0], str) or not isinstance(value[1], int):
+                            raise ValueError(f"List values must be of the form (str, int).")
+                        key, idx = value[0], value[1]
+                        if key not in data:
+                            raise ValueError(f"Key '{key}' from selection not found in '{dataname}'.")
+                        if len(data[key].shape) < 2:
+                            raise ValueError(f"Data for key '{key}' must be at least 2D to select an index.")
+                        if idx >= data[key].shape[1]:
+                            raise ValueError(f"Index {idx} for key '{key}' exceeds the available data length "
+                                             f"(length {data[key].shape[1]}).")
+    
+    def _parse_selection(self, selection, data, dataname):
+        self._check_selections_validity(selection, data, dataname)
+        if selection is None:
+            return data
+        sel_type = type(selection.values().__iter__().__next__())
+        if sel_type is int:
+            return {key: self._convert_to_numpy(data[:, idx]) for key, idx in selection.items()}
+        elif sel_type in [list, str]:
+            selected_data = {}
+            for key, value in selection.items():
+                if sel_type is str:
+                    selected_data[key] = self._convert_to_numpy(data[value])
+                else:  # sel_type is list
+                    selected_data[key] = self._convert_to_numpy(data[value[0]][:, value[1]])
+            selected_data = cos_sin_to_angle(selected_data)
+            return selected_data
+        else:
+            raise ValueError(f"Unsupported selection type: {sel_type}")
+    
+    def _convert_to_numpy(self, data):
+        if isinstance(data, torch.Tensor):
+            return data.detach().cpu().numpy()
+        elif isinstance(data, np.ndarray):
+            return data
+        else:
+            raise ValueError(f"Data must be either a torch.Tensor or a numpy.ndarray, got {type(data)}.")
+
+    ############################################################################
+    # Helper Methods for Plotting and Saving Data
+    ############################################################################
+    
+    def create_data_path(self):
+        if not hasattr(self, "datapath"):
+            datapath = os.path.join(self.run_dir, type(self).__name__+"_data")
+            os.makedirs(datapath, exist_ok=True)
+            self.datapath = datapath
+            self.log_info(f"Created data path at {self.datapath}")
+
     def save_data(self, data, name):
         if not isinstance(data, np.ndarray):
             self.raise_error("Data must be a numpy array to be saved.")
@@ -202,16 +294,20 @@ class BaseTestPlotter(CEModule, ABC):
     
     def plot_2dscatter(self, x: np.ndarray, y: np.ndarray,
                        xerr: np.ndarray=None, yerr: np.ndarray=None,
-                       labels: Dict[str, np.ndarray]=None, tag: str="0_1") -> Tuple[plt.Figure, List[plt.Axes]]:
+                       labels: np.ndarray=None, tag: str="0_1") -> Tuple[plt.Figure, List[plt.Axes]]:
         if x.shape != y.shape:
             self.raise_error("x and y must have the same shape")
         if len(x.shape) != 1:
             self.raise_error("x and y must be 1D arrays")
         if xerr is not None:
             if yerr is None:
-                 self.raise_error("If xerr is provided, yerr must also be provided")
+                self.raise_error("If xerr is provided, yerr must also be provided")
             if xerr.shape != x.shape or yerr.shape != y.shape:
-                self.raise_error("xerr and yerr must have the same shape as x and y")
+                self.raise_error(f"xerr and yerr must have the same shape as x and y "
+                                 f"xerr.shape: {xerr.shape}, "
+                                 f"yerr.shape: {yerr.shape}, "
+                                 f"x.shape: {x.shape}, "
+                                 f"y.shape: {y.shape}")
         if labels is None or len(labels) == 0:
             labels = {"": None}
         ncols = len(labels)
@@ -231,8 +327,8 @@ class BaseTestPlotter(CEModule, ABC):
                                    fmt='o', c='gray', 
                                    alpha=0.5, ecolor='lightgray', 
                                    elinewidth=1, capsize=2)
-            axes[ind].set_xlabel(f"$LD_{tag.split('_')[0]}$")
-            axes[ind].set_ylabel(f"$LD_{tag.split('_')[1]}$")
+            axes[ind].set_xlabel(tag.split('_')[0])
+            axes[ind].set_ylabel(tag.split('_')[1])
             if value is not None:
                 fig.colorbar(scatter, ax=axes[ind], label=name)
         plt.tight_layout()

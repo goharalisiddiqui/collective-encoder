@@ -86,12 +86,22 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
         self.dl_cls = None
         self.check_module_compatibility()
     
+    def ext_analyse_data(self, 
+                         data_analysers: List[Dict[str, Any]]):
+        """External method to trigger data analysis."""
+        self._call_analysers(data_analysers, metargs=self.get_run_args())
+
     def _analyze_data(self):
         """Run data analysis if data analysers are specified."""
         if self.data_analysers is None:
             return
+        self._call_analysers(self.data_analysers, metargs=self.get_run_args())
+    
+    def _call_analysers(self, 
+                        data_analysers: List[Dict[str, Any]], 
+                        metargs: Dict[str, Any]):
         from collective_encoder.dataanalysers.resolver import get_dataanalyser
-        for analyser_info in self.data_analysers:
+        for analyser_info in data_analysers:
             analyser_type = analyser_info.get('analyser_type', None)
             analyser_args = analyser_info.get('analyser_args', {})
             if analyser_type is None:
@@ -100,7 +110,7 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
             analyser_cls = get_dataanalyser(analyser_type)
             analyser_args['datamodule_args'] = self.get_args()
             analyser = analyser_cls(args=analyser_args, 
-                                    **self.get_run_args())
+                                    **metargs)
             if self.train_data is not None and len(self.train_data) > 0:
                 analyser.write_data(self.train_data, label="train")
             if self.val_data is not None and len(self.val_data) > 0:

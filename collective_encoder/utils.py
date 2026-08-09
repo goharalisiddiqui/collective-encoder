@@ -1,5 +1,22 @@
 import numpy as np
 from tqdm import tqdm
+from torch.nn import Module
+from typing import Callable
+from torch.nn.modules import activation
+
+Activation = Callable[..., Module]
+
+def get_activation_fn(act: str) -> Activation:
+    # get list from activation submodule as lower-case
+    activations_lc = [str(a).lower() for a in activation.__all__]
+    if (act := str(act).lower()) in activations_lc:
+        # match actual name from lower-case list, return function/factory
+        idx = activations_lc.index(act)
+        act_name = activation.__all__[idx]
+        act_func = getattr(activation, act_name)
+        return act_func
+    else:
+        raise ValueError(f"Cannot find activation function for string <{act}>")
 
 def compute_mfpt_matrix(vals : np.ndarray, minima : np.ndarray, lag: int = 1):
     '''
