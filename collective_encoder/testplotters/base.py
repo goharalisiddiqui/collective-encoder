@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
 
 import numpy as np
+from scipy.stats import spearmanr
 
 from scipy.special import comb
 
@@ -10,7 +11,7 @@ import matplotlib.pyplot as plt
 import torch
 
 from collective_encoder.common.module import CEModule
-from .labels_selector import cos_sin_to_angle
+from collective_encoder.testplotters.utils import cos_sin_to_angle
 
 try:
     import wandb
@@ -254,8 +255,11 @@ class BaseTestPlotter(CEModule, ABC):
         np.save(fn, data)
         self.log_info(f"Saved data '{name}' to {fn}")
 
-    def log_image(self, fig, name):
-        fn = os.path.join(self.outpath, f"{name}.png")
+    def log_image(self, fig, name, subpath=None):
+        if subpath is not None:
+            fn = os.path.join(self.outpath, subpath, f"{name}.png")
+        else:
+            fn = os.path.join(self.outpath, f"{name}.png")
         fig.savefig(fn, dpi=150)
         if self.logger_type == "WandbLogger":
             self.logger.experiment.log({
@@ -335,7 +339,8 @@ class BaseTestPlotter(CEModule, ABC):
         return fig, axes
 
     def plot_correlation(self, x: np.ndarray, y: np.ndarray,
-                         x_labels: list = None, y_labels: list = None) -> Tuple[plt.Figure, plt.Axes]:
+                         x_labels: list = None, y_labels: list = None,
+                         correlation_type: str = 'spearman') -> Tuple[plt.Figure, plt.Axes]:
         if x.ndim != 2 or y.ndim != 2:
             self.raise_error("x and y must be 2D arrays")
         if x.shape[0] != y.shape[0]:
@@ -343,7 +348,12 @@ class BaseTestPlotter(CEModule, ABC):
         n_x, n_y = x.shape[1], y.shape[1]
 
         combined = np.hstack([x, y])
-        full_corr = np.corrcoef(combined.T)
+        if correlation_type == 'spearman':
+            full_corr, _ = spearmanr(combined, axis=0)  # (n_x + n_y, n_x + n_y)
+        elif correlation_type == 'pearson':
+            full_corr = np.corrcoef(combined, rowvar=False)  # (n_x + n_y, n_x + n_y)
+        else:
+            self.raise_error(f"Unsupported correlation type: {correlation_type}. Use 'spearman' or 'pearson'.")
         corr_matrix = full_corr[:n_x, n_x:]  # (n_x, n_y) cross-correlation block
 
         if x_labels is None:
@@ -353,7 +363,7 @@ class BaseTestPlotter(CEModule, ABC):
 
         fig, ax = plt.subplots(figsize=(max(4, n_y * 1.2), max(3, n_x * 0.8)))
         im = ax.imshow(corr_matrix, vmin=-1, vmax=1, cmap='RdBu_r', aspect='auto')
-        fig.colorbar(im, ax=ax, label='Pearson r')
+        fig.colorbar(im, ax=ax, label=f'{correlation_type.capitalize()} Correlation')
 
         ax.set_yticks(range(n_x))
         ax.set_yticklabels(x_labels)

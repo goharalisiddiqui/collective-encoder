@@ -1,33 +1,16 @@
-import os
 from typing import Dict, List
-import torch
 
 import numpy as np
 
 import matplotlib.pyplot as plt
 
-from .base import BaseTestPlotter
+from collective_encoder.testplotters.base import BaseTestPlotter
 from collective_encoder.utils import check_dict_contains_keys
+from collective_encoder.testplotters.utils import combinations
+from collective_encoder.testplotters.transforms import add_transformed
 
-
-def combinations(n, r):
-    # Generate all combinations of n items taken r at a time
-    pool = np.arange(n)
-    indices = np.arange(r)
-    yield tuple(int(pool[i]) for i in indices)
-    while True:
-        for i in reversed(range(r)):
-            if indices[i] != i + n - r:
-                break
-        else:
-            return
-        indices[i] += 1
-        for j in range(i + 1, r):
-            indices[j] = indices[j - 1] + 1
-        yield tuple(int(pool[i]) for i in indices)
-
-class LDplotter(BaseTestPlotter):
-    _IDENTIFIER = "LDplotter"
+class SimplePlotter(BaseTestPlotter):
+    _IDENTIFIER = "SimplePlotter"
     _OPTIONAL_ARGS = BaseTestPlotter._OPTIONAL_ARGS.copy()
     _OPTIONAL_ARGS.update({
         'plots_2dscatter_cb': [],
@@ -36,6 +19,24 @@ class LDplotter(BaseTestPlotter):
     
     def collection_list(self) -> List[str]:
         return ["latent", "labels", "meta"]
+
+    def plot(self, data, latent, pred, labels, meta) -> None:
+        labels = self._parse_selection(self.labels_selection, labels, "labels")
+        latent = self._parse_selection(self.latents_selection, latent, "latent")
+        meta = self._parse_selection(self.meta_selection, meta, "meta")
+        
+        # All names must be unique
+        all_names = list(labels.keys()) + \
+                    list(latent.keys()) + \
+                    list(meta.keys())
+        if len(all_names) != len(set(all_names)):
+            raise ValueError(f"Duplicate names found in labels and latent keys. "
+                             f"All names must be unique. Found names: {all_names}")
+        vals = {**labels, **latent, **meta}
+        vals = add_transformed(self.transformed_values, vals)
+        
+        self._plot_2dscatter(vals)
+        self._plot_correlations(vals)
 
     def _plot_2dscatter(self, vals: Dict[str, np.ndarray]) -> None:
         for plot in self.plots_2dscatter_cb:
@@ -104,57 +105,12 @@ class LDplotter(BaseTestPlotter):
             x_data = np.stack([vals[x] for x in x_labels], axis=1)
             y_data = np.stack([vals[y] for y in y_labels], axis=1)
             fig, axes = self.plot_correlation(x_data, y_data,
-                                              x_labels=x_labels, y_labels=y_labels)
+                                              x_labels=x_labels, 
+                                              y_labels=y_labels, 
+                                              correlation_type=corr.get('type', 'spearman'))
             fname = f"correlation_{corr['x']}_{corr['y']}" if 'name' not in corr else corr['name']
             self.log_image(fig, fname)
             plt.close(fig)
-        
-    def _transform_lv2std(self, args, vals):
-        if len(args) != 1:
-            self.raise_error(f"lv2std transformation requires exactly 1 argument: logvar. Found: {args}.")
-        if args[0] not in vals:
-            self.raise_error(f"Log variance label '{args[0]}' not found in collected data for lv2std transformation. Available labels: {list(vals.keys())}.")
-        logvar = vals[args[0]]
-        if not isinstance(logvar, np.ndarray):
-            self.raise_error(f"Log variance label '{args[0]}' must be a numpy array for lv2std transformation. Found type: {type(logvar)}.")
-        std = np.sqrt(np.exp(logvar))
-        return std
-
-    def _add_transformed(self, vals):
-        if self.transformed_values is None:
-            return vals
-        for name, transform in self.transformed_values.items():
-            func = transform.split(':')[0]
-            args = transform.split(':')[1:]
-            if func == 'lv2std':
-                if name in vals:
-                    self.log_exception(f"Transformed value '{name}' already exists in collected data. Skipping transformation.")
-                    continue
-                vals[name] = self._transform_lv2std(args, vals)
-            else:
-                self.log_exception(f"Unknown transformation function '{func}' for transformed value '{name}'. Skipping transformation.")
-        return vals
-            
-    def plot(self, data, latent, pred, labels, meta) -> None:
-        labels = self._parse_selection(self.labels_selection, labels, "labels")
-        latent = self._parse_selection(self.latents_selection, latent, "latent")
-        meta = self._parse_selection(self.meta_selection, meta, "meta")
-        
-        # All names must be unique
-        all_names = list(labels.keys()) + \
-                    list(latent.keys()) + \
-                    list(meta.keys())
-        if len(all_names) != len(set(all_names)):
-            raise ValueError(f"Duplicate names found in labels and latent keys. "
-                             f"All names must be unique. Found names: {all_names}")
-        vals = {**labels, **latent, **meta}
-        vals = self._add_transformed(vals)
-        
-        self._plot_2dscatter(vals)
-        self._plot_correlations(vals)
-        exit()
-
-        # self._plot_latent(latent, labels = labels, name = "latent")
         
     def _plot_latent(self, 
                     latent, 

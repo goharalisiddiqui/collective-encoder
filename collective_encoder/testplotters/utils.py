@@ -63,3 +63,19 @@ def label_selector(labels: Dict[str, np.ndarray],
                              f"for '{label_ident}' (length {labels[label_ident].shape[1]}). Check the labels_selection_map and the dataset configuration.")
         selected_labels[label_name] = labels[label_ident][:, label_idx]
     return selected_labels
+
+def combinations(n, r):
+    # Generate all combinations of n items taken r at a time
+    pool = np.arange(n)
+    indices = np.arange(r)
+    yield tuple(int(pool[i]) for i in indices)
+    while True:
+        for i in reversed(range(r)):
+            if indices[i] != i + n - r:
+                break
+        else:
+            return
+        indices[i] += 1
+        for j in range(i + 1, r):
+            indices[j] = indices[j - 1] + 1
+        yield tuple(int(pool[i]) for i in indices)

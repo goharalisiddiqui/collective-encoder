@@ -4,8 +4,7 @@ from .labels import LabelsAnalyser
 from .datapoints import DatapointsAnalyser
 from .graphs import GraphDatapointsAnalyser
 
-
-from collective_encoder.testplotters.labels_selector import cos_sin_to_angle
+from collective_encoder.testplotters.utils import cos_sin_to_angle
 
 class LabelsDihedralAnalyser(LabelsAnalyser):
     """

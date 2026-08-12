@@ -1,8 +1,3 @@
-import os
-import numpy as np
-from matplotlib import pyplot as plt
-from tqdm import tqdm
-
 from .labels import LabelsAnalyser
 
 class DatapointsAnalyser(LabelsAnalyser):

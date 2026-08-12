@@ -5,7 +5,7 @@ from tqdm import tqdm
 from .datapoints import DatapointsAnalyser
 from .base import BaseDataAnalyser
 
-from collective_encoder.testplotters.labels_selector import label_selector
+from collective_encoder.testplotters.utils import label_selector
 
 class GraphDatapointsAnalyser(DatapointsAnalyser):
     """
