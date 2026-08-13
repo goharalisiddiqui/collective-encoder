@@ -118,12 +118,6 @@ class BondGraphDecoder(nn.Module):
             with torch.no_grad():
                 h = self.node_embed(template_data.x)
                 e = self.edge_embed(edge_features)
-                # print("Precomputing template node representations with shape:", h.shape)
-                # print("Precomputing template edge representations with shape:", e.shape)
-                # print(self.node_dim, self.edge_dim)
-                # print(template_data.x.size(1), edge_features.size(1))
-                # print(template_data.x.size(0), edge_features.size(0))
-                # exit()
                 for mp, bn in zip(self.mp_layers, self.bns):
                     h = mp(h, template_data.edge_index, e)
                     h = bn(h)
@@ -134,9 +128,6 @@ class BondGraphDecoder(nn.Module):
         # Always store processed edge features for reuse
         self.register_buffer('template_edge_features', edge_features)
         self.register_buffer('template_edge_index', template_data.edge_index.clone())
-
-        # ---------- Build combinatorial sets (bonds, angles, dihedrals) ----------
-        # self._build_topology_sets(template_data)
 
         # ---------- Prediction heads ----------
         bond_in = 2 * hidden_dim + latent_dim

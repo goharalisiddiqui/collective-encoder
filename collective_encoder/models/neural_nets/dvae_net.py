@@ -3,12 +3,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-from collective_encoder.nets.modules.variational_nn import VariationalNN
-from collective_encoder.nets.modules.simple_nn import SimpleNN
-
+from collective_encoder.models.neural_nets.modules.variational_nn import VariationalNN
+from collective_encoder.models.neural_nets.modules.simple_nn import SimpleNN
 from collective_encoder.losses.mse import CELossMSE
-
-from collective_encoder.nets.vae_net import VAE
+from collective_encoder.models.neural_nets.vae_net import VAE
 
 
 class DVAE(VAE):
@@ -25,7 +23,7 @@ class DVAE(VAE):
                                          activation=self.activation,
                                          activation_args=self.activation_args)
         self.decoder_net = SimpleNN(layers=self.decoder_network, 
-                                    batch_norm=self.batch_norm,
+                                    batch_norm=self.batch_norm, 
                                     activation=self.activation,
                                     activation_args=self.activation_args)
 

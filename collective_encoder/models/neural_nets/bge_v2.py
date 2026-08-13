@@ -3,8 +3,8 @@ from typing import List, Optional, Dict, Union
 import torch
 from torch import nn
 
-from collective_encoder.nets.base import CENetBase
-from collective_encoder.nets.bge import BondGraphEncoderDecoder
+from collective_encoder.models.neural_nets.base import CENetBase
+from collective_encoder.models.neural_nets.bge import BondGraphEncoderDecoder
 from .modules.graph_encoder import BondGraphEncoderV2 as BondGraphEncoder
 from .modules.graph_decoder import BondGraphDecoder
 
@@ -13,7 +13,7 @@ class BondGraphEncoderDecoderV2(BondGraphEncoderDecoder):
     """BGE v2 — uses :class:`BondGraphEncoderV2` and always requires a datamodule.
 
     Inherits all loss, step, normalize, and scheduler logic from
-    :class:`BondGraphEncoderDecoder`.  Only the encoder and eager decoder
+    :class:`BondGraphEncoderDecoder`. Only the encoder and eager decoder
     initialization differ.
     """
 

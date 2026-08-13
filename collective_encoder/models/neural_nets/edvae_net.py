@@ -4,7 +4,8 @@ from typing import Any, Dict, Tuple
 import torch
 import torch.nn as nn
 
-from collective_encoder.nets.dvae_net import DVAE
+from collective_encoder.models.neural_nets.dvae_net import DVAE
+
 
 class EDVAE(DVAE):
     _IDENTIFIER = "EDVAE"

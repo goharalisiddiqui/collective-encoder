@@ -15,18 +15,17 @@ def test():
     run_dir = metargs['run_dir']
 
     ##################################
-    # Training the NN
-    ##################################
-    trainargs = {"log_every_n_steps" : 1,
-                 "default_root_dir" : run_dir}
-    
-    trainer = pl.Trainer(**trainargs)
-
-    ##################################
     testers = config.get('test_plotters', [])
     for tester in testers:
         model.add_test_plotter(tester['tester_type'], tester.get('tester_args', None))
-    trainer.test(model, datamodule=dm)
+
+    if isinstance(model, pl.LightningModule):
+        trainargs = {"log_every_n_steps" : 1,
+                     "default_root_dir" : run_dir}
+        trainer = pl.Trainer(**trainargs)
+        trainer.test(model, datamodule=dm)
+    else:
+        model.test(datamodule=dm)
 
 
 def main():

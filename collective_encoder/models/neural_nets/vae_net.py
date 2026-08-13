@@ -3,8 +3,8 @@ from typing import Any, Tuple, Dict
 
 import torch
 
-from collective_encoder.nets.ae_base import AEBase
-from collective_encoder.nets.modules.variational_nn import VariationalNN
+from collective_encoder.models.neural_nets.ae_base import AEBase
+from collective_encoder.models.neural_nets.modules.variational_nn import VariationalNN
 from collective_encoder.losses.nll import CELossNLL
 from collective_encoder.losses.kld_resolver import create_kld_loss
 from collective_encoder.losses.bond_deviation import CELossBondDeviation
@@ -23,7 +23,6 @@ class VAE(AEBase):
         "kld_args": None,  # Additional arguments for the KLD loss (e.g., number of components for Gaussian Mixture)
         "use_bond_deviation_loss": False,  # Whether to include a bond deviation loss based on bonded atom pairs
         "use_steric_loss": False,
-        "use_bond_deviation_loss": False,
     })
     
     @staticmethod
@@ -192,4 +191,3 @@ try:
 
 except ImportError:
     pass
-

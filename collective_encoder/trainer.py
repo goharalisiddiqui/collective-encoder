@@ -27,83 +27,97 @@ def train():
     run_dir = metargs['run_dir']
 
     ##################################
-    # Training the NN
+    # Training / Fitting the Model
     ##################################
-    trainargs = {"max_epochs" : config['nepochs'],
-                 "log_every_n_steps" : 1,
-                 "default_root_dir" : run_dir}
-    if not config.get('nogpu', False):
-        trainargs["accelerator"] = 'auto'
-        trainargs["devices"] = 'auto'
-    
-    ## External logging
-    if config.get('wandb', False):
-        wandb_logger = WandbLogger(project=config['wandb_project'],
-                                 entity=config['wandb_entity'],
-                                 save_dir=run_dir,
-                                 name=run_dir.strip(".").strip("/").replace("/", "_"),
-                                 log_model=False,)
-        # wandb_logger.watch(model, log_graph=True)
-        trainargs["logger"] = wandb_logger
-
-    ## PL Callbacks
-    callbacks = []
-    # Learning rate monitor
-    lr_monitor = LearningRateMonitor(logging_interval='epoch')
-    callbacks.append(lr_monitor)
-    # Early stopping
-    if config.get('early_stopping', True):
-        early_stop_callback = pl.callbacks.EarlyStopping(
-            monitor='val_loss',
-            patience=config.get('early_stopping_args', {}).get('patience', 100),
-            min_delta=config.get('early_stopping_args', {}).get('min_delta', 1e-8),
-            verbose=True,
-            mode='min'
-        )
-        callbacks.append(early_stop_callback)
-
-    checkpoint_callback = ModelCheckpoint(
-        monitor='val_loss',
-        dirpath=run_dir + '/checkpoints',
-        filename=config['network_type'] + '-{epoch:02d}-{val_loss:.6f}',
-        save_top_k=1,
-        mode='min',
-    )
-    callbacks.append(checkpoint_callback)
-
-    trainargs["callbacks"] = callbacks
-    # trainargs["num_sanity_val_steps"] = 0
-
-    # trainargs["gradient_clip_val"] = 0.5
-    # trainargs["gradient_clip_algorithm"] = "norm"
-
-    trainer = pl.Trainer(**trainargs)
-
-    if config['nepochs'] > 0:
-        _log.info("Starting training for %d epochs...", config['nepochs'])
-        trainer.fit(model, datamodule=dm)
-        _log.info("Training completed.")
+    if isinstance(model, pl.LightningModule):
+        trainargs = {"max_epochs" : config['nepochs'],
+                     "log_every_n_steps" : 1,
+                     "default_root_dir" : run_dir}
+        if not config.get('nogpu', False):
+            trainargs["accelerator"] = 'auto'
+            trainargs["devices"] = 'auto'
+        
+        ## External logging
         if config.get('wandb', False):
-            wandb.finish()
+            wandb_logger = WandbLogger(project=config['wandb_project'],
+                                     entity=config['wandb_entity'],
+                                     save_dir=run_dir,
+                                     name=run_dir.strip(".").strip("/").replace("/", "_"),
+                                     log_model=False,)
+            # wandb_logger.watch(model, log_graph=True)
+            trainargs["logger"] = wandb_logger
 
-    if config['nepochs'] == 0 and 'load_model' not in config:
-        _log.warning("Both nepochs and load_model are not set. Nothing to do.")
+        ## PL Callbacks
+        callbacks = []
+        # Learning rate monitor
+        lr_monitor = LearningRateMonitor(logging_interval='epoch')
+        callbacks.append(lr_monitor)
+        # Early stopping
+        if config.get('early_stopping', True):
+            early_stop_callback = pl.callbacks.EarlyStopping(
+                monitor='val_loss',
+                patience=config.get('early_stopping_args', {}).get('patience', 100),
+                min_delta=config.get('early_stopping_args', {}).get('min_delta', 1e-8),
+                verbose=True,
+                mode='min'
+            )
+            callbacks.append(early_stop_callback)
 
-    # Save the best model checkpoint as best.ckpt
-    best_checkpoint_path = checkpoint_callback.best_model_path
-    if best_checkpoint_path != "":
-        shutil.copy(best_checkpoint_path, os.path.dirname(best_checkpoint_path) + "/best.ckpt")
-    _log.info(f"Best model saved at: {best_checkpoint_path}")
-    
-    
-    ##################################
-    # Testing the NN
-    ##################################
-    if config.get('test_plotter_type', False):
-        model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))
-    _log.info("Starting testing...")
-    trainer.test(model, datamodule=dm)
-    _log.info("Testing completed.")
+        model_name = config.get('network_type', config.get('model_type', 'model'))
+        checkpoint_callback = ModelCheckpoint(
+            monitor='val_loss',
+            dirpath=run_dir + '/checkpoints',
+            filename=model_name + '-{epoch:02d}-{val_loss:.6f}',
+            save_top_k=1,
+            mode='min',
+        )
+        callbacks.append(checkpoint_callback)
+
+        trainargs["callbacks"] = callbacks
+
+        trainer = pl.Trainer(**trainargs)
+
+        if config['nepochs'] > 0:
+            _log.info("Starting training for %d epochs...", config['nepochs'])
+            trainer.fit(model, datamodule=dm)
+            _log.info("Training completed.")
+            if config.get('wandb', False):
+                wandb.finish()
+
+        if config['nepochs'] == 0 and 'load_model' not in config and 'load_network' not in config:
+            _log.warning("Both nepochs and load_model are not set. Nothing to do.")
+
+        # Save the best model checkpoint as best.ckpt
+        best_checkpoint_path = checkpoint_callback.best_model_path
+        if best_checkpoint_path != "":
+            shutil.copy(best_checkpoint_path, os.path.dirname(best_checkpoint_path) + "/best.ckpt")
+        _log.info(f"Best model saved at: {best_checkpoint_path}")
+
+        ##################################
+        # Testing the NN
+        ##################################
+        if config.get('test_plotter_type', False):
+            model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))
+        _log.info("Starting testing...")
+        trainer.test(model, datamodule=dm)
+        _log.info("Testing completed.")
+
+    else:
+        # Analytical non-gradient model (e.g. PCA, ICA)
+        _log.info(f"Fitting {model.__class__.__name__} analytically on training data...")
+        model.fit(datamodule=dm)
+        best_ckpt = os.path.join(run_dir, "checkpoints", "best.ckpt")
+        model.save_checkpoint(best_ckpt)
+        _log.info(f"Fitted model saved at: {best_ckpt}")
+
+        ##################################
+        # Testing the Model
+        ##################################
+        if config.get('test_plotter_type', False):
+            model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))
+        _log.info("Starting testing...")
+        model.test(datamodule=dm)
+        _log.info("Testing completed.")
 
     #####################################
     # Save metatomic model

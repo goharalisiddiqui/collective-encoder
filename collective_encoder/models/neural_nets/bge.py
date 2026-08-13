@@ -3,7 +3,7 @@ from typing import Any, Dict, Tuple
 import torch
 from torch import nn
 
-from collective_encoder.nets.base import CENetBase
+from collective_encoder.models.neural_nets.base import CENetBase
 from .modules.graph_encoder import BondGraphEncoder
 from .modules.graph_decoder import BondGraphDecoder
 
@@ -36,7 +36,7 @@ class BondGraphEncoderDecoder(CENetBase):
         decoder_args: Keyword arguments for :class:`BondGraphDecoder`.
             Must include ``template_khop``.
         datamodule: Optional data module used to initialize the decoder at
-            construction time.  When ``None`` the decoder is initialized lazily
+            construction time. When ``None`` the decoder is initialized lazily
             on the first call to :meth:`decode`.
         lrate: Learning rate for AdamW.
         weight_decay: Weight decay for AdamW.
@@ -89,7 +89,7 @@ class BondGraphEncoderDecoder(CENetBase):
         
         self.losses = {
             'encdec': CELossMSEDict({
-                'keys': self.outlabels,
+                'keys': self.out_labels,
                 'weights': self.loss_weights,
                 }, **kwargs),
         }
@@ -283,6 +283,5 @@ from .modules.mp_modules import (
     ScalarFeatureEmbedding,
     AttentionMP,
 )
-
 
 __all__.extend(["BondGraphNetEncoderDecoder", "BondGraphNetEncoder", "BondGraphNetDecoder"])

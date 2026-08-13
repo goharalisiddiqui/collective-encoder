@@ -19,7 +19,7 @@ from gslibs.utils.filesystem import create_rundir, output_to_file
 
 from collective_encoder.utils import check_dict_contains_keys
 from collective_encoder.datamodules.resolver import get_datamodule
-from collective_encoder.nets.resolver import get_net
+from collective_encoder.models.resolver import get_net, get_model
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 torch.set_default_dtype(torch.float64)
@@ -172,23 +172,26 @@ def load_datamodule(config, metargs):
     return dm
 
 def load_model(config, metargs, dm):
-    nn_type = config['network_type']
-    nn_cls = get_net(nn_type)
+    nn_type = config.get('network_type', config.get('model_type'))
+    if nn_type is None:
+        raise ValueError("Missing 'network_type' or 'model_type' in configuration.")
+    nn_cls = get_model(nn_type)
     nn_args = {
-        'lrate': config['lrate'],
-        'weight_decay': config['weight_decay'],
-        'normIn': config['normIn'],
-        'scheduler': config['scheduler'],
+        'lrate': config.get('lrate', 1e-3),
+        'weight_decay': config.get('weight_decay', 0.0),
+        'normIn': config.get('normIn', False),
+        'scheduler': config.get('scheduler', False),
         'scheduler_args': config.get('scheduler_args', {}),
     }
-    nn_args.update(config.get('network_args', {}))
+    nn_args.update(config.get('network_args', config.get('model_args', {})))
 
-    if 'load_network' in config:
-        if len(config.get('network_args', {})) > 0:
-            _log.warning("network_args will be ignored when loading a model.")
+    load_path = config.get('load_network', config.get('load_model', None))
+    if load_path is not None:
+        if len(config.get('network_args', config.get('model_args', {}))) > 0:
+            _log.warning("network_args/model_args will be ignored when loading a model.")
             config['network_args'] = {}
 
-        ckpt_path = os.path.join(config['load_network'], "checkpoints")
+        ckpt_path = os.path.join(load_path, "checkpoints")
         potential_ckpts = [a for a in os.listdir(ckpt_path) if a.endswith(".ckpt")]
         if len(potential_ckpts) == 0:
             raise FileNotFoundError(f"No checkpoint found in {ckpt_path}")

@@ -6,13 +6,13 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from collective_encoder.nets.base import CENetBase
+from collective_encoder.models.neural_nets.base import CENetBase
 
 
 class AEBase(CENetBase, ABC):
     _REQUIRED_ARGS = ['encoder_network', 'decoder_network', 
                       'datapoint_shape', 'dataset_type']
-    _OPTIONAL_ARGS = CENetBase._OPTIONAL_ARGS
+    _OPTIONAL_ARGS = CENetBase._OPTIONAL_ARGS.copy()
     _OPTIONAL_ARGS.update({
         'batch_norm': False,  # Whether to use batch normalization in the encoder/decoder
         'activation': 'relu',  # Activation function
@@ -23,7 +23,7 @@ class AEBase(CENetBase, ABC):
     """Base class for dense-tensor autoencoder architectures (VAE, AE, DVAE, EDVAE).
 
     Handles dense-tensor normalization, reparametrization, the generic training
-    step, and metric/plotter dispatch.  Graph-based networks use
+    step, and metric/plotter dispatch. Graph-based networks use
     ``BondGraphEncoderDecoder`` instead.
 
     Subclasses must implement ``encoder(x)`` and ``decoder(z)``; they call
