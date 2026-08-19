@@ -138,6 +138,12 @@ class DisentanglementSAPMetric(BaseDisentanglementMetric):
         np.save(os.path.join(self.data_dir, "sap_scores.npy"), np.array(all_sap_scores))
         np.save(os.path.join(self.data_dir, "score_matrix.npy"), mean_score_matrix)
 
+        # Register metrics into metrics dictionary
+        self.set_metric("sap_score", sap_stats["mean"])
+        self.set_metric("sap", sap_stats["mean"])
+        self.set_metric("disentanglement_score", sap_stats["mean"])
+        self.set_metric("sap_score_std", sap_stats["std"])
+
         # WandB logging
         if self.logger_type == "WandbLogger" and self.logger is not None:
             try:

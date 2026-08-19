@@ -1,4 +1,5 @@
 import logging
+import shutil
 _log = logging.getLogger(__name__)
 import os
 import yaml
@@ -63,64 +64,43 @@ def get_debug_config_path(settings: dict) -> str:
                                        'configs', 
                                        settings.get('module'), 
                                        'debug.yaml')
-def prepare(settings: dict):
-    """Prepare the module."""
+def prepare_from_config(config: dict, settings: dict, config_path: str = None, debug: bool = False):
+    """Prepare runtime directory and metargs from an existing config dict."""
     if 'module' not in settings:
         raise ValueError("Module name must be specified in settings.")
     
     required_keys = get_required_keys(settings)
-    default_config_path = get_default_config_path(settings)
     debug_config_path = get_debug_config_path(settings)
     
-    args = parse_args()
-    config_path = args.config
-    debug = args.debug
-    
-    if not os.path.isfile(config_path):
-        raise FileNotFoundError(f"Config file not found at {config_path}")
-    validate_duplicate_keys(config_path)
-    config = yaml.safe_load(open(default_config_path, 'r'))
-    recursive_update(config, yaml.safe_load(open(config_path, 'r')))
     if debug or config.get('debug', False):
-        # Load debug config and override values
-        recursive_update(config, yaml.safe_load(open(debug_config_path, 'r')))
+        config['debug'] = True
+        if os.path.isfile(debug_config_path):
+            recursive_update(config, yaml.safe_load(open(debug_config_path, 'r')))
         torch.manual_seed(0)
         np.random.seed(0)
         print("Running in debug mode.")
+        
     check_dict_contains_keys(config, required_keys=required_keys)
-    
-    
-    
-    
-    # ##################################
-    # # Config validation
-    # ##################################
-    # _KNOWN_CONFIG_KEYS = {
-    #     'debug', 'outpath', 'outfolder', 'overwrite', 'nexp', 'output_to_file',
-    #     'save_checkpoint', 'save_serial_model', 'nepochs', 'lrate', 'weight_decay',
-    #     'nogpu', 'export_latent', 'wandb', 'wandb_project', 'wandb_entity',
-    #     'scheduler', 'scheduler_args', 'normIn', 'network_type', 'network_args',
-    #     'datamodule_type', 'datamodule_args', 'data_analyser', 'data_args',
-    #     'load_model', 'output_traj', 'save_metatomic', 'early_stopping',
-    #     'early_stopping_args', 'verbose', 'metatomic_metadata', 'test_plotter_type', 
-    #     'test_plotter_args',
-    # }
-    # for key in config:
-    #     if key not in _KNOWN_CONFIG_KEYS:
-    #         _log.warning("Unknown config key '%s' — will be ignored", key)
 
     ##################################
     # Output directory
     ##################################
     run_dir = create_rundir(config['outpath'], 
-                        config['outfolder'], 
-                        config['nexp'], 
-                        overwrite=config['overwrite'])
+                            config['outfolder'], 
+                            config['nexp'], 
+                            overwrite=config['overwrite'])
+    
+    run_config_target = os.path.join(run_dir, "run_config.yaml")
+    if config_path and os.path.isfile(config_path):
+        shutil.copy2(config_path, run_config_target)
+    else:
+        with open(run_config_target, 'w') as f:
+            yaml.dump(config, f)
 
     ##################################
     # Output to file
     ##################################
-    if config['output_to_file']:
+    if config.get('output_to_file', False):
         output_to_file(run_dir, filename="out.txt")
     
     ##################################
@@ -131,19 +111,36 @@ def prepare(settings: dict):
         logging_level = 'INFO'
     if logging_level is False:
         logging_level = 'WARNING'
-    if not hasattr(logging, logging_level.upper()):
+    if not hasattr(logging, str(logging_level).upper()):
         raise ValueError(f"Invalid logging level: {logging_level}. "
                          f"Valid levels: {logging._nameToLevel.keys()}")
-    logging_level = getattr(logging, logging_level.upper(), logging.INFO)
+    logging_level = getattr(logging, str(logging_level).upper(), logging.INFO)
     logging.basicConfig(filename=os.path.join(run_dir, "run.log"),
                         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                        level=logging_level)
+                        level=logging_level,
+                        force=True)
     metargs = {
         'verbose': config.get('verbose', True),
         'root_logger_name': settings['module'],
         'run_dir': run_dir,
     }
     return config, metargs
+
+
+def prepare(settings: dict):
+    """Prepare the module from CLI arguments."""
+    default_config_path = get_default_config_path(settings)
+    args = parse_args()
+    config_path = args.config
+    debug = args.debug
+    
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(f"Config file not found at {config_path}")
+    validate_duplicate_keys(config_path)
+    config = yaml.safe_load(open(default_config_path, 'r'))
+    recursive_update(config, yaml.safe_load(open(config_path, 'r')))
+    
+    return prepare_from_config(config, settings, config_path=config_path, debug=debug)
 
 def load_datamodule(config, metargs):
     if 'load_datamodule' in config:
@@ -157,10 +154,12 @@ def load_datamodule(config, metargs):
         dm_override_args = config.get('datamodule_args', {})
         for key, value in dm_override_args.items():
             if key not in _OVERRIDABLE_DMOD_ARGS:
+                if config.get('debug', False):
+                    continue
                 raise ValueError(f"Cannot override datamodule argument '{key}'. "
-                                    f"Allowed keys: {_OVERRIDABLE_DMOD_ARGS}")
+                                 f"Allowed keys: {_OVERRIDABLE_DMOD_ARGS}")
             _log.info(f"Overriding datamodule argument '{key}' with "
-                        f"value: {value}, previous value: {getattr(dm, key, 'N/A')}")
+                      f"value: {value}, previous value: {getattr(dm, key, 'N/A')}")
             dm_args[key] = value
             setattr(dm, key, value)
     else:
@@ -172,10 +171,6 @@ def load_datamodule(config, metargs):
     return dm
 
 def load_model(config, metargs, dm):
-    nn_type = config.get('network_type', config.get('model_type'))
-    if nn_type is None:
-        raise ValueError("Missing 'network_type' or 'model_type' in configuration.")
-    nn_cls = get_model(nn_type)
     nn_args = {
         'lrate': config.get('lrate', 1e-3),
         'weight_decay': config.get('weight_decay', 0.0),
@@ -184,12 +179,11 @@ def load_model(config, metargs, dm):
         'scheduler_args': config.get('scheduler_args', {}),
     }
     nn_args.update(config.get('network_args', config.get('model_args', {})))
-
     load_path = config.get('load_network', config.get('load_model', None))
+
     if load_path is not None:
         if len(config.get('network_args', config.get('model_args', {}))) > 0:
             _log.warning("network_args/model_args will be ignored when loading a model.")
-            config['network_args'] = {}
 
         ckpt_path = os.path.join(load_path, "checkpoints")
         potential_ckpts = [a for a in os.listdir(ckpt_path) if a.endswith(".ckpt")]
@@ -205,20 +199,39 @@ def load_model(config, metargs, dm):
             nn_ckpt = os.path.join(ckpt_path, potential_ckpts[0])
         _log.info("Loading network from: " + nn_ckpt)
         
+        # We need the network type
+        if os.path.isfile(os.path.join(load_path, "run_config.yaml")):
+            with open(os.path.join(load_path, "run_config.yaml"), 'r') as f:
+                loaded_config = yaml.safe_load(f)
+            nn_type = loaded_config.get('network_type', loaded_config.get('model_type', None))
+            if nn_type is None:
+                raise ValueError("Missing 'network_type' or 'model_type' in loaded configuration.")
+        else:
+            nn_type = config.get('network_type', config.get('model_type', None))
+            if nn_type is None:
+                raise ValueError("'run_config.yaml' not found in the loaded "
+                                 "model directory, 'model_type' must be "
+                                 "specified in the current configuration "
+                                 "to load the model.")
+        
         # torch.serialization.add_safe_globals(torch.serialization.get_unsafe_globals_in_checkpoint(dmod_ckpt)) # !!! Very Unsafe, only do this if you trust the source of the checkpoint !!!
-        nn_args_saved = torch.load(nn_ckpt, weights_only=False, 
-                    map_location='cpu')['hyper_parameters']['args']
+        nn_args_saved = torch.load(nn_ckpt, 
+                            weights_only=False, 
+                            map_location=torch.device('cpu')
+                        )['hyper_parameters']['args']
+        nn_cls = get_model(nn_type)
         forbidden_overrides = ['normIn'] # Some arguments cannot be overridden when loading a model
         nn_args_saved.update({k: v for k, v in nn_args.items() if k not in forbidden_overrides})
         nn_args = nn_cls.extract_args_from_datamodule(dm, nn_args_saved)
-        model = nn_cls.load_from_checkpoint(nn_ckpt,
-                                            args=nn_args,
-                                            **metargs)
+        model = nn_cls.load_from_checkpoint(nn_ckpt, args=nn_args, **metargs)
     
     else:
+        nn_type = config.get('network_type', config.get('model_type', None))
+        if nn_type is None:
+            raise ValueError("Missing 'network_type' or 'model_type' in configuration.")
+        nn_cls = get_model(nn_type)
         nn_args = nn_cls.extract_args_from_datamodule(dm, nn_args)
-        model = nn_cls(args=nn_args, 
-                       **metargs)
+        model = nn_cls(args=nn_args, **metargs)
     
     return model
 

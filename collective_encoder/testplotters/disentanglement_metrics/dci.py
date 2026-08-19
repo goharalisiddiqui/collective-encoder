@@ -228,6 +228,15 @@ class DisentanglementDCIMetric(BaseDisentanglementMetric):
         np.save(os.path.join(self.data_dir, "dci_scores.npy"), dci_arr)
         np.save(os.path.join(self.data_dir, "importance_matrix.npy"), mean_R)
 
+        # Register metrics into metrics dictionary
+        self.set_metric("dci_disentanglement", d_stats["mean"])
+        self.set_metric("dci_completeness", c_stats["mean"])
+        self.set_metric("dci_informativeness", i_stats["mean"])
+        self.set_metric("dci_d", d_stats["mean"])
+        self.set_metric("dci_c", c_stats["mean"])
+        self.set_metric("dci_i", i_stats["mean"])
+        self.set_metric("disentanglement_score", d_stats["mean"])
+
         # WandB logging
         if self.logger_type == "WandbLogger" and self.logger is not None:
             try:

@@ -1,6 +1,6 @@
 import os
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from scipy.stats import spearmanr
@@ -56,6 +56,7 @@ class BaseTestPlotter(CEModule, ABC):
                        f"test_plotter_{self._IDENTIFIER.lower()}")
         )
         self.outpath = output_dir
+        self.run_dir = output_dir
         
         logger_type = None
         if self.logger is not None:
@@ -68,8 +69,30 @@ class BaseTestPlotter(CEModule, ABC):
                 self.log_warn(f"Logger is unknown type {logger_type}, "
                               f"cannot log image to logger.")
         self.logger_type = logger_type
+        self.metrics_dict: Dict[str, float] = {}
         self.log_info(f"Initialized {type(self).__name__} with logger of "
                       f"type {logger_type} and output path {self.outpath}")
+
+    def set_metric(self, name: str, value: Any) -> None:
+        """Records a scalar metric evaluated by this test plotter.
+
+        Parameters
+        ----------
+        name : str
+            Metric identifier name.
+        value : float or torch.Tensor or numpy.number
+            Scalar numeric value.
+        """
+        if value is not None:
+            try:
+                val_float = float(value.item() if hasattr(value, 'item') else value)
+                self.metrics_dict[name] = val_float
+            except Exception as e:
+                self.log_warn(f"Failed to record metric '{name}': {e}")
+
+    def get_metrics(self) -> Dict[str, float]:
+        """Returns all recorded scalar metrics from this test plotter."""
+        return self.metrics_dict.copy()
         
     ############################################################################
     # Abstract Methods to be implemented by subclasses
@@ -242,7 +265,7 @@ class BaseTestPlotter(CEModule, ABC):
     
     def create_data_path(self):
         if not hasattr(self, "datapath"):
-            datapath = os.path.join(self.run_dir, type(self).__name__+"_data")
+            datapath = os.path.join(self.outpath, "data")
             os.makedirs(datapath, exist_ok=True)
             self.datapath = datapath
             self.log_info(f"Created data path at {self.datapath}")
@@ -340,7 +363,7 @@ class BaseTestPlotter(CEModule, ABC):
 
     def plot_correlation(self, x: np.ndarray, y: np.ndarray,
                          x_labels: list = None, y_labels: list = None,
-                         correlation_type: str = 'spearman') -> Tuple[plt.Figure, plt.Axes]:
+                         correlation_type: str = 'spearman') -> Tuple[plt.Figure, plt.Axes, np.ndarray]:
         if x.ndim != 2 or y.ndim != 2:
             self.raise_error("x and y must be 2D arrays")
         if x.shape[0] != y.shape[0]:
@@ -349,9 +372,16 @@ class BaseTestPlotter(CEModule, ABC):
 
         combined = np.hstack([x, y])
         if correlation_type == 'spearman':
-            full_corr, _ = spearmanr(combined, axis=0)  # (n_x + n_y, n_x + n_y)
+            res = spearmanr(combined, axis=0)  # (n_x + n_y, n_x + n_y) or scalar
+            stat = res.statistic if hasattr(res, 'statistic') else res[0]
+            if np.ndim(stat) == 0:
+                r = float(stat)
+                full_corr = np.array([[1.0, r], [r, 1.0]])
+            else:
+                full_corr = np.atleast_2d(stat)
         elif correlation_type == 'pearson':
             full_corr = np.corrcoef(combined, rowvar=False)  # (n_x + n_y, n_x + n_y)
+            full_corr = np.atleast_2d(full_corr)
         else:
             self.raise_error(f"Unsupported correlation type: {correlation_type}. Use 'spearman' or 'pearson'.")
         corr_matrix = full_corr[:n_x, n_x:]  # (n_x, n_y) cross-correlation block
@@ -376,7 +406,7 @@ class BaseTestPlotter(CEModule, ABC):
                         ha='center', va='center', fontsize=8,
                         color='white' if abs(corr_matrix[i, j]) > 0.7 else 'black')
         plt.tight_layout()
-        return fig, ax
+        return fig, ax, corr_matrix
 
     def plot_2dline(self, x, labels = None):
         if len(x.shape) != 1:

@@ -14,7 +14,6 @@ class DVAE(VAE):
 
     def __init__(self, args = None, **kwargs):
         super().__init__(args, **kwargs)
-        
         self.losses['rec_loss'] = CELossMSE({}, **kwargs)
 
     def init_network(self):
@@ -47,7 +46,6 @@ class sDVAE(DVAE):
                  args: Dict[str, Any] = None,
                  **kwargs
                  ):
-        self.save_hyperparameters()
         network = args.pop('network', None)
         if network is None:
             raise ValueError("Argument 'network' is required for sVAE")

@@ -54,9 +54,13 @@ class BaseDisentanglementMetric(BaseTestPlotter):
         Main execution pipeline for disentanglement evaluation.
         Parses inputs and dispatches to _run_evaluation.
         """
-        labels = self._parse_selection(self.labels_selection, labels, "labels")
-        latent = self._parse_selection(self.latents_selection, latent, "latent")
-        meta = self._parse_selection(self.meta_selection, meta, "meta")
+        try:
+            labels = self._parse_selection(self.labels_selection, labels, "labels")
+            latent = self._parse_selection(self.latents_selection, latent, "latent")
+            meta = self._parse_selection(self.meta_selection, meta, "meta")
+        except Exception as e:
+            self.log_exception(f"Error occurred while parsing selections: {e}")
+            return
 
         vals = {}
         if isinstance(labels, dict):
@@ -514,7 +518,11 @@ class BaseDisentanglementMetric(BaseTestPlotter):
         if results.get("confusion_matrix_mean") is not None:
             cm_fn = os.path.join(self.data_dir, "confusion_matrix.npy")
             np.save(cm_fn, results["confusion_matrix_mean"])
-            self.log_info(f"Saved data 'confusion_matrix' to {cm_fn}")
+        # Register metrics into metrics dictionary
+        self.set_metric("disentanglement_score", t_mean)
+        self.set_metric("test_accuracy", t_mean)
+        self.set_metric("train_accuracy", tr_mean)
+        self.set_metric("disentanglement_score_std", t_std)
 
         if self.logger_type == "WandbLogger" and self.logger is not None:
             try:

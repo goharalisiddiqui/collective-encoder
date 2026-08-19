@@ -157,6 +157,15 @@ class DisentanglementModularityMetric(BaseDisentanglementMetric):
             np.save(os.path.join(self.data_dir, "explicitness_scores.npy"), np.array(all_explicitness_scores))
         np.save(os.path.join(self.data_dir, "mi_matrix.npy"), mean_mi_matrix)
 
+        # Register metrics into metrics dictionary
+        self.set_metric("modularity_score", mod_stats["mean"])
+        self.set_metric("modularity", mod_stats["mean"])
+        self.set_metric("disentanglement_score", mod_stats["mean"])
+        self.set_metric("modularity_score_std", mod_stats["std"])
+        if eval_explicitness:
+            self.set_metric("explicitness_score", exp_stats["mean"])
+            self.set_metric("explicitness", exp_stats["mean"])
+
         # WandB logging
         if self.logger_type == "WandbLogger" and self.logger is not None:
             try:

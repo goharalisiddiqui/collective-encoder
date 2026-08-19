@@ -28,6 +28,14 @@ class DisentanglementBetaMetric(BaseDisentanglementMetric):
         'classifier_kwargs': None,
     })
 
+    def _log_and_save_results(self, results: Dict[str, Any], factor_names: List[str]) -> None:
+        super()._log_and_save_results(results, factor_names)
+        t_mean = results["test_accuracy_stats"]["mean"]
+        tr_mean = results["train_accuracy_stats"]["mean"]
+        self.set_metric("beta_score", t_mean)
+        self.set_metric("beta_vae_score", t_mean)
+        self.set_metric("beta_train_acc", tr_mean)
+
     def _construct_dataset(
         self,
         factor_dict: Dict[str, np.ndarray],

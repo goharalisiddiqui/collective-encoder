@@ -126,6 +126,13 @@ class DisentanglementMIGMetric(BaseDisentanglementMetric):
         np.save(os.path.join(self.data_dir, "mig_scores.npy"), np.array(all_mig_scores))
         np.save(os.path.join(self.data_dir, "mi_matrix.npy"), mean_mi_matrix)
 
+        # Register metrics into metrics dictionary
+        self.set_metric("mig_score", mig_stats["mean"])
+        self.set_metric("mig", mig_stats["mean"])
+        self.set_metric("mig_mean", mig_stats["mean"])
+        self.set_metric("disentanglement_score", mig_stats["mean"])
+        self.set_metric("mig_score_std", mig_stats["std"])
+
         # WandB logging
         if self.logger_type == "WandbLogger" and self.logger is not None:
             try:

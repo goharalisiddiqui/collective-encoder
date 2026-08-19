@@ -21,10 +21,14 @@ class SimplePlotter(BaseTestPlotter):
         return ["latent", "labels", "meta"]
 
     def plot(self, data, latent, pred, labels, meta) -> None:
-        labels = self._parse_selection(self.labels_selection, labels, "labels")
-        latent = self._parse_selection(self.latents_selection, latent, "latent")
-        meta = self._parse_selection(self.meta_selection, meta, "meta")
-        
+        try:
+            labels = self._parse_selection(self.labels_selection, labels, "labels")
+            latent = self._parse_selection(self.latents_selection, latent, "latent")
+            meta = self._parse_selection(self.meta_selection, meta, "meta")
+        except Exception as e:
+            self.log_exception(f"Error occurred while parsing selections: {e}")
+            return
+
         # All names must be unique
         all_names = list(labels.keys()) + \
                     list(latent.keys()) + \
@@ -104,42 +108,62 @@ class SimplePlotter(BaseTestPlotter):
                     continue
             x_data = np.stack([vals[x] for x in x_labels], axis=1)
             y_data = np.stack([vals[y] for y in y_labels], axis=1)
-            fig, axes = self.plot_correlation(x_data, y_data,
-                                              x_labels=x_labels, 
-                                              y_labels=y_labels, 
-                                              correlation_type=corr.get('type', 'spearman'))
-            fname = f"correlation_{corr['x']}_{corr['y']}" if 'name' not in corr else corr['name']
-            self.log_image(fig, fname)
+            fig, axes, corr_matrix = self.plot_correlation(
+                x_data, y_data,
+                x_labels=x_labels, 
+                y_labels=y_labels, 
+                correlation_type=corr.get('type', 'spearman')
+            )
+            corr_name = corr.get('name', f"correlation_{corr['x']}_{corr['y']}")
+            self.log_image(fig, corr_name)
             plt.close(fig)
-        
-    def _plot_latent(self, 
-                    latent, 
-                    labels, 
-                    errors = None, 
-                    name = "latent"):
-        nld = latent.shape[1]
-        if nld == 1:
-            fig, _ = self.plot_2dline(latent[:, 0], labels=labels, tag="LDplotter")
-            self.log_image(fig, name)
-        elif nld == 2:
-            if errors is not None:
-                fig, _ = self.plot_2dscatter(latent[:, 0], latent[:, 1], 
-                                          xerr=errors[:, 0], yerr=errors[:, 1], 
-                                          labels=labels, tag="0_1")
+
+            # Register correlation values as metrics for HPO sweeps & evaluation
+            n_x, n_y = len(x_labels), len(y_labels)
+            self.metrics_dict[f"{corr_name}_matrix"] = {
+                "x_labels": list(x_labels),
+                "y_labels": list(y_labels),
+                "matrix": corr_matrix.tolist(),
+            }
+
+            if n_x == 1 and n_y == 1:
+                val = float(corr_matrix[0, 0])
+                self.set_metric(corr_name, val)
+                self.set_metric(f"{corr_name}_abs", abs(val))
+
+            # Determine non-self entries (ignore diagonal where x_var == y_var)
+            mask = np.ones_like(corr_matrix, dtype=bool)
+            for i, x_var in enumerate(x_labels):
+                for j, y_var in enumerate(y_labels):
+                    if x_var == y_var:
+                        mask[i, j] = False
+
+            if np.any(mask):
+                eval_entries = corr_matrix[mask]
             else:
-                fig, _ = self.plot_2dscatter(latent[:, 0], latent[:, 1], 
-                                          labels=labels, tag="0_1")
-            self.log_image(fig, f"{name}_0_1")
-            plt.close(fig)
-        else:
-            combs = combinations(nld, 2)
-            for (i, j) in combs:
-                if errors is not None:
-                    fig, _ = self.plot_2dscatter(latent[:, i], latent[:, j], 
-                                              xerr=errors[:, i], yerr=errors[:, j], 
-                                              labels=labels, tag=f"{i}_{j}")
-                else:
-                    fig, _ = self.plot_2dscatter(latent[:, i], latent[:, j], 
-                                              labels=labels, tag=f"{i}_{j}")
-                self.log_image(fig, f'{name}_{i}_{j}')
-                plt.close(fig)
+                eval_entries = corr_matrix.flatten()
+
+            eval_entries_abs = np.abs(eval_entries)
+            mean_val = float(np.mean(eval_entries))
+            max_val = float(np.max(eval_entries))
+            min_val = float(np.min(eval_entries))
+            mean_abs_val = float(np.mean(eval_entries_abs))
+            max_abs_val = float(np.max(eval_entries_abs))
+            min_abs_val = float(np.min(eval_entries_abs))
+
+            self.set_metric(f"{corr_name}_mean", mean_val)
+            self.set_metric(f"{corr_name}_avg", mean_val)
+            self.set_metric(f"{corr_name}_max", max_val)
+            self.set_metric(f"{corr_name}_min", min_val)
+            self.set_metric(f"{corr_name}_mean_abs", mean_abs_val)
+            self.set_metric(f"{corr_name}_avg_abs", mean_abs_val)
+            self.set_metric(f"{corr_name}_max_abs", max_abs_val)
+            self.set_metric(f"{corr_name}_min_abs", min_abs_val)
+
+            for i, x_var in enumerate(x_labels):
+                for j, y_var in enumerate(y_labels):
+                    c_val = float(corr_matrix[i, j])
+                    self.set_metric(f"{corr_name}_{x_var}_{y_var}", c_val)
+                    self.set_metric(f"{corr_name}_{x_var}_{y_var}_abs", abs(c_val))
+                    self.set_metric(f"{corr_name}_{i}_{j}", c_val)
+                    self.set_metric(f"{corr_name}_{i}_{j}_abs", abs(c_val))

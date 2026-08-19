@@ -141,7 +141,6 @@ class sVAE(VAE):
                  args: Dict[str, Any] = None,
                  **kwargs
                  ):
-        self.save_hyperparameters()
         network = args.pop('network', None)
         if network is None:
             raise ValueError("Argument 'network' is required for sVAE")

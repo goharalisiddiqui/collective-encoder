@@ -1,0 +1,37 @@
+outpath: "./train_runs/hpo"
+outfolder: "sweep"
+nexp: 1
+overwrite: True
+output_to_file: True
+verbose: True
+
+base_train_config: null
+study_name: null
+storage: null
+
+# Execution backend: 'local' (in-process) or 'slurm' (HPC batch queue)
+executor: "local"
+slurm_header_file: null
+slurm_poll_interval: 10
+
+mode: "grid"
+sampler: "grid"
+sampler_args: {}
+pruner: "none"
+pruner_args: {}
+
+n_trials: null
+timeout: null
+n_jobs: 1
+
+metrics: ["val_loss"]
+direction: "minimize"
+
+wandb: False
+wandb_project: "information-bottleneck"
+wandb_entity: "goharalisiddiqui-tum"
+
+search_space: {}
+trials_subfolder: "trials"
+trial_output_to_file: True
+debug: False

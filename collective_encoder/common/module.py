@@ -66,7 +66,7 @@ class CEModule(ABC):
         return dir_path
     
     def creater_results_dir(self):
-        results_dir = os.path.join(self.run_dir, f"{self.__class__.__name__}_results")
+        results_dir = os.path.join(self.run_dir, "results")
         os.makedirs(results_dir, exist_ok=True) 
         self.results_dir = results_dir
     

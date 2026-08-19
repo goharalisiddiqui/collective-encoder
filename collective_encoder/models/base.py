@@ -233,6 +233,14 @@ class CEModelBase(nn.Module, CEModule, ABC):
         for plotter in self.test_plotters:
             plotter.finish()
 
+    def get_test_plotter_metrics(self) -> Dict[str, float]:
+        """Collects all scalar metrics recorded by initialized test plotters."""
+        metrics: Dict[str, float] = {}
+        for plotter in getattr(self, "test_plotters", []):
+            if hasattr(plotter, "get_metrics"):
+                metrics.update(plotter.get_metrics())
+        return metrics
+
     def _multiple_calculate(
         self,
         inp: Union[torch.Tensor, Data],
