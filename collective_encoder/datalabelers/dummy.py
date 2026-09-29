@@ -5,7 +5,8 @@ from .base import BaseLabeler
 
 
 class DummyLabeler(BaseLabeler):
-    """No-op labeler for unsupervised learning pipelines.
+    """
+    No-op labeler for unsupervised learning pipelines.
 
     Compatible with both :class:`FrameLabeler` (XTC/MDAnalysis) and
     :class:`BatchLabeler` (PLUMED/DataFrame) call sites:
@@ -14,9 +15,12 @@ class DummyLabeler(BaseLabeler):
     - Called as ``compute(indices)`` → returns a zeros array of shape
       ``(len(indices), 1)``.
 
-    Args:
-        args: Ignored.  Present only for interface compatibility.
-        **kwargs: Forwarded to parent (universe/dataframe are silently ignored).
+    Parameters
+    ----------
+    args : dict, optional
+        Ignored. Present only for interface compatibility.
+    kwargs : dict
+        Forwarded to parent (universe/dataframe are silently ignored).
     """
 
     _IDENTIFIER = "DUMMY"
@@ -34,10 +38,30 @@ class DummyLabeler(BaseLabeler):
         pass # Suppress banner for dummy labeler
 
     def get_label_names(self) -> List[str]:
+        """
+        Return the single dummy label name.
+
+        Returns
+        -------
+        list of str
+            List containing ``['dummy']``.
+        """
         return ['dummy']
 
     def compute(self, indices: Optional[List[int]] = None) -> Union[List[float], np.ndarray]:
-        """Return zeros; works for both frame-based and batch-based call sites."""
+        """
+        Return zeros; works for both frame-based and batch-based call sites.
+
+        Parameters
+        ----------
+        indices : list of int, optional
+            If provided, returns an array of zeros corresponding to the batch size.
+
+        Returns
+        -------
+        list of float or numpy.ndarray
+            Zeros matching the requested computation mode.
+        """
         if indices is None:
             return [0.0]
         return np.zeros((len(indices), 1))

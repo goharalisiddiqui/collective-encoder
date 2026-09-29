@@ -81,7 +81,20 @@ def infer_metric_direction(metric_name: str) -> str:
 
 
 class OptunaStudyRunner:
-    """Manages Optuna study creation, optimization loop, and report generation."""
+    """
+    Manages Optuna study creation, optimization loop, and report generation.
+
+    Handles creation/loading of the study database, integration with W&B,
+    and launching local or slurm-based objective evaluations.
+
+    Parameters
+    ----------
+    study_config : dict
+        Configuration dictionary specifically for the HPO study (e.g., sampler,
+        pruner, search space).
+    metargs : dict
+        Meta arguments containing the runtime directory structure and basic setup.
+    """
 
     def __init__(self, study_config: Dict[str, Any], metargs: Dict[str, Any]):
         self.config = study_config

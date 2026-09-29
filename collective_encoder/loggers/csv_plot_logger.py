@@ -341,23 +341,39 @@ def plot_metrics_csv(
 
 
 class CSVPlotLogger(CSVLogger):
-    """Extended PyTorch Lightning CSVLogger that automatically renders training metric plots.
+    """
+    Extended PyTorch Lightning CSVLogger that automatically renders training metric plots.
 
     Inherits from :class:`pytorch_lightning.loggers.CSVLogger`. Logs step and epoch metrics
     to ``metrics.csv``, and automatically parses and visualizes loss curves, component losses,
     learning rate schedules, and a multi-panel summary dashboard upon ``save()`` and ``finalize()``.
 
-    Args:
-        save_dir: Base directory for experiment logs.
-        name: Experiment subfolder name (default: ``"csv_logs"``).
-        version: Experiment version (default: ``"version_0"``).
-        prefix: Metric name prefix.
-        flush_logs_every_n_steps: Flush frequency.
-        plot_each_epoch: If ``True``, regenerates plots at the end of each epoch (default: ``False``).
-        plot_dpi: Resolution of saved plots (default: 300).
-        plot_format: Plot file extension (default: ``"png"``).
-        log_scale: Whether to produce log-scale loss plots.
-        mirror_plots_to_savedir: Whether to copy generated plots directly to ``save_dir/training_plots``.
+    Parameters
+    ----------
+    save_dir : str
+        Base directory for experiment logs.
+    name : str, optional
+        Experiment subfolder name (default: ``"csv_logs"``).
+    version : int or str, optional
+        Experiment version (default: ``"version_0"``).
+    prefix : str, optional
+        Metric name prefix.
+    flush_logs_every_n_steps : int, optional
+        Flush frequency.
+    plot_each_epoch : bool, optional
+        If ``True``, regenerates plots at the end of each epoch (default: ``False``).
+    plot_on_save : bool, optional
+        Kept as an alias for `plot_each_epoch`.
+    plot_dpi : int, optional
+        Resolution of saved plots (default: 300).
+    plot_format : str, optional
+        Plot file extension (default: ``"png"``).
+    log_scale : bool, optional
+        Whether to produce log-scale loss plots.
+    mirror_plots_to_savedir : bool, optional
+        Whether to copy generated plots directly to ``save_dir/training_plots``.
+    kwargs : dict
+        Additional arguments forwarded to `CSVLogger`.
     """
 
     def __init__(
@@ -393,13 +409,39 @@ class CSVPlotLogger(CSVLogger):
 
     @property
     def metrics_csv_path(self) -> str:
+        """
+        Path to the primary metrics.csv file.
+
+        Returns
+        -------
+        str
+            The file path.
+        """
         return os.path.join(self.log_dir, "metrics.csv")
 
     @property
     def plots_dir(self) -> str:
+        """
+        Path to the directory where plots are saved.
+
+        Returns
+        -------
+        str
+            The directory path.
+        """
         return os.path.join(self.log_dir, "plots")
 
     def log_metrics(self, metrics: Dict[str, Any], step: Optional[int] = None) -> None:
+        """
+        Record metrics and conditionally trigger plot generation.
+
+        Parameters
+        ----------
+        metrics : dict
+            Dictionary containing metric names and values.
+        step : int, optional
+            Step number at which the metrics should be recorded.
+        """
         super().log_metrics(metrics, step=step)
         if self.plot_each_epoch and "epoch" in metrics:
             epoch = metrics["epoch"]
@@ -412,7 +454,14 @@ class CSVPlotLogger(CSVLogger):
                     _log.debug("Could not generate plots for epoch %d: %s", int(epoch), e)
 
     def generate_plots(self) -> List[str]:
-        """Renders metric plots from the current metrics.csv."""
+        """
+        Render metric plots from the current metrics.csv.
+
+        Returns
+        -------
+        list of str
+            Paths to the newly generated plot files.
+        """
         csv_file = self.metrics_csv_path
         if not os.path.exists(csv_file):
             return []
@@ -436,7 +485,14 @@ class CSVPlotLogger(CSVLogger):
         return plots
 
     def finalize(self, status: str) -> None:
-        """Finalize logger and render final plots."""
+        """
+        Finalize logger and render final plots.
+
+        Parameters
+        ----------
+        status : str
+            Status that the experiment finished with (e.g., 'success', 'failed').
+        """
         super().finalize(status)
         try:
             self.generate_plots()

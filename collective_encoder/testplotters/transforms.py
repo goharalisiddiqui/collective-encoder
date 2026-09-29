@@ -3,6 +3,21 @@ import logging
 import numpy as np
 
 def transform_lv2std(args, vals):
+    """
+    Transforms log-variance values to standard deviation.
+
+    Parameters
+    ----------
+    args : list of str
+        List containing the label key for the log-variance.
+    vals : dict of str to numpy.ndarray
+        Dictionary of available data.
+
+    Returns
+    -------
+    numpy.ndarray or None
+        The computed standard deviation array.
+    """
     if len(args) != 1:
         logging.exception(f"lv2std transformation requires exactly 1 argument: logvar. Found: {args}.")
         return None
@@ -17,6 +32,21 @@ def transform_lv2std(args, vals):
     return std
 
 def add_transformed(tvals, vals):
+    """
+    Applies registered transformations to dynamically generate new plotting variables.
+
+    Parameters
+    ----------
+    tvals : dict of str to str, optional
+        Mapping of new variable name to transformation string (e.g. ``'std': 'lv2std:logvar_latent'``).
+    vals : dict of str to numpy.ndarray
+        Dictionary of available data to augment.
+
+    Returns
+    -------
+    dict
+        The updated dictionary containing the new transformed variables.
+    """
     if tvals is None:
         return vals
     for name, transform in tvals.items():

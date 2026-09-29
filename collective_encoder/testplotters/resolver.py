@@ -14,10 +14,23 @@ _REGISTRY: dict = {
 }
 
 def get_testplotter(model_name: str):
-    """Return the neural network class for *model_name*.
+    """
+    Return the test plotter class mapped to a given string identifier.
 
-    Raises:
-        ValueError: If *model_name* is not registered.
+    Parameters
+    ----------
+    model_name : str
+        The registered string identifier for the target test plotter.
+
+    Returns
+    -------
+    type
+        The corresponding test plotter class.
+
+    Raises
+    ------
+    ValueError
+        If `model_name` is not found in the registry.
     """
     if model_name not in _REGISTRY:
         raise ValueError(

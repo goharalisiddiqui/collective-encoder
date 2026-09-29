@@ -10,6 +10,20 @@ from collective_encoder.testplotters.utils import combinations
 from collective_encoder.testplotters.transforms import add_transformed
 
 class SimplePlotter(BaseTestPlotter):
+    """
+    Standard test plotter for generating 2D scatter plots and correlation matrices.
+
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary. Optional keys:
+        - ``plots_2dscatter_cb`` (list of dict): Specifications for scatter plots.
+          Each dict must have 'x' and 'y' keys mapping to data labels.
+        - ``correlations`` (list of dict): Specifications for correlation plots.
+          Each dict must have 'x' and 'y' defining the variables to correlate.
+    kwargs : dict
+        Additional keyword arguments.
+    """
     _IDENTIFIER = "SimplePlotter"
     _OPTIONAL_ARGS = BaseTestPlotter._OPTIONAL_ARGS.copy()
     _OPTIONAL_ARGS.update({
@@ -18,9 +32,33 @@ class SimplePlotter(BaseTestPlotter):
     })
     
     def collection_list(self) -> List[str]:
+        """
+        Define which data types need to be collected across batches.
+
+        Returns
+        -------
+        list of str
+            List containing ["latent", "labels", "meta"].
+        """
         return ["latent", "labels", "meta"]
 
     def plot(self, data, latent, pred, labels, meta) -> None:
+        """
+        Execute the plotting logic after all batches have been collected.
+
+        Parameters
+        ----------
+        data : Any
+            Accumulated inputs (unused).
+        latent : dict or numpy.ndarray
+            Accumulated latent representations.
+        pred : Any
+            Accumulated predictions (unused).
+        labels : dict
+            Accumulated ground truth labels.
+        meta : dict
+            Accumulated metadata.
+        """
         try:
             labels = self._parse_selection(self.labels_selection, labels, "labels")
             latent = self._parse_selection(self.latents_selection, latent, "latent")
@@ -54,6 +92,14 @@ class SimplePlotter(BaseTestPlotter):
             self.log_exception(f"Error occurred while plotting correlations: {e}")
 
     def _plot_2dscatter(self, vals: Dict[str, np.ndarray]) -> None:
+        """
+        Generate configured 2D scatter plots from the accumulated data.
+
+        Parameters
+        ----------
+        vals : dict of str to numpy.ndarray
+            Unified dictionary of all accumulated numeric data.
+        """
         for plot in self.plots_2dscatter_cb:
             for key in ['x', 'y']:
                 if key not in plot.keys():
@@ -109,6 +155,14 @@ class SimplePlotter(BaseTestPlotter):
             plt.close(fig)
     
     def _plot_correlations(self, vals: Dict[str, np.ndarray]) -> None:
+        """
+        Generate configured correlation matrices from the accumulated data.
+
+        Parameters
+        ----------
+        vals : dict of str to numpy.ndarray
+            Unified dictionary of all accumulated numeric data.
+        """
         for corr in self.correlations:
             if not check_dict_contains_keys(corr, required_keys=['x', 'y']):
                 continue

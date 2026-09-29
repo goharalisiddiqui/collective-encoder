@@ -10,7 +10,13 @@ _SETTINGS = {
 }
 
 def prepare_dmod():
-    """Prepare the datamodule for training a collective encoder model based on the provided configuration."""
+    """
+    Prepare the datamodule for training a collective encoder model based on the provided configuration.
+
+    This script initializes the dataset extraction process and saves the fully loaded
+    datamodule state to disk (along with the config). This allows the training script
+    to quickly load the prepared dataset without regenerating the features from scratch.
+    """
 
     config, metargs = crb.prepare(_SETTINGS)
     dm = crb.load_datamodule(config, metargs)
@@ -27,7 +33,9 @@ def prepare_dmod():
 
 
 def main():
-    """Main entry point for preparing the datamodule."""
+    """
+    Main entry point for preparing the datamodule.
+    """
     prepare_dmod()
 
 if __name__ == "__main__":

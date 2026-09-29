@@ -9,7 +9,11 @@ from collective_encoder.testplotters.utils import label_selector
 
 class GraphDatapointsAnalyser(DatapointsAnalyser):
     """
-    Data analyser for extracting dihedral angles from graph datasets.
+    Data analyser for extracting and plotting specific features from graph datasets.
+
+    Relies on a ``labels_selection_map`` to selectively pick attributes
+    or properties out of complex graph data structures before passing
+    them to standard plotting routines.
     """
 
     _IDENTIFIER = "GRAPH_DATAPOINTS"
@@ -19,6 +23,24 @@ class GraphDatapointsAnalyser(DatapointsAnalyser):
     ]
 
     def _extract_labels(self, data):
+        """
+        Extract selective node/graph properties using a selection map.
+
+        Parameters
+        ----------
+        data : list
+            Data points from the dataset (graphs).
+
+        Returns
+        -------
+        dict
+            Dictionary mapping selective labels to their numpy arrays.
+
+        Raises
+        ------
+        ValueError
+            If required labels are missing from the graph dictionary.
+        """
         req_labels = list(set([a[0] for a in self.labels_selection_map.values()]))
         present_labels = data[0].to_dict().keys()
         for label in req_labels:

@@ -32,6 +32,14 @@ _OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size',
 # Arguments
 ##################################
 def parse_args():
+    """
+    Parse common command-line arguments for scripts in the collective encoder framework.
+
+    Returns
+    -------
+    argparse.Namespace
+        Parsed command-line arguments.
+    """
     desc = "Prepare datamodule for training a collective encoder model based on the provided configuration."
     parser = argparse.ArgumentParser(description=desc)
 
@@ -65,7 +73,25 @@ def get_debug_config_path(settings: dict) -> str:
                                        settings.get('module'), 
                                        'debug.yaml')
 def prepare_from_config(config: dict, settings: dict, config_path: str = None, debug: bool = False):
-    """Prepare runtime directory and metargs from an existing config dict."""
+    """
+    Prepare runtime directory and metadata arguments from an existing config dict.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary.
+    settings : dict
+        Module-specific settings (e.g., required keys, module name).
+    config_path : str, optional
+        Path to the configuration file, if available.
+    debug : bool, optional
+        Whether to run in debug mode.
+
+    Returns
+    -------
+    tuple
+        Tuple containing the processed config dictionary and metadata arguments dict.
+    """
     if 'module' not in settings:
         raise ValueError("Module name must be specified in settings.")
     
@@ -128,7 +154,19 @@ def prepare_from_config(config: dict, settings: dict, config_path: str = None, d
 
 
 def prepare(settings: dict):
-    """Prepare the module from CLI arguments."""
+    """
+    Prepare the module environment from CLI arguments and default configurations.
+
+    Parameters
+    ----------
+    settings : dict
+        Module-specific settings.
+
+    Returns
+    -------
+    tuple
+        Processed configuration dictionary and metadata arguments.
+    """
     default_config_path = get_default_config_path(settings)
     args = parse_args()
     config_path = args.config
@@ -143,6 +181,21 @@ def prepare(settings: dict):
     return prepare_from_config(config, settings, config_path=config_path, debug=debug)
 
 def load_datamodule(config, metargs):
+    """
+    Load or initialize a DataModule based on configuration settings.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary containing DataModule parameters or path to a saved DataModule.
+    metargs : dict
+        Metadata arguments passed to the DataModule constructor.
+
+    Returns
+    -------
+    pytorch_lightning.LightningDataModule
+        The initialized or loaded DataModule.
+    """
     if 'load_datamodule' in config:
         dmod_path = config['load_datamodule']
         _log.info("Loading datamodule from: " + dmod_path)
@@ -171,6 +224,23 @@ def load_datamodule(config, metargs):
     return dm
 
 def load_model(config, metargs, dm):
+    """
+    Load or initialize a CEModel based on configuration and the provided DataModule.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary containing model parameters or a path to a saved checkpoint.
+    metargs : dict
+        Metadata arguments.
+    dm : pytorch_lightning.LightningDataModule
+        DataModule instance to extract shape and type parameters.
+
+    Returns
+    -------
+    CEModelBase
+        The initialized or loaded model.
+    """
     nn_args = {
         'lrate': config.get('lrate', 1e-3),
         'weight_decay': config.get('weight_decay', 0.0),

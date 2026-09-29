@@ -12,10 +12,21 @@ _logger = logging.getLogger(__name__)
 def cos_sin_to_angle(labels: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     """
     Resolves pairs of cosine and sine labels into angle labels. 
+
     For each label name ending with '_cos', looks for a corresponding label 
     name ending with '_sin' and combines them into a single label with the 
     original name without the suffix, containing the angle computed from the 
     cosine and sine values.
+
+    Parameters
+    ----------
+    labels : dict of str to numpy.ndarray
+        Dictionary of label arrays.
+
+    Returns
+    -------
+    dict
+        Dictionary containing resolved angular labels and other unchanged labels.
     """
     resolved_labels = {}
     for label_name, label_tensor in labels.items():
@@ -43,11 +54,22 @@ def label_selector(labels: Dict[str, np.ndarray],
                    labels_selection_map: Dict[str, Tuple[str, int]] = None) -> Dict[str, np.ndarray]:
     """
     Selects specific labels from the provided labels dictionary based on the labels_selection_map.
+
     If labels_selection_map is None, returns the original labels dictionary.
     
-    labels_selection_map is a dictionary where keys are the desired label names and values are tuples containing:
-    - The original label name in the labels dictionary.
-    - The index of the specific label to select from the original label's array.
+    Parameters
+    ----------
+    labels : dict of str to numpy.ndarray
+        Dictionary of label arrays.
+    labels_selection_map : dict, optional
+        Dictionary where keys are the desired label names and values are tuples containing:
+        - The original label name in the labels dictionary.
+        - The index of the specific label to select from the original label's array.
+
+    Returns
+    -------
+    dict
+        A new dictionary with selectively sliced labels.
     """
     if labels_selection_map is None:
         return labels
@@ -65,6 +87,21 @@ def label_selector(labels: Dict[str, np.ndarray],
     return selected_labels
 
 def combinations(n, r):
+    """
+    Generate all combinations of n items taken r at a time.
+
+    Parameters
+    ----------
+    n : int
+        The total number of items.
+    r : int
+        The number of items to choose.
+
+    Yields
+    ------
+    tuple
+        A tuple of selected indices.
+    """
     # Generate all combinations of n items taken r at a time
     pool = np.arange(n)
     indices = np.arange(r)

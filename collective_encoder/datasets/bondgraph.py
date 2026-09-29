@@ -79,7 +79,8 @@ def _compute_graph_worker(args):
 
 
 class BondGraphDataset(BaseDataset, Dataset):
-    """Graph dataset where nodes are bonds and edges connect bonds via angles or torsions.
+    """
+    Graph dataset where nodes are bonds and edges connect bonds via angles or torsions.
 
     Node (bond) feature vector (length 3):
         [Z_i, Z_j, bond_length]
@@ -89,6 +90,20 @@ class BondGraphDataset(BaseDataset, Dataset):
         value = bond angle (radians) for angle edges, dihedral angle (radians) for torsion edges.
 
     Edges are bidirectional (both directions added with same attributes).
+
+    Parameters
+    ----------
+    structures : list of ase.Atoms
+        A list of molecular structures.
+    labels : list of float, optional
+        A list of target labels corresponding to each structure.
+    dataset_args : dict, optional
+        Configuration dictionary. Recognised keys include:
+        - ``bond_indices`` (required): list of (i,j) pairs.
+        - ``precompute_graphs`` (bool, default True): Precompute graphs to disk.
+        - ``parallel`` (bool, default True): Precompute using multiple processes.
+    kwargs : dict
+        Additional keyword arguments (e.g. ``tag``).
     """
 
     _IDENTIFIER = "GRAPH"
@@ -205,7 +220,14 @@ class BondGraphDataset(BaseDataset, Dataset):
         return self.get(idx)
 
     def get_datapoint_shape(self) -> Dict[str, Tuple]:
-        """Return dictionary of data point tensor shapes."""
+        """
+        Return dictionary of data point tensor shapes.
+
+        Returns
+        -------
+        dict
+            Mapping of feature keys (like 'x', 'edge_index') to their tensor shapes.
+        """
         sample = self.get(0)
         shapes = {
             'x': tuple(sample.x.shape),
@@ -220,7 +242,14 @@ class BondGraphDataset(BaseDataset, Dataset):
         return shapes
     
     def get_norm_data(self) -> np.ndarray:
-        """Return array of data to be normalized."""
+        """
+        Return array of data to be normalized.
+
+        Returns
+        -------
+        numpy.ndarray
+            Flattened array containing node and edge features for normalizer fitting.
+        """
         data_to_normalize = []
         for idx in range(self.len()):
             data = self.get(idx)
@@ -230,8 +259,15 @@ class BondGraphDataset(BaseDataset, Dataset):
         data_to_normalize = np.vstack(data_to_normalize)
         return data_to_normalize
     
-    def get_label_indices(self) -> List[int]:
-        """Return list of atom indices of labels."""
+    def get_label_indices(self) -> tuple:
+        """
+        Return list of atom indices of labels.
+
+        Returns
+        -------
+        tuple
+            Tuple containing lists of bond, angle, and torsion indices.
+        """
         return self.bond_index, self.angle_index, self.torsion_index
 
     def len(self) -> int: # for PyG Dataset compatibility

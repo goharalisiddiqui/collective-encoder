@@ -8,10 +8,23 @@ _REGISTRY: dict = {
 
 
 def get_metric_cls(metric_name: str):
-    """Return the metric class for *metric_name*.
+    """
+    Return the metric class mapped to a given string identifier.
 
-    Raises:
-        ValueError: If *metric_name* is not registered.
+    Parameters
+    ----------
+    metric_name : str
+        The registered string identifier for the target metric.
+
+    Returns
+    -------
+    type
+        The corresponding metric class.
+
+    Raises
+    ------
+    ValueError
+        If `metric_name` is not found in the registry.
     """
     if metric_name not in _REGISTRY:
         raise ValueError(

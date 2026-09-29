@@ -21,7 +21,8 @@ def _sph_harm(l: int, m: int, theta: np.ndarray, phi: np.ndarray) -> np.ndarray:
 
 
 class SteinhardtOrderParameterLabeler(FrameLabeler):
-    """Compute Steinhardt bond-orientational order parameters q_l and Q_l.
+    """
+    Compute Steinhardt bond-orientational order parameters q_l and Q_l.
 
     Calculates local per-atom rotational invariants q_l(i), mean local order parameter
     q_l_mean_local = (1/N) * sum_i q_l(i), and global bond order parameter Q_l_global
@@ -30,15 +31,20 @@ class SteinhardtOrderParameterLabeler(FrameLabeler):
     Periodic boundary conditions (PBC) are automatically applied if box dimensions are
     present in the MDAnalysis universe and ``use_pbc`` is True.
 
-    Args:
-        universe: MDAnalysis Universe loaded with topology and trajectory.
-        args: Configuration dict with keys:
-            - ``selection_centers`` (str, optional): Atom selection for center atoms. Defaults to ``'all'``.
-            - ``selection_neighbors`` (str, optional): Atom selection for neighbor atoms. Defaults to ``'all'``.
-            - ``cutoff_distance`` (float, optional): Neighbor cutoff distance in Å. Defaults to ``3.5``.
-            - ``degrees`` (List[int], optional): Spherical harmonic degrees l (e.g., ``[4, 6]``). Defaults to ``[4, 6]``.
-            - ``average_type`` (str, optional): ``'mean_local'``, ``'global'``, or ``'both'``. Defaults to ``'both'``.
-            - ``use_pbc`` (bool, optional): Whether to apply PBC (default: ``True``).
+    Parameters
+    ----------
+    universe : MDAnalysis.Universe
+        MDAnalysis Universe loaded with topology and trajectory.
+    args : dict
+        Configuration dict with keys:
+        - ``selection_centers`` (str, optional): Atom selection for center atoms. Defaults to ``'all'``.
+        - ``selection_neighbors`` (str, optional): Atom selection for neighbor atoms. Defaults to ``'all'``.
+        - ``cutoff_distance`` (float, optional): Neighbor cutoff distance in Å. Defaults to ``3.5``.
+        - ``degrees`` (list of int, optional): Spherical harmonic degrees l (e.g., ``[4, 6]``). Defaults to ``[4, 6]``.
+        - ``average_type`` (str, optional): ``'mean_local'``, ``'global'``, or ``'both'``. Defaults to ``'both'``.
+        - ``use_pbc`` (bool, optional): Whether to apply PBC (default: ``True``).
+    kwargs : dict
+        Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "STEINHARDT"
@@ -81,9 +87,25 @@ class SteinhardtOrderParameterLabeler(FrameLabeler):
         self.label_names = label_names
 
     def get_label_names(self) -> List[str]:
+        """
+        Return the names of the label columns.
+
+        Returns
+        -------
+        list of str
+            Label names for the selected Steinhardt order parameters.
+        """
         return self.label_names
 
     def compute(self) -> List[float]:
+        """
+        Compute the Steinhardt order parameters for the current frame.
+
+        Returns
+        -------
+        list of float
+            The evaluated order parameter values based on configured degrees and average types.
+        """
         n_centers = len(self.centers)
         cutoff = float(self.cutoff_distance)
 

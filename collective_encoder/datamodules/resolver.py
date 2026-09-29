@@ -9,13 +9,24 @@ _REGISTRY: dict = {
     
 
 def get_datamodule(datamodule_name: str):
-    """Return the datamodule class for *datamodule_name*.
+    """
+    Return the datamodule class mapped to a given string identifier.
 
-    Args:
-        datamodule_name: Identifier string (e.g. ``"COORDINATES"``, ``"COLVAR"``).
+    Parameters
+    ----------
+    datamodule_name : str
+        The registered string identifier for the target datamodule
+        (e.g., ``"COORDINATES"``, ``"COLVAR"``).
 
-    Raises:
-        ValueError: If *datamodule_name* is not registered.
+    Returns
+    -------
+    type
+        The corresponding PyTorch Lightning DataModule class.
+
+    Raises
+    ------
+    ValueError
+        If `datamodule_name` is not found in the registry.
     """
     if datamodule_name not in _REGISTRY:
         raise ValueError(
@@ -28,12 +39,36 @@ def get_datamodule(datamodule_name: str):
 
 
 def get_compatible_datareaders(dataloader_name: str) -> List[str]:
-    """Return the list of compatible datareader identifiers for *dataloader_name*."""
+    """
+    Return the list of compatible datareader identifiers for *dataloader_name*.
+
+    Parameters
+    ----------
+    dataloader_name : str
+        The registered string identifier for the datamodule.
+
+    Returns
+    -------
+    list of str
+        The list of compatible datareader identifiers.
+    """
     dataloader_class = get_datamodule(dataloader_name)
     return dataloader_class.get_compatible_datareaders()
 
 
 def get_compatible_datasets(dataloader_name: str) -> List[str]:
-    """Return the list of compatible dataset identifiers for *dataloader_name*."""
+    """
+    Return the list of compatible dataset identifiers for *dataloader_name*.
+
+    Parameters
+    ----------
+    dataloader_name : str
+        The registered string identifier for the datamodule.
+
+    Returns
+    -------
+    list of str
+        The list of compatible dataset identifiers.
+    """
     dataloader_class = get_datamodule(dataloader_name)
     return dataloader_class.get_compatible_datasets()

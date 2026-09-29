@@ -1,4 +1,9 @@
-"""Plotting utilities for data analysis and visualization."""
+"""
+Plotting utilities for data analysis and visualization during model testing.
+
+Provides base classes and implementations for generating scatter plots,
+correlation matrices, and evaluating disentanglement metrics.
+"""
 
 from collective_encoder.testplotters.base import BaseTestPlotter
 from collective_encoder.testplotters.disentanglement import DisentanglementPlotter

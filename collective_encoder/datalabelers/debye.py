@@ -11,7 +11,8 @@ _log = logging.getLogger(__name__)
 
 
 class DebyeStructureFactorLabeler(FrameLabeler):
-    """Compute the multi-component element-weighted Debye structure factor S(q) or intensity I(q).
+    """
+    Compute the multi-component element-weighted Debye structure factor S(q) or intensity I(q).
 
     Evaluates:
         S_Debye(q) = 1 + (2 / sum(b_i^2)) * sum_{j < k} b_j * b_k * sin(q * r_{jk}) / (q * r_{jk})
@@ -19,18 +20,23 @@ class DebyeStructureFactorLabeler(FrameLabeler):
     Periodic boundary conditions (PBC) are automatically applied if box dimensions are
     present in the MDAnalysis universe and ``use_pbc`` is True.
 
-    Args:
-        universe: MDAnalysis Universe loaded with topology and trajectory.
-            The trajectory must be positioned at the target frame before calling :meth:`compute`.
-        args: Configuration dict with keys:
-            - ``selection`` (str, optional): MDAnalysis atom selection string. Defaults to ``'all'``.
-            - ``q_values`` (List[float], optional): Explicit list of scattering wavenumbers in Å⁻¹.
-            - ``q_min`` (float, optional): Minimum q value in Å⁻¹ (default: ``0.5``).
-            - ``q_max`` (float, optional): Maximum q value in Å⁻¹ (default: ``5.0``).
-            - ``q_num`` (int, optional): Number of q values (default: ``10``).
-            - ``scattering_lengths`` (Dict[str, float], optional): Map of element/atom name to scattering length b_i.
-            - ``output_mode`` (str, optional): ``'total'`` (normalized S(q)) or ``'intensity'`` (I(q)). Defaults to ``'total'``.
-            - ``use_pbc`` (bool, optional): Whether to apply PBC (default: ``True``).
+    Parameters
+    ----------
+    universe : MDAnalysis.Universe
+        MDAnalysis Universe loaded with topology and trajectory.
+        The trajectory must be positioned at the target frame before calling :meth:`compute`.
+    args : dict
+        Configuration dict with keys:
+        - ``selection`` (str, optional): MDAnalysis atom selection string. Defaults to ``'all'``.
+        - ``q_values`` (list of float, optional): Explicit list of scattering wavenumbers in Å⁻¹.
+        - ``q_min`` (float, optional): Minimum q value in Å⁻¹ (default: ``0.5``).
+        - ``q_max`` (float, optional): Maximum q value in Å⁻¹ (default: ``5.0``).
+        - ``q_num`` (int, optional): Number of q values (default: ``10``).
+        - ``scattering_lengths`` (dict, optional): Map of element/atom name to scattering length b_i.
+        - ``output_mode`` (str, optional): ``'total'`` (normalized S(q)) or ``'intensity'`` (I(q)). Defaults to ``'total'``.
+        - ``use_pbc`` (bool, optional): Whether to apply PBC (default: ``True``).
+    kwargs : dict
+        Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "DEBYE_STRUCTURE_FACTOR"
@@ -106,9 +112,25 @@ class DebyeStructureFactorLabeler(FrameLabeler):
         self.label_names = [f"{prefix}_q{q:.2f}" for q in self.q_arr]
 
     def get_label_names(self) -> List[str]:
+        """
+        Return the names of the label columns.
+
+        Returns
+        -------
+        list of str
+            Label names for each wavenumber q.
+        """
         return self.label_names
 
     def compute(self) -> List[float]:
+        """
+        Compute the Debye structure factor or intensity for the current frame.
+
+        Returns
+        -------
+        list of float
+            Values of S(q) or I(q) evaluated at the specified wavenumbers.
+        """
         n_atoms = len(self.atoms)
         if n_atoms < 2:
             return [1.0] * len(self.q_arr)

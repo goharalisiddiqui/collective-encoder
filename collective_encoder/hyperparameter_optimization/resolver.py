@@ -6,7 +6,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 class ConfigResolver:
-    """Resolves nested dictionary overrides, dot-notation paths, list indexing,
+    """
+    Resolves nested dictionary overrides, dot-notation paths, list indexing,
     and domain-specific architectural transformations for collective_encoder.
     """
 
@@ -32,14 +33,21 @@ class ConfigResolver:
         overrides: Dict[str, Any],
         strict: bool = False,
     ) -> Dict[str, Any]:
-        """Applies overrides onto a deep copy of base_config.
+        """
+        Applies overrides onto a deep copy of base_config.
 
-        Args:
-            base_config: The baseline configuration dictionary.
-            overrides: Dictionary of overrides (supports dot-notation, list indices, domain aliases).
-            strict: If True, raises an error if an intermediate key does not exist.
+        Parameters
+        ----------
+        base_config : dict
+            The baseline configuration dictionary.
+        overrides : dict
+            Dictionary of overrides (supports dot-notation, list indices, domain aliases).
+        strict : bool, optional
+            If True, raises an error if an intermediate key does not exist.
 
-        Returns:
+        Returns
+        -------
+        dict
             A new dictionary containing the resolved configuration.
         """
         config = copy.deepcopy(base_config)
@@ -191,9 +199,21 @@ class ConfigResolver:
 
     @classmethod
     def diff(cls, base: Dict[str, Any], resolved: Dict[str, Any], prefix: str = "") -> Dict[str, Tuple[Any, Any]]:
-        """Computes differences between base and resolved dictionaries.
+        """
+        Computes differences between base and resolved dictionaries.
         
-        Returns:
+        Parameters
+        ----------
+        base : dict
+            The original baseline dictionary.
+        resolved : dict
+            The target dictionary after applying overrides.
+        prefix : str, optional
+            Prefix for keys used during recursive evaluation.
+
+        Returns
+        -------
+        dict
             Dictionary mapping key_path to (base_value, resolved_value).
         """
         changes = {}
