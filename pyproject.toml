@@ -42,7 +42,7 @@ dependencies = [
     "ase>=3.25.0,<4.0.0",
     "torch-geometric>=2.6.0,<3.0.0",
     "wandb>=0.20.0,<1.0.0",
-    "gslibs",
+    "gslibs @ git+https://github.com/goharalisiddiqui/gslibs.git",
 ]
 
 [project.optional-dependencies]
