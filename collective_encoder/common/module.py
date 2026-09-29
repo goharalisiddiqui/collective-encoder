@@ -1,3 +1,4 @@
+from email.mime import message
 import logging
 from abc import ABC
 import os
@@ -35,11 +36,7 @@ class CEModule(ABC):
         # Use _ce_log to avoid shadowing pl.LightningModule's self.logger property
         # when CEModule is mixed into Lightning classes.
         self._ce_log = logging.getLogger(root_logger_name + "." + self.__class__.__name__)
-        if self.verbose:
-            self._ce_log.info("=" * 80)
-            self._ce_log.info("[Initializing module: %s]", self.__class__.__name__)
-            self._ce_log.info("=" * 80)
-            self.ce_log_dict("Initialization args", args, indent=2)
+        self._print_init_banner()
 
         if self._REQUIRED_ARGS is not None:
             res = validate_required_fields(args, fields=self._REQUIRED_ARGS)
@@ -50,8 +47,18 @@ class CEModule(ABC):
             if key not in args:
                 args[key] = default_value
         for key in args:
-            self.__setattr__(key, args[key])
-            
+            if key in self._OPTIONAL_ARGS or key in self._REQUIRED_ARGS:
+                self.__setattr__(key, args[key])
+            else:
+                self.log_warn(f"Unrecognized argument '{key}' passed to {self.__class__.__name__} initialization.")
+    
+    def _print_init_banner(self):
+        if self.verbose:
+            self._ce_log.info("=" * 80)
+            self._ce_log.info("[Initializing module: %s]", self.__class__.__name__)
+            self._ce_log.info("=" * 80)
+            self.ce_log_dict("Initialization args", self.args, indent=2)
+
     def safe_create_dir(self, dir_path: str) -> None:
         """Create a directory if it doesn't exist, and log the action."""
         if not os.path.exists(dir_path):
@@ -153,9 +160,16 @@ class CEModule(ABC):
         """Emit an ERROR-level log message with exception info."""
         self._ce_log.error(message, exc_info=exc)
     
-    def log_warn(self, message: str) -> None:
+    def log_warn(self, message: str, once=False) -> None:
         """Emit a WARNING-level log message."""
-        self._ce_log.warning(message)
+        if once:
+            if not hasattr(self, "_warned_messages"):
+                self._warned_messages = set()
+            if message not in self._warned_messages:
+                self._warned_messages.add(message)
+                self._ce_log.warning(message)
+        else:
+            self._ce_log.warning(message)
 
     def log_msg(self, message: str) -> None:
         """Emit an INFO-level log message (no-op when ``verbose=False``)."""

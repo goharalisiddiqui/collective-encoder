@@ -131,7 +131,7 @@ class DisentanglementPlotter(BaseTestPlotter):
 
             metric_cls = _METRIC_MAP[m_key]
             sub_args = self._build_sub_metric_args(m_key, metric_cls, factors, l_dims)
-
+            
             try:
                 sub_plotter = metric_cls(args=sub_args, run_dir=self.run_dir)
                 sub_plotter.outpath = os.path.join(self.outpath, m_key)
@@ -232,22 +232,30 @@ class DisentanglementPlotter(BaseTestPlotter):
           2. Top-level shared argument: `<param>` (e.g. `confidence_interval`)
           3. Metric class default value.
         """
-        sub_args: Dict[str, Any] = {}
+        sub_args: Dict[str, Any] = {
+            "labels_selection": getattr(self, "labels_selection", {}) or {},
+            "latents_selection": getattr(self, "latents_selection", {}) or {},
+            "meta_selection": getattr(self, "meta_selection", None),
+            "transformed_values": getattr(self, "transformed_values", None),
+            "generative_factors": factors if factors else None,
+            "latent_dimensions": l_dims if l_dims else None,
+        }
         raw_args = getattr(self, "args", {}) or {}
 
-        # Default factors and latent dimensions
-        sub_args["generative_factors"] = factors if factors else None
-        sub_args["latent_dimensions"] = l_dims if l_dims else None
-
-        # Pass selection and transform configurations
-        for key in ["labels_selection", "latents_selection", "meta_selection", "transformed_values"]:
-            if hasattr(self, key):
-                sub_args[key] = getattr(self, key)
-
+        for i, elem in enumerate(l_dims):
+            if elem not in sub_args["latents_selection"]:
+                sub_args["latents_selection"][elem] = i
+        
+        for i, elem in enumerate(factors):
+            if elem not in sub_args["labels_selection"]:
+                sub_args["labels_selection"][elem] = elem
+                
         # Inspect all optional args defined on the target metric class
         class_optional_args = getattr(metric_cls, "_OPTIONAL_ARGS", {})
 
         for param_key, default_val in class_optional_args.items():
+            if '_selection' in param_key:
+                continue  # Skip selection parameters, already handled above
             prefixed_key = f"{m_name}_{param_key}"
 
             if prefixed_key in raw_args:
@@ -266,7 +274,7 @@ class DisentanglementPlotter(BaseTestPlotter):
             sub_args["confidence_interval"] = raw_args[f"{m_name}_confidence_level"]
         elif "confidence_level" in raw_args:
             sub_args["confidence_interval"] = raw_args["confidence_level"]
-
+            
         return sub_args
 
     def _write_unified_summary(

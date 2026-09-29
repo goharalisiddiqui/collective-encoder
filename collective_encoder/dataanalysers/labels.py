@@ -11,13 +11,19 @@ class LabelsAnalyser(BaseDataAnalyser):
 
     _IDENTIFIER = "LABELS"
     _COMPATIBLE_DATASET_TYPES = ["DISTANCES", "GRAPH"]
-    _REQUIRED_ARGS = BaseDataAnalyser._REQUIRED_ARGS + [
-        'labels_list',
-    ]
     _OPTIONAL_ARGS = {
+        'labels_list': None,
         'extra_2d': [],
         'correlation': [],
     }
+    
+    def __init__(self, args=None, **kwargs):
+        super().__init__(args=args, **kwargs)
+        if self.labels_list is None:
+            self.log_warn("No labels_list provided. "
+                          "Taking all labels from dataset. "
+                          "This may result in a large number of plots.")
+            self.labels_list = {f"{name}": i for i, name in enumerate(self.datamodule_labels_list)}
 
     def write_data(self, data, label = ""):
         self.log_msg(f"Writing data analysis to {self.output_dir}")
@@ -75,7 +81,7 @@ class LabelsAnalyser(BaseDataAnalyser):
         else:
             colors = 'blue'
         
-        fig, ax = plt.subplots(len(labels), 1, figsize=(4 + 2*(len(labels)),5))
+        fig, ax = plt.subplots(len(labels), 1, figsize=(5, 4 + 2*(len(labels))))
         for i, k in enumerate(labels.keys()):
             ax[i].scatter(range(len(labels[k])), labels[k], marker='+', s=5, c=colors)
             ax[i].set_ylabel(f"{k}")

@@ -142,10 +142,11 @@ class sVAE(VAE):
                  **kwargs
                  ):
         network = args.pop('network', None)
-        if network is None:
-            raise ValueError("Argument 'network' is required for sVAE")
-        args['encoder_network'] = network
-        args['decoder_network'] = network[:-1][::-1]
+        if network is not None:
+            args['encoder_network'] = network
+            args['decoder_network'] = network[:-1][::-1]
+        elif 'encoder_network' not in args or 'decoder_network' not in args:
+            raise ValueError("Argument 'network' is required for sDVAE")
         super().__init__(args=args, **kwargs)
 
 # ------------------------------------------------------------------

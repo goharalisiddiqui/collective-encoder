@@ -5,16 +5,9 @@ from collective_encoder.common.module import CEModule
 
 class BaseDataReader(CEModule, ABC):
     '''
-    Abstract base class for trajectory readers.
+    Abstract base class for data readers.
     '''
-    # To be overridden by subclasses
-    _IDENTIFIER: str = None
     
-    def __init__(self, 
-                 args,
-                 **kwargs):
-        super().__init__(args=args, **kwargs)
-
     @abstractmethod
     def get_total_frames(self):
         '''

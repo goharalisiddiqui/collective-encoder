@@ -17,6 +17,8 @@ _MODEL_REGISTRY = {
     "PCAEncoder": ("collective_encoder.models.pca_model", "PCAModel"),
     "ICA": ("collective_encoder.models.ica_model", "ICAModel"),
     "ICAEncoder": ("collective_encoder.models.ica_model", "ICAModel"),
+    "TICA": ("collective_encoder.models.tica_model", "TICAModel"),
+    "TICAEncoder": ("collective_encoder.models.tica_model", "TICAModel"),
 }
 
 

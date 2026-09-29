@@ -43,7 +43,8 @@ class CoordinationCountLabeler(FrameLabeler):
         if self.selection_neighbors is None:
             self.raise_error(f"'selection_neighbors' must be provided in args")
         self.centers = universe.select_atoms(self.selection_centers)
-        self.neighbors = universe.select_atoms(self.selection_neighbors) 
+        self.neighbors = universe.select_atoms(self.selection_neighbors)
+        self.box = universe.dimensions
 
         if len(self.centers) == 0:
             self.raise_error(f"No atoms selected for centers \
@@ -59,18 +60,18 @@ class CoordinationCountLabeler(FrameLabeler):
         centers = self.centers
         neighbors = self.neighbors
 
-
         counts = [0] * len(self.bins)
         for center in centers:
             dists = mda.lib.distances.distance_array(
                 center.position.reshape(1, 3),
-                neighbors.positions
+                neighbors.positions,
+                box=self.box
             ).flatten()
             count = (dists <= self.cutoff_distance).sum()
 
             for i, b in enumerate(self.bins):
                 if count >= b:
                     counts[i] += 1
-
+        
         return counts
 

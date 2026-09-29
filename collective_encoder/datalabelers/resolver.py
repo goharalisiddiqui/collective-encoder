@@ -5,7 +5,11 @@ _REGISTRY: dict = {
     "COORDINATION":    (".coordination",     "CoordinationCountLabeler"),
     "DISTANCE":        (".distance",         "DistanceValueLabeler"),
     "DIHEDRAL":        (".dihedral",         "DihedralValueLabeler"),
-    "COLUMN_SELECTOR": (".column_selector",  "ColumnSelectorLabeler"),
+    "COLUMN_SELECTOR":         (".column_selector",  "ColumnSelectorLabeler"),
+    "STRUCTURE_FACTOR":        (".structure_factor", "StaticStructureFactorLabeler"),
+    "DEBYE_STRUCTURE_FACTOR":  (".debye",            "DebyeStructureFactorLabeler"),
+    "STEINHARDT_ORDER_PARAMETER": (".steinhardt",    "SteinhardtOrderParameterLabeler"),
+    "CONCAT":                  (".concat",           "ConcatLabeler"),
 }
 
 _PACKAGE = "collective_encoder.datalabelers"

@@ -8,6 +8,7 @@ from torch_geometric.data import Data
 from collective_encoder.models.base import CEModelBase
 from collective_encoder.losses.mse import CELossMSE
 from collective_encoder.metrics.mae import CEMetricMAE
+from collective_encoder.metrics.kld import CEMetricKLD
 
 
 class CENetBase(CEModelBase, pl.LightningModule, ABC):

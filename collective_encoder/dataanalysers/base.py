@@ -24,7 +24,10 @@ class BaseDataAnalyser(CEModule, ABC):
             
     '''
     _IDENTIFIER = "BASE_DATA_ANALYSER"
-    _REQUIRED_ARGS = ['datamodule_args']
+    _REQUIRED_ARGS = [
+      'datamodule_args',
+      'datamodule_labels_list'
+    ]
     
     def __init__(self,
                  args: dict = None,

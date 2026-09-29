@@ -7,11 +7,6 @@ from collective_encoder.common.module import CEModule
 
 
 class CEMetricBase(CEModule, ABC):
-    def __init__(self, 
-                args: Dict[str, Any] = None, 
-                **kwargs) -> None:
-        
-        CEModule.__init__(self, args=args, **kwargs)
         
     def __call__(self, *args, **kwds):
         return self.calculate(*args, **kwds)

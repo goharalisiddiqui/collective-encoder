@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from collective_encoder.testplotters.base import BaseTestPlotter
-from collective_encoder.utils import check_dict_contains_keys
+from collective_encoder.utils import check_dict_contains_keys, get_missing_keys
 from collective_encoder.testplotters.utils import combinations
 from collective_encoder.testplotters.transforms import add_transformed
 
@@ -33,22 +33,34 @@ class SimplePlotter(BaseTestPlotter):
         all_names = list(labels.keys()) + \
                     list(latent.keys()) + \
                     list(meta.keys())
+        if len(all_names) == 0:
+            self.log_exception("No labels, latent keys, or meta keys found after parsing selections. Nothing to plot.")
+            return
+
         if len(all_names) != len(set(all_names)):
             raise ValueError(f"Duplicate names found in labels and latent keys. "
                              f"All names must be unique. Found names: {all_names}")
         vals = {**labels, **latent, **meta}
         vals = add_transformed(self.transformed_values, vals)
         
-        self._plot_2dscatter(vals)
-        self._plot_correlations(vals)
+        try:
+            self._plot_2dscatter(vals)
+        except Exception as e:
+            self.log_exception(f"Error occurred while plotting 2D scatter: {e}")
+
+        try:
+            self._plot_correlations(vals)
+        except Exception as e:
+            self.log_exception(f"Error occurred while plotting correlations: {e}")
 
     def _plot_2dscatter(self, vals: Dict[str, np.ndarray]) -> None:
         for plot in self.plots_2dscatter_cb:
-            for key in ['x', 'y', 'color']:
-                if key not in plot:
+            for key in ['x', 'y']:
+                if key not in plot.keys():
                     self.log_exception(f"Missing '{key}' in plot specification: {plot}. Skipping this plot.")
                     continue
-            x_label, y_label, color_label = plot['x'], plot['y'], plot['color']
+            x_label, y_label = plot['x'], plot['y']
+            color_label = plot.get('color', None)
             x_error_data, y_error_data = None, None
             if 'x_error' in plot:
                 x_error_label = plot['x_error']
@@ -62,17 +74,20 @@ class SimplePlotter(BaseTestPlotter):
                     self.log_exception(f"Label '{y_error_label}' for y error not found in collected data. Available labels: {list(vals.keys())}. Skipping this plot.")
                     continue
                 y_error_data = vals[y_error_label]
-            if x_label not in vals or y_label not in vals:
-                self.log_exception(f"Labels '{x_label}', '{y_label}', or '{color_label}' not found in collected data. Available labels: {list(vals.keys())}.")
+            if x_label not in vals:
+                self.log_exception(f"Label '{x_label}' not found in collected data. Available labels: {list(vals.keys())}.")
                 continue
-            for c in color_label.split(':'):
-                if c not in vals:
-                    self.log_exception(f"Color label '{c}' not found in collected data. Available labels: {list(vals.keys())}. Skipping this plot.")
-                    continue
-
+            if y_label not in vals:
+                self.log_exception(f"Label '{y_label}' not found in collected data. Available labels: {list(vals.keys())}.")
+                continue
+            if color_label is not None:
+                for c in color_label.split(':'):
+                    if c not in vals:
+                        self.log_exception(f"Color label '{c}' not found in collected data. Available labels: {list(vals.keys())}. Skipping this plot.")
+                        continue
             x_data = vals[x_label]
             y_data = vals[y_label]
-            color_data = {c: vals[c] for c in color_label.split(':') if c in vals}
+            color_data = {c: vals[c] for c in color_label.split(':') if c in vals} if color_label is not None else None
             tag = f"{x_label}_{y_label}"
             fname = tag if 'name' not in plot else plot['name']
             if 'sparse_steps' in plot:
@@ -84,7 +99,7 @@ class SimplePlotter(BaseTestPlotter):
                 y_data = y_data[::sparse_steps]
                 x_error_data = x_error_data[::sparse_steps] if x_error_data is not None else None
                 y_error_data = y_error_data[::sparse_steps] if y_error_data is not None else None
-                color_data = {c: color_data[c][::sparse_steps] for c in color_data}
+                color_data = {c: color_data[c][::sparse_steps] for c in color_data} if color_data is not None else None
                 tag += f"_sparse{str(sparse_steps)}"
             fig, _ = self.plot_2dscatter(x_data, y_data, 
                                          xerr=x_error_data, yerr=y_error_data,
@@ -95,17 +110,13 @@ class SimplePlotter(BaseTestPlotter):
     
     def _plot_correlations(self, vals: Dict[str, np.ndarray]) -> None:
         for corr in self.correlations:
-            check_dict_contains_keys(corr, required_keys=['x', 'y'])
+            if not check_dict_contains_keys(corr, required_keys=['x', 'y']):
+                continue
             x_labels = corr['x'].split(':')
             y_labels = corr['y'].split(':')
-            for x in x_labels:
-                if x not in vals:
-                    self.log_exception(f"Correlation x label '{x}' not found in collected data. Available labels: {list(vals.keys())}. Skipping this correlation plot.")
-                    continue
-            for y in y_labels:
-                if y not in vals:
-                    self.log_exception(f"Correlation y label '{y}' not found in collected data. Available labels: {list(vals.keys())}. Skipping this correlation plot.")
-                    continue
+            if k := get_missing_keys(vals, x_labels + y_labels):
+                self.log_exception(f"Missing labels in collected data: {k}. Skipping this correlation plot.")
+                continue
             x_data = np.stack([vals[x] for x in x_labels], axis=1)
             y_data = np.stack([vals[y] for y in y_labels], axis=1)
             fig, axes, corr_matrix = self.plot_correlation(

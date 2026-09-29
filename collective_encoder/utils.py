@@ -99,3 +99,7 @@ def check_dict_contains_keys(d: dict,
             raise KeyError(f"Dictionary is missing required keys: {missing_keys}")
         return False
     return True
+
+def get_missing_keys(d: dict, required_keys: list):
+    """Returns a list of missing keys from the dictionary."""
+    return [key for key in required_keys if key not in d]

@@ -9,17 +9,12 @@ from collective_encoder.common.config_check import validate_required_fields
 class BaseDataset(CEModule, ABC):
     ''' Abstract base dataset class for various dataset types.
     '''
-    _IDENTIFIER: str = None             # A unique identifier for the dataset type, used for registry and config validation
-    _REQUIRED_ARGS: List[str] = []      # List of required keys in dataset_args for this dataset type, used for config validation
-    _OPTIONAL_ARGS: Dict[str, Any] = {}      # Dict of optional keys and their default values in dataset_args for this dataset type, used for config validation
-    
+
     def __init__(self,
-                 dataset_args: Dict[str, Union[float, int, str]] = None,
+                 args: Dict[str, Union[float, int, str]] = None,
                  **kwargs,
                  ):
-        if dataset_args is None:
-            dataset_args = {}
-        super().__init__(dataset_args, **kwargs)
+        super().__init__(args, **kwargs)
     
     @abstractmethod
     def __len__(self):

@@ -13,18 +13,19 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
     '''
     Abstract base class for trajectory readers.
     '''
-    def __init__(self,
-                 args: Dict[str, Any] = None,
-                 **kwargs):
-        super().__init__(args=args, **kwargs)
+    _OPTIONAL_ARGS = {
+        'selection': "all",
+        'type_to_elements': None,
+        'parallel': True,
+    }
 
     @abstractmethod
     def read_trajectory(self) -> Tuple[List[ase.Atoms], List[List[float]]]:
         '''
         Abstract method to read the trajectory and return 
         a tuple of ASE Atoms objects and their corresponding labels.
-        '''
-        raise NotImplementedError("Subclasses must implement read_trajectory method")
+        ''' 
+        pass
     
     def get_atomic_numbers(self) -> List[int]:
         return self.atns
@@ -38,17 +39,17 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
     def get_bonds(self) -> List[Tuple[int, int]]:
         return self.bonds
     
-    def mda_select_atoms(self, universe, selection: str):
+    def select_atoms(self):
         '''
         Select atoms from the MDAnalysis universe.
         '''
         try:
-            mol = universe.select_atoms(selection)
+            mol = self.u.select_atoms(self.selection)
         except Exception as e:
-            raise ValueError(f"Selection {selection} is not valid: {e}")
+            raise ValueError(f"Selection {self.selection} is not valid: {e}")
         if mol.n_atoms == 0:
-            raise ValueError(f"Selection {selection} does not match any atoms in the trajectory")
-        return mol
+            raise ValueError(f"Selection {self.selection} does not match any atoms in the trajectory")
+        self.mol = mol
     
     def mda_add_default_transforms(self, universe, mol):
         '''
@@ -59,33 +60,63 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         universe.trajectory.add_transformations(*transforms)
         return universe
     
-    def mda_get_atomic_numbers_and_elements(self, mol, type_to_elements: list = None):
+    def extract_topology_info(self):
+        '''
+        Extract atomic numbers, elements, atom ids, and bonds from the MDAnalysis atom group.
+        '''
+        self._extract_elements()
+        self._extract_atomic_numbers()
+        self._extract_atom_ids()
+        self._extract_bonds()
+        
+        self.ce_log_dict("Extracted topology: ", {
+            "Number of atoms": len(self.atns),
+            "Number of bonds": len(self.bonds),
+            "Element Counts": {
+                a: self.at_elements.count(a) for a in set(self.at_elements)
+            }
+        })
+            
+    def _extract_elements(self):
+        '''
+        Extract atomic elements from the MDAnalysis atom group.
+        '''
+        try:
+            at_elements = [at.element for at in self.mol]
+        except NoDataError:
+            if self.type_to_elements is None:
+                raise ValueError("Atom elements not found in trajectory. Please provide type_to_elements mapping.")
+            at_types = self.mol.types
+            at_elements = [self.type_to_elements[at] for at in at_types]
+            # Add elements information back to the universe
+            try:
+                if hasattr(self.u.atoms, "types"):
+                    all_elements = [self.type_to_elements.get(t, t) for t in self.u.atoms.types]
+                    self.u.add_TopologyAttr("elements", all_elements)
+            except Exception as e:
+                self.log_warn(f"Could not add elements information to the universe: {e}",)
+        self.at_elements = at_elements
+
+    def _extract_atomic_numbers(self):
         '''
         Get atomic numbers from the MDAnalysis atom group.
         '''
         from ase.data import atomic_numbers
-        try:
-            at_elements = [at.element for at in mol]
-        except NoDataError:
-            if type_to_elements is None:
-                raise ValueError("Atom elements not found in trajectory. Please provide type_to_elements mapping.")
-            at_types = mol.types
-            at_elements = [type_to_elements[at] for at in at_types]
-        at_numbers = [atomic_numbers[el] for el in at_elements]
-        return at_numbers, at_elements
+        at_numbers = [atomic_numbers[el] for el in self.at_elements]
+        self.atns = at_numbers
     
-    def mda_get_atom_ids(self, mol):
+    def _extract_atom_ids(self):
         '''
         Get atom IDs from the MDAnalysis atom group.
         '''
-        atm_ids = [at.id + 1 for at in mol.atoms]
-        return atm_ids
+        atm_ids = [int(at.id) + 1 for at in self.mol.atoms]
+        self.atm_ids = atm_ids
     
-    def mda_get_bonds(self, mol):
+    def _extract_bonds(self):
         '''
         Get bonds from the MDAnalysis atom group.
         '''
-        bonds = mol.get_connections('bonds', outside=False).indices
+        bonds = self.mol.get_connections('bonds', outside=False).indices
         for i in range(len(bonds)): # remap to mol atoms indices (without hydrogens)
-            bonds[i] = (np.where(mol.atoms.indices == bonds[i][0])[0][0], np.where(mol.atoms.indices == bonds[i][1])[0][0])
-        return bonds
+            bonds[i] = (np.where(self.mol.atoms.indices == bonds[i][0])[0][0], np.where(self.mol.atoms.indices == bonds[i][1])[0][0])
+        self.bonds = bonds

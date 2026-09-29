@@ -109,6 +109,7 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
                 continue
             analyser_cls = get_dataanalyser(analyser_type)
             analyser_args['datamodule_args'] = self.get_args()
+            analyser_args['datamodule_labels_list'] = self.get_label_names()
             analyser = analyser_cls(args=analyser_args, 
                                     **metargs)
             if self.train_data is not None and len(self.train_data) > 0:

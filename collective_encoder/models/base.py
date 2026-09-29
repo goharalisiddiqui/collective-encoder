@@ -9,6 +9,7 @@ from torch_geometric.data import Data
 
 from collective_encoder.common.module import CEModule
 from collective_encoder.metrics.mae import CEMetricMAE
+from collective_encoder.metrics.resolver import get_metric_cls
 
 
 class CEModelBase(nn.Module, CEModule, ABC):
@@ -33,6 +34,7 @@ class CEModelBase(nn.Module, CEModule, ABC):
         "normIn": False,
         "export_latent": False,
         "output_directory": "./ce_net_output/untitled_",
+        "extra_test_metrics": [],
     }
 
     @staticmethod
@@ -58,6 +60,13 @@ class CEModelBase(nn.Module, CEModule, ABC):
         self.test_metrics = {
             "mae": CEMetricMAE({}, **kwargs),
         }
+        for metric in self.extra_test_metrics:
+            try:
+                metric_cls = get_metric_cls(metric['name'])
+                self.test_metrics[metric['name']] = metric_cls(metric.get('args', {}), **kwargs)
+                self.log_info(f"Initialized test metric '{metric['name']}' with args: {metric.get('args', {})}")
+            except Exception as e:
+                self.log_exception(f"Failed to initialize test metric '{metric['name']}': {e}", RuntimeError)
         self.test_plotters = []
 
     # ------------------------------------------------------------------
@@ -231,7 +240,10 @@ class CEModelBase(nn.Module, CEModule, ABC):
 
     def _plot_test_finish(self) -> None:
         for plotter in self.test_plotters:
-            plotter.finish()
+            try:
+                plotter.finish()
+            except Exception as e:
+                self.log_exception(f"Error occurred while finishing test plotter :[{type(plotter).__name__}] {e}")
 
     def get_test_plotter_metrics(self) -> Dict[str, float]:
         """Collects all scalar metrics recorded by initialized test plotters."""
@@ -260,10 +272,15 @@ class CEModelBase(nn.Module, CEModule, ABC):
                 if isinstance(result, (int, float)) or (isinstance(result, torch.Tensor) and result.numel() == 1):
                     self.log(f"{stage}_{name}", result.detach(), prog_bar=(stage == "train"),
                              on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
+                elif stage == "test":
+                    self.log_warning(f"Metric '{name}' returned a non-scalar result during testing. Skipping logging for this metric.")
                 for key, value in result_meta.items():
                     if isinstance(value, (int, float)) or (isinstance(value, torch.Tensor) and value.numel() == 1):
                         self.log(f"{stage}_{name}_{key}", value,
                                  prog_bar=False, on_step=(stage == "train"), on_epoch=True, batch_size=batch_size)
+                    elif stage == "test":
+                        self.log_warning(f"Metric '{name}' returned a non-scalar meta value for key '{key}' during testing. "
+                                         "Skipping logging for this meta value.")
             meta.update(result_meta)
         return results
 

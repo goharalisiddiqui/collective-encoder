@@ -6,6 +6,7 @@ import ase
 import torch
 from torch.utils.data import Dataset
 from torch.nn.functional import pairwise_distance
+from tqdm import tqdm
 
 from .base import BaseDataset
 from gslibs.utils.common import parse_slice
@@ -29,7 +30,6 @@ class DistancesDataset(Dataset, BaseDataset):
         labels (torch.Tensor): Tensor of shape (num_structures,) containing the labels.
     '''
     _IDENTIFIER = "DISTANCES"
-    _REQUIRED_ARGS = []
     _OPTIONAL_ARGS = {
         'group1': None,
         'group2': None,
@@ -40,10 +40,10 @@ class DistancesDataset(Dataset, BaseDataset):
         self,
         structures: List[ase.Atoms],
         labels: List[float],
-        dataset_args: Dict[str, Union[float, int, str]] = None,
+        args: Dict[str, Union[float, int, str]] = None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(args=args, **kwargs)
         assert len(structures) == len(labels), "Number of structures and labels must match"
         atns = structures[0].get_atomic_numbers()
 
@@ -66,7 +66,7 @@ class DistancesDataset(Dataset, BaseDataset):
         self.data_shape = (len(pairs),)
         self.pairs = pairs
         self.distances = []
-        for s in structures:
+        for s in tqdm(structures, desc="Calculating distances"):
             distances = []
             positions = s.get_positions()
             for i, j in pairs:
@@ -78,9 +78,9 @@ class DistancesDataset(Dataset, BaseDataset):
         self.num_inputs = len(pairs)
         
         if self.atm_ids is not None:
-            self.ce_log_list("Atom IDs", self.atm_ids)
+            self.log_info(f"Distance index to atom ID mapping for {len(pairs)} pairs:")
             for ind, (i, j) in enumerate(pairs):
-                self.log_msg(f"Distance {ind}: {self.atm_ids[i]} <-> {self.atm_ids[j]}")
+                self.log_msg(f" {ind}: {self.atm_ids[i]} <-> {self.atm_ids[j]}")
         
     def __len__(self):
         return len(self.distances)

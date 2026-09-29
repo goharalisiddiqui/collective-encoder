@@ -307,6 +307,7 @@ class OptunaObjective:
         # Robust Fallback: Extract best metrics from csv_logs
         best_val = float("inf")
         test_results = {}
+        remaining_metrics = {}
         csv_dir = os.path.join(trial_run_dir, "csv_logs")
         if os.path.isdir(csv_dir):
             for root, _, files in os.walk(csv_dir):
@@ -318,11 +319,18 @@ class OptunaObjective:
                             if "val_loss" in df.columns:
                                 v_clean = df["val_loss"].dropna()
                                 if not v_clean.empty:
+                                    best_idx = v_clean.idxmin()
                                     best_val = float(v_clean.min())
-                            if "test_mae" in df.columns:
-                                t_clean = df["test_mae"].dropna()
-                                if not t_clean.empty:
-                                    test_results["test_mae"] = float(t_clean.iloc[-1])
+                                for c in df.columns:
+                                    t_clean = df[c].dropna()
+                                    if not t_clean.empty:
+                                        remaining_metrics[c] = float(t_clean.iloc[best_idx])
+                            for c in df.columns:
+                                if c.startswith("test_"):
+                                    t_clean = df[c].dropna()
+                                    if not t_clean.empty:
+                                        test_results[c[5:]] = float(t_clean.iloc[-1])
+                            
                         except Exception:
                             pass
 
@@ -331,4 +339,4 @@ class OptunaObjective:
             "run_dir": trial_run_dir,
             "best_checkpoint_path": os.path.join(trial_run_dir, "checkpoints", "best.ckpt"),
             "test_results": test_results,
-        }
+        } + remaining_metrics

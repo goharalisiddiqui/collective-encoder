@@ -37,8 +37,23 @@ class CoordinatesDataModule(BaseDataModule):
     # Compatible datareaders and datasets
     _IDENTIFIER = "COORDINATES"
     _COMPATIBLE_DATAREADERS = ["XTC"]
-    _COMPATIBLE_DATASETS = ["DISTANCES", "POSITIONS", "GRAPH", "GRAPH_LATENT", "SOAP", "SOAP_PS"]
-    _COMPATIBLE_LABELERS = ["COORDINATION", "DIHEDRAL", "DISTANCE"]  # Add other coordinate-based labelers
+    _COMPATIBLE_DATASETS = [
+        "DISTANCES", 
+        "POSITIONS", 
+        "GRAPH", 
+        "GRAPH_LATENT", 
+        "SOAP", 
+        "SOAP_PS"
+    ]
+    _COMPATIBLE_LABELERS = [
+        "CONCAT",
+        "COORDINATION", 
+        "DIHEDRAL", 
+        "DISTANCE",
+        "STRUCTURE_FACTOR",
+        "DEBYE_STRUCTURE_FACTOR",
+        "STEINHARDT_ORDER_PARAMETER",
+    ]  # Add other coordinate-based labelers
     
     _REQUIRED_ARGS = BaseDataModule._REQUIRED_ARGS + [
         "datareader_type",
@@ -97,6 +112,7 @@ class CoordinatesDataModule(BaseDataModule):
         datareader_cls = get_datareader(self.datareader_type)
         self.datareader = datareader_cls(args=self.datareader_args,
                                          **self.run_args)
+        self.log_info(f"Total frames in trajectory: {self.datareader.get_total_frames()}")
 
         # Store coordinate-specific information
         self.atomic_numbers = self.datareader.get_atomic_numbers()
@@ -125,6 +141,9 @@ class CoordinatesDataModule(BaseDataModule):
 
     def _calculate_indices(self):
         """Calculate train, validation, and test indices based on split configuration."""
+        if self.max_frames > self.datareader.get_total_frames():
+            raise ValueError(f"max_frames ({self.max_frames}) exceeds total frames in trajectory "
+                             f"({self.datareader.get_total_frames()})")
         if self.sequential:
             self.log_debug("Calculating sequential split indices...")
             self._calculate_sequential_indices()
@@ -244,7 +263,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.train_data = dataset_class(
                 structures=trajs[0],
                 labels=labels[0],
-                dataset_args=dataset_args,
+                args=dataset_args,
                 **{**self.run_args, "tag": 'train'},
             )
         else:
@@ -255,7 +274,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.val_data = dataset_class(
                 structures=trajs[1],
                 labels=labels[1],
-                dataset_args=dataset_args,
+                args=dataset_args,
                 **{**self.run_args, "verbose": False, "tag": 'val'},  # Disable verbose logging for validation dataset creation
             )
         else:
@@ -266,7 +285,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.test_data = dataset_class(
                 structures=trajs[2],
                 labels=labels[2],
-                dataset_args=dataset_args,
+                args=dataset_args,
                 **{**self.run_args, "verbose": False, "tag": 'test'},  # Disable verbose logging for test dataset creation
             )
         else:
@@ -277,7 +296,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.predict_data = dataset_class(
                 structures=trajs[3],
                 labels=labels[3],
-                dataset_args=dataset_args,
+                args=dataset_args,
                 **{**self.run_args, "verbose": False, "tag": 'predict'},  # Disable verbose logging for predict dataset creation
             )
         else:

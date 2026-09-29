@@ -23,10 +23,12 @@ class BaseDisentanglementMetric(BaseTestPlotter):
       - Heatmap / Confusion matrix rendering and output directory organization
     """
     _IDENTIFIER = "BaseDisentanglementMetric"
+    _REQUIRED_ARGS = BaseTestPlotter._REQUIRED_ARGS + [
+        'generative_factors', 
+        'latent_dimensions'
+    ]
     _OPTIONAL_ARGS = BaseTestPlotter._OPTIONAL_ARGS.copy()
     _OPTIONAL_ARGS.update({
-        'generative_factors': None,
-        'latent_dimensions': None,
         'factor_tolerances': 0.05,
         'variation_threshold': 0.1,
         'min_samples_warning': 200,

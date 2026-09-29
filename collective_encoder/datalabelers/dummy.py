@@ -29,6 +29,9 @@ class DummyLabeler(BaseLabeler):
                  ) -> None:
         super().__init__(args=args, **kwargs)
         pass
+    
+    def _print_init_banner(self):
+        pass # Suppress banner for dummy labeler
 
     def get_label_names(self) -> List[str]:
         return ['dummy']

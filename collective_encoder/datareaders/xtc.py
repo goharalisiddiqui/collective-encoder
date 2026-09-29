@@ -112,15 +112,16 @@ class XTCReader(TrajectoryReaderBase):
         provided.
     """
     _IDENTIFIER = "XTC"
-    _REQUIRED_ARGS = ['tprfile']
-    _OPTIONAL_ARGS = {
+    _REQUIRED_ARGS = TrajectoryReaderBase._REQUIRED_ARGS + [
+        'topology_file',
+    ]
+    _OPTIONAL_ARGS = TrajectoryReaderBase._OPTIONAL_ARGS.copy()
+    _OPTIONAL_ARGS.update({
         'xtcfile': None,
         'xtcfiles': None,
         'coord_glob': None,
-        'selection': "all",
-        'type_to_elements': None,
-        'parallel': True,
-    }
+        'topology_format': 'TPR',
+    })
     
     def __init__(self,
                  args: Dict[str, Any] = None,
@@ -129,11 +130,11 @@ class XTCReader(TrajectoryReaderBase):
         super().__init__(args=args, **kwargs)
         
         # Check files
-        gsv.check_exists(tprfile=self.tprfile)
-        self.log_msg(f"Loading topology from file {self.tprfile}")
+        gsv.check_exists(topology_file=self.topology_file)
+        self.log_msg(f"Loading topology from file {self.topology_file}")
         gsv.check_mutually_exclusive(xtcfile=self.xtcfile, 
                                       coord_glob=self.coord_glob, 
-                                      xtcfiles=self.xtcfiles, 
+                                      xtcffiles=self.xtcfiles, 
                                       require_one=True)
         if self.coord_glob:
             self.log_msg(f"Loading trajectory files matching glob pattern: {self.coord_glob}") 
@@ -141,7 +142,8 @@ class XTCReader(TrajectoryReaderBase):
             if not xtcfiles:
                 self.raise_error(f"No files found for pattern {self.coord_glob}")
             self.log_msg(f"Found {len(xtcfiles)} files") 
-            u = mda.Universe(self.tprfile, *xtcfiles)
+            u = mda.Universe(self.topology_file, *xtcfiles, 
+                             topology_format=self.topology_format)
         elif self.xtcfiles:
             self.log_msg("Loading trajectory from multiple files: ")
             files = '\n\t - '.join(self.xtcfiles)
@@ -149,28 +151,22 @@ class XTCReader(TrajectoryReaderBase):
             for xf in self.xtcfiles:
                 if not os.path.exists(xf):
                     self.raise_error(f"File {xf} not found")
-            u = mda.Universe(self.tprfile, *xtcfiles)
+            u = mda.Universe(self.topology_file, *xtcfiles,
+                             topology_format=self.topology_format)
         else:
             self.log_msg(f"Loading trajectory from file: {self.xtcfile}") 
             if not os.path.exists(self.xtcfile):
                 self.raise_error(f"File {self.xtcfile} not found")
-            u = mda.Universe(self.tprfile, self.xtcfile)
+            u = mda.Universe(self.topology_file, self.xtcfile,
+                             topology_format=self.topology_format)
 
-        # Select the atoms
-        self.mol = self.mda_select_atoms(u, self.selection)
         self.u = u
-        self._selection = self.selection
-        self.parallel = self.parallel
-        
-        # Extract the atomic numbers
-        self.atns, self.at_elements = self.mda_get_atomic_numbers_and_elements(
-                                                self.mol, self.type_to_elements)
+        self.select_atoms()
+        self.extract_topology_info()
 
-        # Get the atom numbers in the trajectory
-        self.atm_ids = self.mda_get_atom_ids(self.mol)
-        
-        # Extract the bonds information
-        self.bonds = self.mda_get_bonds(self.mol)
+    def get_total_frames(self) -> int:
+        """Get the number of frames in the trajectory."""
+        return len(self.u.trajectory)
     
     def read_trajectory(self, 
                         indices: List[List[int]],
@@ -202,7 +198,7 @@ class XTCReader(TrajectoryReaderBase):
 
             if not self.parallel or len(index_list) < 8:  # Threshold for parallel processing
                 # Apply transforms if not already applied
-                args = (0, self.u.copy(), self._selection, self.atns, self.at_elements, index_list,
+                args = (0, self.u.copy(), self.selection, self.atns, self.at_elements, index_list,
                         labeler_type, labeler_args, self.run_args)
                 traj, label, failed = _read_and_label_parallel(args)
             else:
@@ -215,7 +211,7 @@ class XTCReader(TrajectoryReaderBase):
                 # Pack worker_id and verbose so imap can use a single-argument callable.
                 # worker bars occupy positions 0..n_workers-1; outer bar sits below them.
                 args = [
-                    (i+1, self.u.copy(), self._selection, self.atns, self.at_elements,
+                    (i+1, self.u.copy(), self.selection, self.atns, self.at_elements,
                     chunk, labeler_type, labeler_args, self.run_args)
                     for i, chunk in enumerate(chunks)
                 ]

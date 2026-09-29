@@ -218,7 +218,8 @@ class BaseTestPlotter(CEModule, ABC):
                 if sel_type is str:
                     for key in selection.values():
                         if key not in data:
-                            raise ValueError(f"Key '{key}' from selection not found in data.")
+                            raise ValueError(f"Key '{key}' from selection not found in data."
+                                             f"Available keys: {list(data.keys())}.")
                 else:  # sel_type is list
                     for value in selection.values():
                         if len(value) != 2 or not isinstance(value[0], str) or not isinstance(value[1], int):
@@ -235,7 +236,7 @@ class BaseTestPlotter(CEModule, ABC):
     def _parse_selection(self, selection, data, dataname):
         self._check_selections_validity(selection, data, dataname)
         if selection is None:
-            return data
+            return {}
         sel_type = type(selection.values().__iter__().__next__())
         if sel_type is int:
             return {key: self._convert_to_numpy(data[:, idx]) for key, idx in selection.items()}
@@ -342,7 +343,10 @@ class BaseTestPlotter(CEModule, ABC):
         if ncols == 1:
             axes = [axes]
         for ind, (name, value) in enumerate(labels.items()):
-            if not isinstance(value, np.ndarray) or (len(value.shape) != 1 or value.shape[0] != x.shape[0]):
+            if value is not None and ( \
+                not isinstance(value, np.ndarray) \
+                    or (len(value.shape) != 1 \
+                        or value.shape[0] != x.shape[0])):
                 self.raise_error(f"Label {name} must be a 1D array with the same length as x and y")
             scatter = axes[ind].scatter(x, y, 
                                         c=value, 
@@ -358,7 +362,9 @@ class BaseTestPlotter(CEModule, ABC):
             axes[ind].set_ylabel(tag.split('_')[1])
             if value is not None:
                 fig.colorbar(scatter, ax=axes[ind], label=name)
+                
         plt.tight_layout()
+        
         return fig, axes
 
     def plot_correlation(self, x: np.ndarray, y: np.ndarray,
