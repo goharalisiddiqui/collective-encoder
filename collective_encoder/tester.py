@@ -7,7 +7,12 @@ _SETTINGS = {
 }
 
 def test():
-    """Test a collective encoder model based on the provided configuration."""
+    """
+    Test a collective encoder model based on the provided configuration.
+
+    This function prepares the environment, loads the data module and the model,
+    attaches any specified test plotters, and runs the PyTorch Lightning evaluation loop.
+    """
 
     config, metargs = crb.prepare(_SETTINGS)
     dm = crb.load_datamodule(config, metargs)
@@ -29,7 +34,9 @@ def test():
 
 
 def main():
-    """Main entry point for the collective encoder testing."""
+    """
+    Main entry point for the collective encoder testing.
+    """
     test()
 
 if __name__ == "__main__":

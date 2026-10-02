@@ -10,7 +10,8 @@ _log = logging.getLogger(__name__)
 
 
 class StaticStructureFactorLabeler(FrameLabeler):
-    """Compute the isotropic static structure factor S(q) for the current trajectory frame.
+    """
+    Compute the isotropic static structure factor S(q) for the current trajectory frame.
 
     Evaluates S(q) using the Debye scattering formula:
         S(q) = 1 + (2 / N) * sum_{j < k} sin(q * r_{jk}) / (q * r_{jk})
@@ -18,21 +19,26 @@ class StaticStructureFactorLabeler(FrameLabeler):
     Periodic boundary conditions (PBC) are automatically applied if box dimensions are
     present in the MDAnalysis universe and ``use_pbc`` is True.
 
-    Args:
-        universe: MDAnalysis Universe loaded with topology and trajectory.
-            The trajectory must be positioned at the target frame before calling :meth:`compute`.
-        args: Configuration dict with keys:
-            - ``selection`` (str, optional): MDAnalysis atom selection string.
-              Defaults to ``'all'``.
-            - ``q_values`` (List[float], optional): Explicit list of scattering wavenumbers in Å⁻¹.
-            - ``q_min`` (float, optional): Minimum q value in Å⁻¹ (used if ``q_values`` is omitted).
-              Defaults to ``0.5``.
-            - ``q_max`` (float, optional): Maximum q value in Å⁻¹ (used if ``q_values`` is omitted).
-              Defaults to ``5.0``.
-            - ``q_num`` (int, optional): Number of q values (used if ``q_values`` is omitted).
-              Defaults to ``10``.
-            - ``use_pbc`` (bool, optional): Whether to apply PBC using universe box dimensions.
-              Defaults to ``True``.
+    Parameters
+    ----------
+    universe : MDAnalysis.Universe
+        MDAnalysis Universe loaded with topology and trajectory.
+        The trajectory must be positioned at the target frame before calling :meth:`compute`.
+    args : dict
+        Configuration dict with keys:
+        - ``selection`` (str, optional): MDAnalysis atom selection string.
+          Defaults to ``'all'``.
+        - ``q_values`` (list of float, optional): Explicit list of scattering wavenumbers in Å⁻¹.
+        - ``q_min`` (float, optional): Minimum q value in Å⁻¹ (used if ``q_values`` is omitted).
+          Defaults to ``0.5``.
+        - ``q_max`` (float, optional): Maximum q value in Å⁻¹ (used if ``q_values`` is omitted).
+          Defaults to ``5.0``.
+        - ``q_num`` (int, optional): Number of q values (used if ``q_values`` is omitted).
+          Defaults to ``10``.
+        - ``use_pbc`` (bool, optional): Whether to apply PBC using universe box dimensions.
+          Defaults to ``True``.
+    kwargs : dict
+        Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "STATIC_STRUCTURE_FACTOR"
@@ -73,9 +79,25 @@ class StaticStructureFactorLabeler(FrameLabeler):
                       f"{len(self.atoms)} atoms and q values: {self.q_arr}")
 
     def get_label_names(self) -> List[str]:
+        """
+        Return the names of the label columns.
+
+        Returns
+        -------
+        list of str
+            Label names for each wavenumber q.
+        """
         return self.label_names
 
     def compute(self) -> List[float]:
+        """
+        Compute the static structure factor for the current frame.
+
+        Returns
+        -------
+        list of float
+            Values of S(q) evaluated at the specified wavenumbers.
+        """
         n_atoms = len(self.atoms)
         if n_atoms < 2:
             return [1.0] * len(self.q_arr)

@@ -7,6 +7,23 @@ from .base import CEMetricBase
 
 
 class CEMetricKLD(CEMetricBase):
+    """
+    Metric to track the Kullback-Leibler Divergence (KLD).
+
+    Provides the same calculation as the KLD loss but ensures it is tracked
+    strictly as an evaluation metric (e.g. for pure monitoring without gradients).
+
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary. Optional keys:
+        - ``prior`` (str, default 'uniform_gaussian'): Type of prior distribution.
+        - ``reduction`` (str, default 'mean'): Reduction method ('mean' or 'sum').
+        - ``mu_name`` (str, default 'mu_latent'): Key for latent mean.
+        - ``logvar_name`` (str, default 'logvar_latent'): Key for latent logvar.
+    kwargs : dict
+        Additional keyword arguments.
+    """
     _IDENTIFIER = "CEMetricKLD"
     _OPTIONAL_ARGS = {
         'prior': 'uniform_gaussian',
@@ -22,7 +39,27 @@ class CEMetricKLD(CEMetricBase):
                 labels: torch.Tensor, 
                 meta: Dict[str, torch.Tensor],
                 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Compute the KLD metric.
         
+        Parameters
+        ----------
+        inp : torch.Tensor
+            Target input values (unused).
+        latent : torch.Tensor
+            Latent representation (unused).
+        output : torch.Tensor
+            Predicted output values (unused).
+        labels : torch.Tensor
+            Ground truth labels (unused).
+        meta : dict
+            Metadata containing the ``mu`` and ``logvar`` predictions.
+
+        Returns
+        -------
+        tuple
+            (kld_value, empty_dict).
+        """
         if self.prior != 'uniform_gaussian':
             raise NotImplementedError(f"Prior '{self.prior}' is not implemented for KLD metric. Only 'uniform_gaussian' is supported.")
         if self.reduction not in ['mean', 'sum']:

@@ -6,21 +6,28 @@ from .base import BatchLabeler
 
 
 class ColumnSelectorLabeler(BatchLabeler):
-    """Extract specific columns from a PLUMED/tabular DataFrame as labels.
+    """
+    Extract specific columns from a PLUMED/tabular DataFrame as labels.
 
     Selects one or more named columns from a ``pd.DataFrame`` and returns
     the corresponding rows as a NumPy array.  Intended for use with
     :class:`~collective_encoder.datareaders.plumed_output.PlumedOutputReader`.
 
-    Args:
-        dataframe: The full collective-variable DataFrame loaded from the
-            PLUMED output file.
-        args: Configuration dict with key ``columns`` (required) — a list of
-            column names to use as labels (e.g. ``['phi', 'psi']``).
-        **kwargs: Additional keyword arguments forwarded to the base class.
+    Parameters
+    ----------
+    dataframe : pandas.DataFrame
+        The full collective-variable DataFrame loaded from the
+        PLUMED output file.
+    args : dict
+        Configuration dict with key ``columns`` (required) — a list of
+        column names to use as labels (e.g. ``['phi', 'psi']``).
+    kwargs : dict
+        Additional keyword arguments forwarded to the base class.
 
-    Raises:
-        ValueError: If any column in ``columns`` is not present in ``dataframe``.
+    Raises
+    ------
+    ValueError
+        If any column in ``columns`` is not present in ``dataframe``.
     """
 
     _IDENTIFIER = "COLUMN_SELECTOR"
@@ -45,9 +52,30 @@ class ColumnSelectorLabeler(BatchLabeler):
                              f"dataframe: {missing_columns}")
         
     def get_label_names(self) -> List[str]:
+        """
+        Return the names of the label columns.
+
+        Returns
+        -------
+        list of str
+            Names of the selected columns.
+        """
         return self.columns
 
     def compute(self, indices: List[int]) -> np.ndarray:
+        """
+        Compute labels for the given DataFrame row indices.
+
+        Parameters
+        ----------
+        indices : list of int
+            Integer row indices to extract.
+
+        Returns
+        -------
+        numpy.ndarray
+            Values from the selected columns for the given indices.
+        """
         # Select the specified columns and the given indices
         selected_data = self.dataframe.loc[indices, self.columns]
         return selected_data.values  # Return as numpy array

@@ -49,6 +49,17 @@ class DisentanglementPlotter(BaseTestPlotter):
       - Metric-specific keywords are passed using their prefixed names
         (e.g. `beta_max_pairs_per_factor`, `dci_regressor_type`).
 
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary containing options like:
+        - ``metrics`` (list of str): Which metrics to evaluate (e.g., ['beta', 'mig']).
+        - ``generative_factors`` (list of str): Names of ground truth factors.
+        - ``latent_dimensions`` (list of str): Names of latent dimensions.
+        - Metric-specific overrides like ``beta_confidence_interval``.
+    kwargs : dict
+        Additional keyword arguments.
+
     Example YAML configuration:
     ```yaml
     test_plotters:
@@ -179,7 +190,21 @@ class DisentanglementPlotter(BaseTestPlotter):
         self._write_unified_summary(summary_results, factors, l_dims, name=name)
 
     def _resolve_factors(self, labels: Any, meta: Any) -> List[str]:
-        """Auto-discovers all available ground-truth factors if not explicitly specified."""
+        """
+        Auto-discovers all available ground-truth factors if not explicitly specified.
+
+        Parameters
+        ----------
+        labels : dict or numpy.ndarray
+            Accumulated dataset labels.
+        meta : dict
+            Accumulated metadata.
+
+        Returns
+        -------
+        list of str
+            List of identified factor names.
+        """
         if getattr(self, "generative_factors", None) is not None:
             gf = self.generative_factors
             if isinstance(gf, str):
@@ -198,7 +223,21 @@ class DisentanglementPlotter(BaseTestPlotter):
         return []
 
     def _resolve_latent_dims(self, latent: Any, meta: Any) -> List[str]:
-        """Auto-discovers all available latent dimensions if not explicitly specified."""
+        """
+        Auto-discovers all available latent dimensions if not explicitly specified.
+
+        Parameters
+        ----------
+        latent : numpy.ndarray or dict
+            Accumulated latent encodings.
+        meta : dict
+            Accumulated metadata.
+
+        Returns
+        -------
+        list of str
+            List of identified latent dimension names.
+        """
         if getattr(self, "latent_dimensions", None) is not None:
             ld = self.latent_dimensions
             if isinstance(ld, str):
@@ -284,7 +323,22 @@ class DisentanglementPlotter(BaseTestPlotter):
         l_dims: List[str],
         name: Optional[str] = None,
     ) -> None:
-        """Writes a formatted summary of all evaluated disentanglement metrics."""
+        """
+        Writes a formatted summary of all evaluated disentanglement metrics.
+
+        Computes an average disentanglement score and writes a text report to disk.
+
+        Parameters
+        ----------
+        summary_results : dict
+            Aggregated metric results from all evaluated sub-metrics.
+        factors : list of str
+            Evaluated generative factors.
+        l_dims : list of str
+            Evaluated latent dimensions.
+        name : str, optional
+            Prefix name for metric logging.
+        """
         summary_file = os.path.join(self.outpath, "disentanglement_summary.txt")
 
         primary_scores = {

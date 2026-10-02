@@ -7,11 +7,19 @@ from collective_encoder.common.module import CEModule
 
 
 class BaseLabeler(CEModule, ABC):
-    """Abstract base class for all labelers.
+    """
+    Abstract base class for all labelers.
 
     Concrete labelers must subclass either :class:`FrameLabeler` (for
     MDAnalysis universe-based, per-frame computation) or
     :class:`BatchLabeler` (for DataFrame index-based batch computation).
+
+    Parameters
+    ----------
+    args : dict, optional
+        Dictionary of configuration options.
+    kwargs : dict
+        Additional keyword arguments forwarded to the parent `CEModule`.
     """
 
     def __init__(self,
@@ -23,7 +31,14 @@ class BaseLabeler(CEModule, ABC):
 
     @abstractmethod
     def get_label_names(self) -> List[str]:
-        """Return the names of the label columns produced by this labeler."""
+        """
+        Return the names of the label columns produced by this labeler.
+
+        Returns
+        -------
+        list of str
+            Names of the generated label columns.
+        """
         raise NotImplementedError
 
 
@@ -37,9 +52,12 @@ class FrameLabeler(BaseLabeler):
 
     @abstractmethod
     def compute(self) -> List[float]:
-        """Compute labels for the current trajectory frame.
+        """
+        Compute labels for the current trajectory frame.
 
-        Returns:
+        Returns
+        -------
+        list of float
             List of scalar label values, one per label column.
         """
         raise NotImplementedError
@@ -54,13 +72,17 @@ class BatchLabeler(BaseLabeler):
 
     @abstractmethod
     def compute(self, indices: List[int]) -> np.ndarray:
-        """Compute labels for the given DataFrame row indices.
+        """
+        Compute labels for the given DataFrame row indices.
 
-        Args:
-            indices: Integer row indices into the DataFrame supplied at
-                construction time.
+        Parameters
+        ----------
+        indices : list of int
+            Integer row indices into the DataFrame supplied at construction time.
 
-        Returns:
+        Returns
+        -------
+        numpy.ndarray
             NumPy array of shape ``(len(indices), n_labels)``.
         """
         raise NotImplementedError

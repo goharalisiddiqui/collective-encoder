@@ -85,7 +85,8 @@ def _read_and_label_parallel(args):
 
 
 class XTCReader(TrajectoryReaderBase):
-    """Read GROMACS XTC/TPR trajectories via MDAnalysis.
+    """
+    Read GROMACS XTC/TPR trajectories via MDAnalysis.
 
     Loads a molecular topology (``.tpr``) together with one or more trajectory
     files (``.xtc``) and converts each requested frame into an ASE ``Atoms``
@@ -96,20 +97,24 @@ class XTCReader(TrajectoryReaderBase):
     independent worker processes (each with its own Universe) to parallelise
     I/O and label computation.
 
-    Args:
-        tprfile: Path to the GROMACS ``.tpr`` topology file.
-        xtcfile: Path to a single ``.xtc`` trajectory file.
-        xtcfiles: List of ``.xtc`` files to concatenate.
-        coord_glob: Glob pattern matching one or more ``.xtc`` files.
-        selection: MDAnalysis atom selection string (default: ``'all'``).
-        type_to_elements: Optional mapping of atom types to element numbers
-            when the topology lacks element information.
-        parallel: Whether to use multiprocessing for reading (default: ``True``).
-        **kwargs: Forwarded to :class:`~collective_encoder.datareaders.base.BaseDataReader`.
+    Parameters
+    ----------
+    args : dict, optional
+        Dictionary of configuration options. Valid keys include:
+        - ``topology_file`` (str): Path to the topology file (e.g., ``.tpr``).
+        - ``xtcfile`` (str, optional): Path to a single ``.xtc`` trajectory file.
+        - ``xtcfiles`` (list of str, optional): List of ``.xtc`` files to concatenate.
+        - ``coord_glob`` (str, optional): Glob pattern matching one or more ``.xtc`` files.
+        - ``selection`` (str, optional): MDAnalysis atom selection string (default: ``'all'``).
+        - ``type_to_elements`` (dict, optional): Mapping of atom types to element numbers
+          when the topology lacks element information.
+        - ``parallel`` (bool, optional): Whether to use multiprocessing for reading (default: ``True``).
+    kwargs : dict
+        Additional arguments forwarded to :class:`~collective_encoder.datareaders.base.BaseDataReader`.
 
-    Note:
-        Exactly one of ``xtcfile``, ``xtcfiles``, or ``coord_glob`` must be
-        provided.
+    Note
+    ----
+    Exactly one of ``xtcfile``, ``xtcfiles``, or ``coord_glob`` must be provided.
     """
     _IDENTIFIER = "XTC"
     _REQUIRED_ARGS = TrajectoryReaderBase._REQUIRED_ARGS + [
@@ -165,14 +170,41 @@ class XTCReader(TrajectoryReaderBase):
         self.extract_topology_info()
 
     def get_total_frames(self) -> int:
-        """Get the number of frames in the trajectory."""
+        """
+        Get the number of frames in the trajectory.
+
+        Returns
+        -------
+        int
+            Number of frames.
+        """
         return len(self.u.trajectory)
     
     def read_trajectory(self, 
                         indices: List[List[int]],
                         labeler_type : str = 'Dummy',
                         labeler_args : Dict[str, Union[str, float, List[int]]] = {},
-                        ) -> Tuple[Tuple[List[ase.Atoms]], Tuple[List[List[float]]]]:
+                        ) -> Tuple[Tuple[List[ase.Atoms]], Tuple[List[List[float]]], Tuple[List[int]]]:
+        """
+        Read the requested frames and compute labels.
+
+        Parameters
+        ----------
+        indices : list of list of int
+            List of index sequences to read (e.g. for train, val, test splits).
+        labeler_type : str, optional
+            Type of labeler to use, by default 'Dummy'.
+        labeler_args : dict, optional
+            Arguments for the labeler.
+
+        Returns
+        -------
+        tuple
+            A tuple containing:
+            - Tuple of lists of `ase.Atoms` (one list per split).
+            - Tuple of lists of labels (one list per split).
+            - Tuple of lists of failed frame indices (one list per split).
+        """
     
         labeler_cls = get_labeler(labeler_type)
         labeler = labeler_cls(
@@ -240,14 +272,38 @@ class XTCReader(TrajectoryReaderBase):
         return trajs, labels, all_failed
 
     def _prepare_seq(self, seq):
-        """Transform a seq of indices before passing to the parallel worker.
+        """
+        Transform a seq of indices before passing to the parallel worker.
         Override in subclasses to expand or remap indices (e.g. chunk expansion).
+
+        Parameters
+        ----------
+        seq : list of int
+            Original indices.
+
+        Returns
+        -------
+        list of int
+            Transformed indices.
         """
         return seq
 
     def _postprocess_seq(self, mol_traj, labels):
-        """Post-process a single seq's (mol_traj, labels) after parallel reading.
+        """
+        Post-process a single seq's (mol_traj, labels) after parallel reading.
         Override in subclasses to apply transformations such as coarse-graining.
+
+        Parameters
+        ----------
+        mol_traj : list of ase.Atoms
+            The read trajectory frames.
+        labels : list of list of float
+            The computed labels.
+
+        Returns
+        -------
+        tuple
+            Processed `(mol_traj, labels)`.
         """
         return mol_traj, labels
 

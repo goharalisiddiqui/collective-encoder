@@ -321,19 +321,48 @@ class CoordinatesDataModule(BaseDataModule):
 
     # Coordinate-specific methods
     def get_atns(self):
-        """Get atomic numbers."""
+        """
+        Get atomic numbers.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of atomic numbers for the structure.
+        """
         return self.atomic_numbers
 
     def get_bond_indices(self):
-        """Get bond indices."""
+        """
+        Get bond indices.
+
+        Returns
+        -------
+        list of tuple
+            List of tuples representing bond pairs.
+        """
         return self.bonds
 
     def get_element_symbols(self):
-        """Get element symbols."""
+        """
+        Get element symbols.
+
+        Returns
+        -------
+        list of str
+            List of chemical element symbols for the structure.
+        """
         return self.element_symbols
 
     def get_fake_systems(self):
-        """Get fake systems for testing purposes."""
+        """
+        Get fake metatomic systems for testing purposes.
+
+        Returns
+        -------
+        list
+            A list of `metatomic.torch.System` objects initialized
+            with the first two frames of the loaded trajectory.
+        """
         at_types = self.atomic_numbers
         mol_traj = self.datareader.mol_traj
         from metatomic.torch import System

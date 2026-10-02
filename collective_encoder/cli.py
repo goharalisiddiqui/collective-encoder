@@ -6,6 +6,14 @@ import sys
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
+    """
+    Add common arguments (like --config and --debug) to an argparse parser.
+
+    Parameters
+    ----------
+    parser : argparse.ArgumentParser
+        The parser to modify.
+    """
     parser.add_argument('--config', '-c', required=True, type=str,
                         help='Path to configuration YAML file')
     parser.add_argument('--debug', action='store_true',
@@ -13,6 +21,14 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _run_train(args: argparse.Namespace) -> None:
+    """
+    Execute the training command.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
     from collective_encoder.trainer import main as engine_main
     original_argv = sys.argv.copy()
     try:
@@ -25,6 +41,14 @@ def _run_train(args: argparse.Namespace) -> None:
 
 
 def _run_prepare_dmod(args: argparse.Namespace) -> None:
+    """
+    Execute the prepare datamodule command.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
     from collective_encoder.prepare_dmod import main as prepare_dmod_main
     original_argv = sys.argv.copy()
     try:
@@ -36,6 +60,14 @@ def _run_prepare_dmod(args: argparse.Namespace) -> None:
         sys.argv = original_argv
 
 def _run_test(args: argparse.Namespace) -> None:
+    """
+    Execute the testing command.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
     from collective_encoder.tester import main as tester_main
     original_argv = sys.argv.copy()
     try:
@@ -48,6 +80,14 @@ def _run_test(args: argparse.Namespace) -> None:
 
 
 def _run_optuna(args: argparse.Namespace) -> None:
+    """
+    Execute the optuna hyperparameter optimization command.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
     from collective_encoder.hyperparameter_optimization.runner import main as optuna_main
     original_argv = sys.argv.copy()
     try:
@@ -75,7 +115,9 @@ def _run_optuna(args: argparse.Namespace) -> None:
 
 
 def main_train() -> None:
-    """Entry point for the collective-encoder-train command."""
+    """
+    Entry point for the collective-encoder-train command.
+    """
     parser = argparse.ArgumentParser(
         description="Train a collective encoder model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -85,7 +127,9 @@ def main_train() -> None:
 
 
 def main_prepare_dmod() -> None:
-    """Entry point for the collective-encoder-prepare_dmod command."""
+    """
+    Entry point for the collective-encoder-prepare_dmod command.
+    """
     parser = argparse.ArgumentParser(
         description="Prepare data module for collective encoder",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -94,7 +138,9 @@ def main_prepare_dmod() -> None:
     _run_prepare_dmod(parser.parse_args())
 
 def main_test() -> None:
-    """Entry point for the collective-encoder-test command."""
+    """
+    Entry point for the collective-encoder-test command.
+    """
     parser = argparse.ArgumentParser(
         description="Test a collective encoder model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -104,13 +150,17 @@ def main_test() -> None:
 
 
 def main_optuna() -> None:
-    """Entry point for the collective-encoder-optuna command."""
+    """
+    Entry point for the collective-encoder-optuna command.
+    """
     from collective_encoder.hyperparameter_optimization.runner import main as optuna_main
     optuna_main()
 
 
 def main() -> None:
-    """Main entry point that dispatches to subcommands."""
+    """
+    Main entry point that dispatches to subcommands.
+    """
     parser = argparse.ArgumentParser(
         description="Collective Encoder: ML framework for molecular dynamics",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter

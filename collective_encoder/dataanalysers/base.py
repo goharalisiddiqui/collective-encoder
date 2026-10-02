@@ -4,25 +4,24 @@ import os
 from collective_encoder.common.module import CEModule
 
 class BaseDataAnalyser(CEModule, ABC):
-    '''
+    """
     Base class for data analysers.
     Used to perform data analysis on datasets and write plots or other analysis results to disk.
     
     Subclasses should implement the `write_data` method to handle specific data analysis tasks.
     
-    Args:
-        output_dir: Directory where output plots will be written.
-        args: Optional configuration dict.  Recognised keys:
-
-            - ``input_chunk_length`` (int): Length of the input window in
-              sequence models; used to colour-code time-series by split.
-            - ``output_chunk_length`` (int): Length of the prediction window.
-            - ``n_seq_per_sample`` (int): Number of output sequences per
-              input sample (default: ``1``).
-        **kwargs: Forwarded to :class:`BaseDataAnalyser` and
-            :class:`~collective_encoder.common.module.CEModule`.
-            
-    '''
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary containing options like:
+        - ``input_chunk_length`` (int): Length of the input window in
+          sequence models; used to colour-code time-series by split.
+        - ``output_chunk_length`` (int): Length of the prediction window.
+        - ``n_seq_per_sample`` (int): Number of output sequences per
+          input sample (default: ``1``).
+    kwargs : dict
+        Forwarded to :class:`~collective_encoder.common.module.CEModule`.
+    """
     _IDENTIFIER = "BASE_DATA_ANALYSER"
     _REQUIRED_ARGS = [
       'datamodule_args',
@@ -47,9 +46,22 @@ class BaseDataAnalyser(CEModule, ABC):
         self.ds_type = ds_type
 
     @abstractmethod
-    def write_data(self, data, label = ""):
-        '''
+    def write_data(self, data, label=""):
+        """
         Abstract method to write data analysis results.
-        '''
+
+        Parameters
+        ----------
+        data : list or array-like
+            The data collection to analyse.
+        label : str, optional
+            Optional label to distinguish the analysis subset (e.g. 'train', 'val').
+            Default is empty string.
+
+        Raises
+        ------
+        NotImplementedError
+            If not implemented by a subclass.
+        """
         raise NotImplementedError("Subclasses must implement write_data method")
         

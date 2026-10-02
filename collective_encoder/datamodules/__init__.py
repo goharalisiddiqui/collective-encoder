@@ -1,4 +1,10 @@
-"""Data loaders for various molecular dynamics data formats."""
+"""
+Data modules for various molecular dynamics data formats.
+
+This package provides PyTorch Lightning DataModules that manage data loading,
+splitting, and batching. They wrap underlying datasets and datareaders
+and prepare DataLoaders for the PyTorch Lightning Trainer.
+"""
 
 from collective_encoder.datamodules.coordinates import CoordinatesDataModule
 from collective_encoder.datamodules.resolver import get_datamodule

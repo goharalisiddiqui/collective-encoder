@@ -364,7 +364,23 @@ def export_study_visualizations(
     output_dir: str,
     metrics: Optional[Union[str, List[str]]] = None
 ) -> List[str]:
-    """Generates static publication-quality PNG plots, CSV tables, and Markdown reports for explicitly given metrics."""
+    """
+    Generates static publication-quality PNG plots, CSV tables, and Markdown reports.
+
+    Parameters
+    ----------
+    study : optuna.Study
+        The completed Optuna study.
+    output_dir : str
+        Directory to save generated files.
+    metrics : str or list of str, optional
+        Metrics to plot.
+
+    Returns
+    -------
+    list of str
+        Paths to the generated files.
+    """
     os.makedirs(output_dir, exist_ok=True)
     generated_files = []
 
@@ -434,7 +450,18 @@ def export_study_visualizations(
 
 
 def launch_dashboard(storage: str, study_name: Optional[str] = None, port: int = 8080) -> None:
-    """Launches the interactive optuna-dashboard web server (optional)."""
+    """
+    Launches the interactive optuna-dashboard web server (optional).
+
+    Parameters
+    ----------
+    storage : str
+        Database storage URI.
+    study_name : str, optional
+        Name of the study.
+    port : int, optional
+        Port to run the dashboard on (default: 8080).
+    """
     import subprocess
     cmd = ["optuna-dashboard", storage, "--port", str(port)]
     _log.info(f"Starting optuna-dashboard at http://localhost:{port} with storage {storage}")

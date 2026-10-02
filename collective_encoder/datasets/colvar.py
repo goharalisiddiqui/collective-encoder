@@ -8,7 +8,8 @@ from .base import BaseDataset
 
 
 class ColvarDataset(Dataset, BaseDataset):
-    """Dataset for collective variable data from PLUMED output files.
+    """
+    Dataset for collective variable data from PLUMED output files.
 
     Each data point is a 1-D feature vector produced by
     :class:`~collective_encoder.datareaders.plumed_output.PlumedOutputReader`.
@@ -17,6 +18,17 @@ class ColvarDataset(Dataset, BaseDataset):
     objects — the two formats share the same constructor keyword so that
     :class:`~collective_encoder.datamodules.coordinates.CoordinatesDataModule`'s
     ``_create_datasets()`` method works unchanged.
+
+    Parameters
+    ----------
+    structures : numpy.ndarray or list of numpy.ndarray
+        Array of features, shape (n_frames, n_features).
+    labels : numpy.ndarray or list of numpy.ndarray
+        Array of corresponding labels.
+    dataset_args : dict, optional
+        Configuration dictionary (empty for this dataset type).
+    kwargs : dict
+        Additional keyword arguments (e.g. ``tag``).
     """
 
     _IDENTIFIER = "COLVAR"
@@ -45,13 +57,50 @@ class ColvarDataset(Dataset, BaseDataset):
         self.labels = [torch.tensor(l, dtype=torch.float32).flatten() for l in labels]
 
     def __len__(self) -> int:
+        """
+        Return the number of samples in the dataset.
+
+        Returns
+        -------
+        int
+            Total number of samples.
+        """
         return len(self.data)
 
     def __getitem__(self, index: int):
+        """
+        Get the sample at the specified index.
+
+        Parameters
+        ----------
+        index : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        tuple
+            Tuple of `(features, labels)` as PyTorch tensors.
+        """
         return self.data[index], self.labels[index]
 
     def get_norm_data(self) -> np.ndarray:
+        """
+        Return array of data used to fit normalizers (scalers).
+
+        Returns
+        -------
+        numpy.ndarray
+            Data to be normalized.
+        """
         return np.array([d.numpy() for d in self.data])
 
     def get_datapoint_shape(self) -> tuple:
+        """
+        Return the shape of a single data point's features.
+
+        Returns
+        -------
+        tuple
+            The shape of the extracted features.
+        """
         return tuple(self.data[0].shape)

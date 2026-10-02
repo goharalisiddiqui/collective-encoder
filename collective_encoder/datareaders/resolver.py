@@ -12,10 +12,23 @@ _REGISTRY: dict = {
 
 
 def get_datareader(datareader_type: str):
-    """Return the datareader class for *datareader_type*.
+    """
+    Return the datareader class mapped to a given string identifier.
 
-    Raises:
-        ValueError: If *datareader_type* is not registered.
+    Parameters
+    ----------
+    datareader_type : str
+        The registered string identifier for the target datareader.
+
+    Returns
+    -------
+    type
+        The corresponding datareader class.
+
+    Raises
+    ------
+    ValueError
+        If `datareader_type` is not found in the registry.
     """
     if datareader_type not in _REGISTRY:
         raise ValueError(

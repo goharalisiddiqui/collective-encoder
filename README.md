@@ -69,6 +69,8 @@ collective-encoder/
 ```
 Each submodule is designed for modularity and extensibility. For example, to add a new dataset type, create a new class in `datasets/` that inherits from the base class and register it in the resolver.
 
+*Note: For more detailed documentation on the design, interfaces, and options for each subpackage, please refer to the `README.md` files located directly within their respective directories (e.g., `collective_encoder/datareaders/README.md`).*
+
 ## Development & Contributing
 
 - The project is in early stages for any meaningful contribution, but feel free to fork and experiment. Contributions will be considered as the project matures.

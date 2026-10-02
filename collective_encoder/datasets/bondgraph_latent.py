@@ -10,6 +10,27 @@ from embeddings.resolver import get_encdec
 from .bondgraph import BondGraphDataset
 
 class BondGraphLatentDataset(BondGraphDataset):
+    """
+    BondGraphDataset variant that computes and stores latent graph embeddings.
+
+    Loads a pre-trained encoder model, evaluates all structures to get their
+    latent representations, and serves those representations directly, replacing
+    the raw graph data.
+
+    Parameters
+    ----------
+    structures : list of ase.Atoms
+        A list of molecular structures.
+    labels : list of list of float
+        A list of target labels corresponding to each structure.
+    dataset_args : dict, optional
+        Configuration dictionary. Must include:
+        - ``encoder_name`` (str): Name of the encoder model to instantiate.
+        - ``encoder_ckpt`` (str): Path to the pre-trained checkpoint.
+        In addition to all `BondGraphDataset` required args.
+    kwargs : dict
+        Additional keyword arguments (e.g. ``tag``).
+    """
     _IDENTIFIER = "GRAPH_LATENT"
     _REQUIRED_ARGS = BondGraphDataset._REQUIRED_ARGS + ["encoder_name", "encoder_ckpt"]
     
@@ -49,10 +70,34 @@ class BondGraphLatentDataset(BondGraphDataset):
         return self.encoded[index], self.labels[index]
     
     def get_data(self) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Get all encoded latent vectors and labels as NumPy arrays.
+
+        Returns
+        -------
+        tuple
+            Tuple of (latents_array, labels_array).
+        """
         return np.array([d.numpy() for d in self.encoded]), np.array([l.numpy() for l in self.labels])
     
     def get_norm_data(self) -> np.ndarray:
+        """
+        Return array of data to be normalized.
+
+        Returns
+        -------
+        numpy.ndarray
+            Stacked latent vectors.
+        """
         return np.vstack(self.encoded)
     
     def get_datapoint_shape(self) -> tuple:
+        """
+        Return the shape of a single data point's features.
+
+        Returns
+        -------
+        tuple
+            The shape of the extracted latent features.
+        """
         return tuple(self.encoded[0].shape)

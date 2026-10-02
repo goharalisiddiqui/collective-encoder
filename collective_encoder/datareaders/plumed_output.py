@@ -18,15 +18,18 @@ class PlumedOutputReader(BaseDataReader):
     for analyzing collective variables and order parameters computed
     during molecular dynamics simulations.
 
-    Args:
-        plumed_file (str): Path to the PLUMED output file
-        columns (List[str], optional): Specific columns to read from the file.
-            If None, reads all available columns.
-        ignore_list (List[str], optional): List of columns to ignore when reading.
-            Default includes '#!' and 'FIELDS' tokens.
-        column_match (str, optional): String pattern to match column names.
-            Only columns containing this pattern will be read.
-        **kwargs: Additional arguments passed to the parent class.
+    Parameters
+    ----------
+    plumed_file : str
+        Path to the PLUMED output file.
+    columns : list of str, optional
+        Specific columns to read from the file. If None, reads all available columns.
+    ignore_list : list of str, optional
+        List of columns to ignore when reading. Default includes '#!' and 'FIELDS' tokens.
+    column_match : str, optional
+        String pattern to match column names. Only columns containing this pattern will be read.
+    kwargs : dict
+        Additional arguments passed to the parent class.
     """
     _IDENTIFIER = "PLUMED_OUTPUT"
 
@@ -71,7 +74,10 @@ class PlumedOutputReader(BaseDataReader):
         self._setup_data_properties()
 
     def _setup_data_properties(self):
-        """Set up properties from the loaded data."""
+        """
+        Set up properties (like label list, number of features, and frame count)
+        from the loaded dataframe.
+        """
         # Set up label information based on columns
         self.label_list = list(self.data.columns)
         self.n_features = len(self.label_list)
@@ -81,8 +87,10 @@ class PlumedOutputReader(BaseDataReader):
         """
         Get the total number of frames (data points) in the PLUMED output.
 
-        Returns:
-            int: Number of frames/data points
+        Returns
+        -------
+        int
+            Number of frames (rows) in the dataset.
         """
         return self.n_frames
 
@@ -92,18 +100,24 @@ class PlumedOutputReader(BaseDataReader):
                        labeler_args : Dict[str, Union[str, float, List[int]]] = {},
                     ) -> Tuple[List[np.ndarray], List[np.ndarray], List]:
         """
-        Read the PLUMED collective variable data.
+        Read the PLUMED collective variable data for requested index splits.
 
-        Args:
-            indices (List[List[int]]): List of index sequences to read.
-            labeler_type (str, optional): Type of labeler to use.
-            labeler_args (Dict[str, Union[str, float, List[int]]], optional): Arguments for the labeler.
+        Parameters
+        ----------
+        indices : list of list of int
+            List of index sequences to read (e.g. for train, val, test splits).
+        labeler_type : str, optional
+            Type of labeler to use, by default 'Dummy'.
+        labeler_args : dict, optional
+            Arguments for the labeler.
 
-        Returns:
-            Tuple containing:
-                - List of numpy arrays with collective variable data
-                - List of numpy arrays with corresponding labels computed by the labeler
-                - Empty list (no partial failures possible for PLUMED reads)
+        Returns
+        -------
+        tuple
+            A tuple containing:
+            - List of numpy arrays with collective variable data.
+            - List of numpy arrays with corresponding labels computed by the labeler.
+            - Empty list (indicating no partial frame failures in this context).
         """
         self.log_msg("Reading PLUMED collective variable data...")
         

@@ -11,10 +11,25 @@ _log = logging.getLogger(__name__)
 
 
 class TICAModel(CEModelBase):
-    """Time-lagged Independent Component Analysis (TICA) Model inheriting from :class:`CEModelBase`.
+    """
+    Time-lagged Independent Component Analysis (TICA) Model inheriting from :class:`CEModelBase`.
 
     Performs linear dimensionality reduction maximizing autocorrelation at a specified lag time tau.
     Fitted analytically on sequential training data without requiring PyTorch Lightning training loops.
+
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary. Required keys:
+        - ``latent_dim`` (int): Number of independent components to keep.
+        - ``datapoint_shape`` (tuple): Shape of the input data.
+        - ``dataset_type`` (str): Identifier for the dataset type.
+        Optional keys:
+        - ``lag`` (int, default 1): Lag time (in number of frames) for the time-lagged covariance matrix.
+        - ``epsilon`` (float, default 1e-6): Small value added to the diagonal of the covariance matrix for numerical stability.
+        - ``center`` (bool, default True): Whether to mean-center the data before fitting.
+    kwargs : dict
+        Additional arguments forwarded to `CEModelBase`.
     """
 
     _IDENTIFIER = "TICA"
@@ -29,6 +44,21 @@ class TICAModel(CEModelBase):
 
     @staticmethod
     def extract_args_from_datamodule(datamodule, args: dict) -> dict:
+        """
+        Extract dynamically needed configuration arguments from the datamodule.
+
+        Parameters
+        ----------
+        datamodule : pytorch_lightning.LightningDataModule
+            The datamodule containing dataset shape info.
+        args : dict
+            The base configuration dict to update.
+
+        Returns
+        -------
+        dict
+            The updated configuration dict.
+        """
         args["datapoint_shape"] = datamodule.get_datapoint_shape()
         args["dataset_type"] = datamodule.dataset_type
         return args
@@ -56,9 +86,30 @@ class TICAModel(CEModelBase):
         )
 
     def get_norm_len(self) -> int:
+        """
+        Get the required size for normalization buffers.
+
+        Returns
+        -------
+        int
+            Length of the data dimension to be normalized.
+        """
         return self.datapoint_shape[0]
 
     def _normalize(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Normalize input tensor using stored Mean and Range buffers.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Normalized tensor.
+        """
         if self.Mean.numel() != np.prod(x.shape[1:]):
             self.raise_error(
                 f"Mean and Range buffers must have the same number of elements as input. "
@@ -69,6 +120,19 @@ class TICAModel(CEModelBase):
         return (x - mean_expanded) / range_expanded
 
     def _denormalize(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Denormalize input tensor using stored Mean and Range buffers.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Normalized tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Denormalized tensor.
+        """
         if self.Mean.numel() != np.prod(x.shape[1:]):
             self.raise_error(
                 f"Mean and Range buffers must have the same number of elements as input. "
@@ -79,7 +143,21 @@ class TICAModel(CEModelBase):
         return x * range_expanded + mean_expanded
 
     def fit(self, datamodule=None, X: Optional[torch.Tensor] = None) -> "TICAModel":
-        """Fits TICA analytically on training trajectory data."""
+        """
+        Fits TICA analytically on training trajectory data.
+
+        Parameters
+        ----------
+        datamodule : LightningDataModule, optional
+            Datamodule providing train_dataloader().
+        X : torch.Tensor, optional
+            Direct input tensor (if datamodule is not used).
+
+        Returns
+        -------
+        TICAModel
+            The fitted model.
+        """
         if X is None:
             if datamodule is None:
                 raise ValueError("Either datamodule or X must be provided to fit TICAModel.")
@@ -115,6 +193,19 @@ class TICAModel(CEModelBase):
         return x_rec, {}
 
     def forward(self, data: torch.Tensor) -> Tuple[Optional[torch.Tensor], torch.Tensor, dict]:
+        """
+        Compute and return the forward pass output for a given batch.
+
+        Parameters
+        ----------
+        data : torch.Tensor
+            Batch of input data.
+
+        Returns
+        -------
+        tuple
+            (output_tensor, latent_tensor, metadata_dict).
+        """
         data_norm = self.normalize(data)
         z, meta_enc = self.encoder(data_norm)
         meta = {

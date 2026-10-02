@@ -23,7 +23,24 @@ _MODEL_REGISTRY = {
 
 
 def get_model(model_name: str) -> Type[CEModelBase]:
-    """Retrieve model class by name from the registry."""
+    """
+    Retrieve model class by name from the registry.
+
+    Parameters
+    ----------
+    model_name : str
+        The registered string identifier for the target model.
+
+    Returns
+    -------
+    type
+        The corresponding model class.
+
+    Raises
+    ------
+    ValueError
+        If `model_name` is not found in the registry.
+    """
     if model_name not in _MODEL_REGISTRY:
         available = ", ".join(sorted(_MODEL_REGISTRY.keys()))
         raise ValueError(

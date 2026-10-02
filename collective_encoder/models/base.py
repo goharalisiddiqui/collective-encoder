@@ -147,31 +147,108 @@ class CEModelBase(nn.Module, CEModule, ABC):
     # ------------------------------------------------------------------
 
     def _encode(self, data):
+        """
+        Normalize input and run the encoder network.
+
+        Parameters
+        ----------
+        data : Any
+            Raw input data from the dataset.
+
+        Returns
+        -------
+        tuple
+            (latent_tensor, metadata_dict).
+        """
         data = self.normalize(data)
         z, meta = self.encoder(data)
         return z, meta
 
     def _decode(self, z: torch.Tensor):
+        """
+        Run the decoder network and denormalize the output.
+
+        Parameters
+        ----------
+        z : torch.Tensor
+            Latent representation tensor.
+
+        Returns
+        -------
+        tuple
+            (output_tensor, metadata_dict).
+        """
         out, meta = self.decoder(z)
         if out is not None:
             out = self.denormalize(out)
         return out, meta
 
     def encoder(self, x: torch.Tensor) -> Tuple[torch.Tensor, dict]:
+        """
+        Directly invoke the configured encoder network.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Normalized input tensor.
+
+        Returns
+        -------
+        tuple
+            (latent_tensor, metadata_dict).
+        """
         z = self.encoder_net(x)
         return z, {}
 
     def decoder(self, z: torch.Tensor) -> Tuple[Optional[torch.Tensor], dict]:
+        """
+        Directly invoke the configured decoder network (if one exists).
+
+        Parameters
+        ----------
+        z : torch.Tensor
+            Latent tensor.
+
+        Returns
+        -------
+        tuple
+            (output_tensor, metadata_dict).
+        """
         if hasattr(self, "decoder_net") and self.decoder_net is not None:
             x_out = self.decoder_net(z)
             return x_out, {}
         return None, {}
 
     def latent_to_decoder_input(self, latent) -> Tuple:
+        """
+        Optional step between encoding and decoding (e.g., VAE reparameterization trick).
+
+        Parameters
+        ----------
+        latent : torch.Tensor
+            Initial latent output from the encoder.
+
+        Returns
+        -------
+        tuple
+            (processed_latent_tensor, metadata_dict).
+        """
         return latent, {}
 
     def forward(self, data) -> Tuple[Optional[torch.Tensor], torch.Tensor, dict]:
-        """Compute and return the forward pass output for a given batch."""
+        """
+        Compute and return the forward pass output for a given batch.
+
+        Parameters
+        ----------
+        data : Any
+            Batch of input data.
+
+        Returns
+        -------
+        tuple
+            (output_tensor, latent_tensor, metadata_dict).
+        """
         meta = {}
 
         latent, meta_latent = self._encode(data)
@@ -185,9 +262,35 @@ class CEModelBase(nn.Module, CEModule, ABC):
         return output, latent, meta
 
     def get_latent(self, data: torch.Tensor) -> torch.Tensor:
+        """
+        Helper method to get just the latent representation for an input.
+
+        Parameters
+        ----------
+        data : torch.Tensor
+            Raw input data.
+
+        Returns
+        -------
+        torch.Tensor
+            Latent representation tensor.
+        """
         return self.encoder(self.normalize(data))[0]
 
     def get_decoded(self, latent: torch.Tensor) -> torch.Tensor:
+        """
+        Helper method to decode a latent tensor back into raw data space.
+
+        Parameters
+        ----------
+        latent : torch.Tensor
+            Latent representation tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Denormalized reconstructed output.
+        """
         out = self.decoder(latent)[0]
         return self.denormalize(out) if out is not None else None
 

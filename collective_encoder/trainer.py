@@ -22,7 +22,26 @@ _SETTINGS = {
 
 
 def _setup_logger(config: dict, run_dir: str):
-    """Set up the appropriate PyTorch Lightning logger based on config."""
+    """
+    Set up the appropriate PyTorch Lightning logger based on config.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary containing logger settings.
+    run_dir : str
+        The directory where logs should be saved.
+
+    Returns
+    -------
+    pytorch_lightning.loggers.Logger
+        The instantiated PyTorch Lightning logger (WandbLogger or CSVPlotLogger).
+
+    Raises
+    ------
+    ValueError
+        If Weights & Biases is requested but missing 'project' or 'entity' config.
+    """
     logger_name = config.get('logger_name', None)
     if logger_name is None:
         if config.get('wandb', False):
@@ -66,13 +85,20 @@ def run_training_experiment(
     """
     Run a training experiment using prepared config and metargs dictionaries.
     
-    Args:
-        config: Training configuration dictionary.
-        metargs: Metadata dictionary containing run_dir, verbose, etc.
-        trial: Optional Optuna trial object for pruning callback.
-        pruning_monitor: Metric name to monitor for Optuna pruning.
+    Parameters
+    ----------
+    config : dict
+        Training configuration dictionary.
+    metargs : dict
+        Metadata dictionary containing run_dir, verbose, etc.
+    trial : optuna.Trial, optional
+        Optional Optuna trial object for pruning callback.
+    pruning_monitor : str, optional
+        Metric name to monitor for Optuna pruning (default 'val_loss').
 
-    Returns:
+    Returns
+    -------
+    dict
         Dictionary containing experiment results and metrics (val_loss, best_checkpoint_path, run_dir, test_results).
     """
     dm = crb.load_datamodule(config, metargs)
@@ -301,13 +327,17 @@ def run_training_experiment(
 
 
 def train():
-    """Main CLI entry point for collective-encoder-train."""
+    """
+    Main CLI entry point for collective-encoder-train.
+    """
     config, metargs = crb.prepare(_SETTINGS)
     run_training_experiment(config, metargs)
 
 
 def main():
-    """Entry point for trainer module."""
+    """
+    Entry point for trainer module.
+    """
     train()
 
 

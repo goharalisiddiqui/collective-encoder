@@ -7,13 +7,27 @@ import optuna
 
 
 class SearchSpace:
-    """Parses a declarative dictionary or YAML configuration into Optuna trial suggestions."""
+    """
+    Parses a declarative dictionary or YAML configuration into Optuna trial suggestions.
+
+    Parameters
+    ----------
+    space_config : dict
+        A dictionary defining hyperparameter ranges or choices.
+    """
 
     def __init__(self, space_config: Dict[str, Any]):
         self.space_config = space_config or {}
 
     def is_grid_compatible(self) -> bool:
-        """Checks if all parameters in the search space can form a discrete grid."""
+        """
+        Checks if all parameters in the search space can form a discrete grid.
+
+        Returns
+        -------
+        bool
+            True if all search space dimensions are discrete/categorical.
+        """
         if not self.space_config:
             return False
         for param_name, spec in self.space_config.items():
@@ -30,7 +44,19 @@ class SearchSpace:
         return True
 
     def get_grid_search_space(self) -> Dict[str, List[Any]]:
-        """Extracts discrete choice lists for Optuna GridSampler."""
+        """
+        Extracts discrete choice lists for Optuna GridSampler.
+
+        Returns
+        -------
+        dict
+            Dictionary mapping parameter names to lists of discrete choices.
+
+        Raises
+        ------
+        ValueError
+            If a parameter specification cannot be converted into a discrete list.
+        """
         grid = {}
         for param_name, spec in self.space_config.items():
             if isinstance(spec, list):
@@ -53,7 +79,14 @@ class SearchSpace:
         return grid
 
     def total_combinations(self) -> int:
-        """Computes the total number of Cartesian grid combinations."""
+        """
+        Computes the total number of Cartesian grid combinations.
+
+        Returns
+        -------
+        int
+            Total number of possible hyperparameter combinations, or 0 if not grid-compatible.
+        """
         if not self.is_grid_compatible():
             return 0
         grid = self.get_grid_search_space()
@@ -65,7 +98,24 @@ class SearchSpace:
         return total
 
     def sample(self, trial: optuna.Trial) -> Dict[str, Any]:
-        """Samples a full set of hyperparameters for the given Optuna trial."""
+        """
+        Samples a full set of hyperparameters for the given Optuna trial.
+
+        Parameters
+        ----------
+        trial : optuna.Trial
+            The Optuna trial to suggest values for.
+
+        Returns
+        -------
+        dict
+            Dictionary of suggested hyperparameter values.
+
+        Raises
+        ------
+        ValueError
+            If an unsupported parameter type is encountered in the configuration.
+        """
         samples = {}
         for param_name, spec in self.space_config.items():
             if isinstance(spec, list):

@@ -5,6 +5,22 @@ from metatensor.torch import Labels, TensorBlock, TensorMap
 from metatomic.torch import ModelOutput, System, NeighborListOptions
 
 class MetatomicCV(torch.nn.Module):
+    """
+    Wrapper class to export Collective Encoder models to the Metatomic ecosystem.
+
+    This module encapsulates both a data processor (e.g., a Dataset that implements
+    `get_metatomic_dataprocessor()`) and the trained PyTorch Lightning model.
+    It intercepts Metatomic `System` objects, processes them into the tensor
+    format the model expects, runs the model, and formats the output back into
+    Metatensor formats.
+
+    Parameters
+    ----------
+    dataprocessor : torch.nn.Module
+        The data preprocessing module compatible with Metatomic systems.
+    model : torch.nn.Module
+        The trained collective variable model (e.g., the encoder).
+    """
     def __init__(self, 
                  dataprocessor: torch.nn.Module,
                  model: torch.nn.Module):
@@ -31,6 +47,31 @@ class MetatomicCV(torch.nn.Module):
         outputs: Dict[str, ModelOutput],
         selected_atoms: Optional[Labels] = None,
     ) -> Dict[str, TensorMap]:
+        """
+        Forward pass converting Metatomic systems to model CV predictions.
+
+        Parameters
+        ----------
+        systems : list of metatomic.torch.System
+            List of structures to evaluate.
+        outputs : dict of str to metatomic.torch.ModelOutput
+            Requested outputs (should only contain 'features' mapping to 'cv').
+        selected_atoms : metatensor.torch.Labels, optional
+            Specific atoms to evaluate (mostly unused currently).
+
+        Returns
+        -------
+        dict of str to metatensor.torch.TensorMap
+            Dictionary containing the computed collective variables formatted
+            as a TensorMap.
+
+        Raises
+        ------
+        ValueError
+            If outputs requests keys other than 'features'.
+        NotImplementedError
+            If per-atom CVs are requested.
+        """
         if list(outputs.keys()) != ["features"]:
             raise ValueError(
                 "this model can only compute 'cv', but `outputs` contains other "

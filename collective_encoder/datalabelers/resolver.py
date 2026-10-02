@@ -16,6 +16,24 @@ _PACKAGE = "collective_encoder.datalabelers"
 
 
 def get_labeler(labeler_type: str):
+    """
+    Return the labeler class mapped to a given string identifier.
+
+    Parameters
+    ----------
+    labeler_type : str
+        The registered string identifier for the target labeler. If None, defaults to "DUMMY".
+
+    Returns
+    -------
+    type
+        The corresponding labeler class.
+
+    Raises
+    ------
+    ValueError
+        If `labeler_type` is not found in the registry.
+    """
     if labeler_type is None:
         labeler_type = "DUMMY"
     if labeler_type not in _REGISTRY:

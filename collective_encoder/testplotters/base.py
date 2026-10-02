@@ -22,18 +22,17 @@ else:
 
 class BaseTestPlotter(CEModule, ABC):
     """
-    Base class for test plotters. 
-    This class provides a framework for collecting data in batches during testing and generating plots at the end. 
-    It supports logging to various loggers, including WandbLogger if available.
-    
-    During each testing batch, the `add_batch` method is called to collect data, latent representations, predictions, labels, and metadata.
-    The `finish` method is called at the end of testing to generate plots based on the collected data. 
-    Subclasses must implement the `collection_list` and `plot` methods to specify which data to collect and how to plot it, respectively.
-    
-    Plots are saved to a directory named after the plotter class in the run directory.
-    
-    Attributes:
-        logger_type (str): Type of logger to use. Currently supports WandbLogger if available.
+    Abstract base class for all test plotters.
+
+    Test plotters accumulate data (inputs, latents, outputs, labels) during
+    evaluation batches and generate visualizations and metrics at the end.
+
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary for the plotter.
+    kwargs : dict
+        Additional keyword arguments (e.g. for `CEModule`).
     """
 
     _IDENTIFIER = ""
@@ -194,6 +193,18 @@ class BaseTestPlotter(CEModule, ABC):
     ############################################################################
     
     def _check_selections_validity(self, selection, data, dataname):
+        """
+        Validates that the provided selection indexing applies safely to the data.
+
+        Parameters
+        ----------
+        selection : dict or None
+            A dictionary defining how to slice or select elements.
+        data : numpy.ndarray or dict
+            The data to validate the selection against.
+        dataname : str
+            A string identifier (e.g. 'labels', 'latent') for error messages.
+        """
         if selection is not None:
             if type(selection) is not dict:
                 raise ValueError(f"{selection} must be a dictionary.")
@@ -234,6 +245,23 @@ class BaseTestPlotter(CEModule, ABC):
                                              f"(length {data[key].shape[1]}).")
     
     def _parse_selection(self, selection, data, dataname):
+        """
+        Apply index-based selections to filter components of the accumulated data.
+
+        Parameters
+        ----------
+        selection : dict
+            Selection dictionary.
+        data : numpy.ndarray or dict
+            The source data tensor or dict.
+        dataname : str
+            Name of the data component (used in error messages).
+
+        Returns
+        -------
+        dict
+            A dictionary mapping the selected keys to 1D numpy arrays.
+        """
         self._check_selections_validity(selection, data, dataname)
         if selection is None:
             return {}
@@ -265,6 +293,9 @@ class BaseTestPlotter(CEModule, ABC):
     ############################################################################
     
     def create_data_path(self):
+        """
+        Create a subdirectory for raw numpy arrays if it does not exist.
+        """
         if not hasattr(self, "datapath"):
             datapath = os.path.join(self.outpath, "data")
             os.makedirs(datapath, exist_ok=True)
@@ -272,6 +303,16 @@ class BaseTestPlotter(CEModule, ABC):
             self.log_info(f"Created data path at {self.datapath}")
 
     def save_data(self, data, name):
+        """
+        Save a numpy array to the plotter's data subdirectory.
+
+        Parameters
+        ----------
+        data : numpy.ndarray
+            The array to save.
+        name : str
+            The base filename for the saved array.
+        """
         if not isinstance(data, np.ndarray):
             self.raise_error("Data must be a numpy array to be saved.")
         self.create_data_path()
@@ -280,6 +321,18 @@ class BaseTestPlotter(CEModule, ABC):
         self.log_info(f"Saved data '{name}' to {fn}")
 
     def log_image(self, fig, name, subpath=None):
+        """
+        Save a matplotlib figure to disk and log it to an active experiment logger (e.g. wandb).
+
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure
+            The figure to save.
+        name : str
+            Base filename for the image.
+        subpath : str, optional
+            Subdirectory inside the main output path.
+        """
         if subpath is not None:
             fn = os.path.join(self.outpath, subpath, f"{name}.png")
         else:
@@ -291,6 +344,21 @@ class BaseTestPlotter(CEModule, ABC):
         self.log_info(f"Saved plot '{name}' to {fn}")
     
     def plot_2ddihedral(self, x: np.ndarray, y: np.ndarray) -> Tuple[plt.Figure, List[plt.Axes]]:
+        """
+        Generate a 2D scatter plot configured with dihedral axes (-pi to pi).
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            X coordinates (radians).
+        y : numpy.ndarray
+            Y coordinates (radians).
+
+        Returns
+        -------
+        tuple
+            (Figure, List of Axes).
+        """
         fig, axes = self.plot_2dscatter(x, y, labels=None)
         axes[0].set_xlabel(r"$\phi$ (radians)")
         axes[0].set_ylabel(r"$\psi$ (radians)")
@@ -307,6 +375,23 @@ class BaseTestPlotter(CEModule, ABC):
                     matrix: np.ndarray, 
                     label: str, 
                     tag = "Source_Target") -> Tuple[plt.Figure, plt.Axes]:
+        """
+        Generate a 2D heatmap image representing a matrix (e.g. transition or correlation).
+
+        Parameters
+        ----------
+        matrix : numpy.ndarray
+            2D numeric matrix.
+        label : str
+            Colorbar label.
+        tag : str, optional
+            A string formatted as "Y-Axis_X-Axis" to label the axes.
+
+        Returns
+        -------
+        tuple
+            (Figure, Axes).
+        """
         fig, ax = plt.subplots(figsize=(6, 5))
         im = ax.imshow(matrix, vmin=0, vmax=1, cmap='viridis')
         fig.colorbar(im, ax=ax, label=label)
@@ -323,6 +408,29 @@ class BaseTestPlotter(CEModule, ABC):
     def plot_2dscatter(self, x: np.ndarray, y: np.ndarray,
                        xerr: np.ndarray=None, yerr: np.ndarray=None,
                        labels: np.ndarray=None, tag: str="0_1") -> Tuple[plt.Figure, List[plt.Axes]]:
+        """
+        Generate 2D scatter plots of x vs y, optionally colored by various labels.
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            X-axis points.
+        y : numpy.ndarray
+            Y-axis points.
+        xerr : numpy.ndarray, optional
+            Error bars for X.
+        yerr : numpy.ndarray, optional
+            Error bars for Y.
+        labels : dict, optional
+            A dictionary mapping label names to their values (used for point coloring).
+        tag : str, optional
+            Formatted as "X-Axis_Y-Axis".
+
+        Returns
+        -------
+        tuple
+            (Figure, List of Axes).
+        """
         if x.shape != y.shape:
             self.raise_error("x and y must have the same shape")
         if len(x.shape) != 1:
@@ -370,6 +478,27 @@ class BaseTestPlotter(CEModule, ABC):
     def plot_correlation(self, x: np.ndarray, y: np.ndarray,
                          x_labels: list = None, y_labels: list = None,
                          correlation_type: str = 'spearman') -> Tuple[plt.Figure, plt.Axes, np.ndarray]:
+        """
+        Plot and compute the cross-correlation matrix between datasets X and Y.
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            First dataset, shape (n_samples, n_features_x).
+        y : numpy.ndarray
+            Second dataset, shape (n_samples, n_features_y).
+        x_labels : list of str, optional
+            Names for the features in X.
+        y_labels : list of str, optional
+            Names for the features in Y.
+        correlation_type : str, optional
+            'spearman' or 'pearson'.
+
+        Returns
+        -------
+        tuple
+            (Figure, Axes, Computed Correlation Matrix).
+        """
         if x.ndim != 2 or y.ndim != 2:
             self.raise_error("x and y must be 2D arrays")
         if x.shape[0] != y.shape[0]:
@@ -415,6 +544,21 @@ class BaseTestPlotter(CEModule, ABC):
         return fig, ax, corr_matrix
 
     def plot_2dline(self, x, labels = None):
+        """
+        Generate 1D/2D line plots for evaluating latent features.
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            1D array of values (e.g. frame indices or a selected variable).
+        labels : dict, optional
+            A dictionary mapping label names to arrays to plot against x.
+
+        Returns
+        -------
+        tuple
+            (Figure, List of Axes).
+        """
         if len(x.shape) != 1:
             self.raise_error("x must be a 1D array")
         if labels is None or len(labels) == 0:

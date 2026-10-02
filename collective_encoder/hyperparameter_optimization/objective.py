@@ -34,7 +34,8 @@ def _make_paths_absolute(config: Dict[str, Any]) -> None:
 
 
 def extract_metric(metric_name: str, results: Dict[str, Any], test_results: Dict[str, Any]) -> float:
-    """Extracts a metric value from results/test_results.
+    """
+    Extracts a metric value from results/test_results.
 
     Supports:
       - Direct scalar metric names (e.g. 'val_loss', 'test_mae', 'beta_score')
@@ -43,6 +44,25 @@ def extract_metric(metric_name: str, results: Dict[str, Any], test_results: Dict
       - Bracket label indexing (e.g. 'C_cross[LD_1, phi]', 'C_cross[LD_1][phi]')
       - Bracket numerical indexing (e.g. 'C_cross[0, 1]', 'C_cross[0][1]')
       - Absolute value wrappers (e.g. 'abs(C_cross[0, 1])')
+
+    Parameters
+    ----------
+    metric_name : str
+        The name or expression for the metric to extract.
+    results : dict
+        General result metrics from training.
+    test_results : dict
+        Specific test metrics (usually populated after model testing).
+
+    Returns
+    -------
+    float
+        The extracted (and possibly processed) metric value.
+
+    Raises
+    ------
+    KeyError
+        If the requested metric cannot be found or matched.
 
     Raises:
       KeyError: If metric, matrix, or variable label is not found.
@@ -160,7 +180,39 @@ def extract_metric(metric_name: str, results: Dict[str, Any], test_results: Dict
 
 
 class OptunaObjective:
-    """Objective function wrapping model training via local execution or Slurm batch submission."""
+    """
+    Objective function wrapping model training via local execution or Slurm batch submission.
+
+    Constructs complete configurations from the search space, dispatches the training
+    job, and extracts the target metric(s) to guide the Optuna optimizer.
+
+    Parameters
+    ----------
+    base_config : dict
+        The base configuration template.
+    search_space : SearchSpace
+        The instantiated search space defining hyperparameter distributions.
+    study_run_dir : str
+        Base directory to store all trial outputs.
+    study_name : str, optional
+        Name of the Optuna study (default: "optuna_study").
+    executor : str, optional
+        Execution backend: 'local' or 'slurm' (default: "local").
+    slurm_header_file : str, optional
+        Path to a Slurm header template (required if executor is 'slurm').
+    slurm_poll_interval : int, optional
+        Interval in seconds to poll Slurm for job completion (default: 10).
+    metrics : str or list of str, optional
+        The metric(s) to optimize (default: "val_loss").
+    pruning_monitor : str, optional
+        Metric used for early trial pruning (default: "val_loss").
+    debug : bool, optional
+        Enable debug logging in trials (default: False).
+    trials_subfolder : str, optional
+        Subfolder within ``study_run_dir`` for trial outputs (default: "trials").
+    trial_output_to_file : bool, optional
+        Whether trials should log output to files instead of stdout (default: True).
+    """
 
     def __init__(
         self,
@@ -191,6 +243,19 @@ class OptunaObjective:
         self.trial_output_to_file = trial_output_to_file
 
     def __call__(self, trial: optuna.Trial) -> Union[float, Tuple[float, ...]]:
+        """
+        Execute a single Optuna trial.
+
+        Parameters
+        ----------
+        trial : optuna.Trial
+            The active trial object.
+
+        Returns
+        -------
+        float or tuple of float
+            The objective value(s) for optimization.
+        """
         # 1. Sample hyperparameters
         overrides = self.search_space.sample(trial)
 
@@ -236,7 +301,21 @@ class OptunaObjective:
         return tuple(objective_values)
 
     def _run_local(self, trial: optuna.Trial, trial_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Runs training in-process on the local machine."""
+        """
+        Run training in-process on the local machine.
+
+        Parameters
+        ----------
+        trial : optuna.Trial
+            The active trial object.
+        trial_config : dict
+            The fully resolved configuration for this trial.
+
+        Returns
+        -------
+        dict
+            Results containing metrics and paths from the training run.
+        """
         config, metargs = crb.prepare_from_config(
             trial_config,
             settings={"module": "trainer"},
@@ -257,7 +336,23 @@ class OptunaObjective:
             raise e
 
     def _run_via_slurm(self, trial: optuna.Trial, trial_config: Dict[str, Any], trial_run_dir: str) -> Dict[str, Any]:
-        """Submits the trial to Slurm batch queue and monitors until completion."""
+        """
+        Submit the trial to a Slurm batch queue and monitor until completion.
+
+        Parameters
+        ----------
+        trial : optuna.Trial
+            The active trial object.
+        trial_config : dict
+            The fully resolved configuration for this trial.
+        trial_run_dir : str
+            The output directory for this trial's logs and checkpoints.
+
+        Returns
+        -------
+        dict
+            Results extracted from the completed trial's output.
+        """
         trial_config_dir = os.path.join(self.study_run_dir, "trial_configs")
         os.makedirs(trial_config_dir, exist_ok=True)
         trial_config_file = os.path.join(trial_config_dir, f"trial_{trial.number:04d}.yaml")
@@ -296,7 +391,19 @@ class OptunaObjective:
         return self._read_trial_metrics(trial_run_dir)
 
     def _read_trial_metrics(self, trial_run_dir: str) -> Dict[str, Any]:
-        """Reads trial metrics from metrics.yaml with automatic fallback to csv_logs."""
+        """
+        Read trial metrics from metrics.yaml with an automatic fallback to csv_logs.
+
+        Parameters
+        ----------
+        trial_run_dir : str
+            The output directory containing the trial's metrics.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the parsed metrics.
+        """
         metrics_path = os.path.join(trial_run_dir, "metrics.yaml")
         if os.path.isfile(metrics_path) and os.path.getsize(metrics_path) > 0:
             with open(metrics_path, "r") as f:

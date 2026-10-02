@@ -11,10 +11,23 @@ _REGISTRY: dict = {
 
 
 def get_dataanalyser(dataanalyser_name: str):
-    """Return the data analyser class for *dataanalyser_name*.
+    """
+    Return the data analyser class mapped to a given string identifier.
 
-    Raises:
-        ValueError: If *dataanalyser_name* is not registered.
+    Parameters
+    ----------
+    dataanalyser_name : str
+        The registered string identifier for the target data analyser.
+
+    Returns
+    -------
+    type
+        The corresponding data analyser class.
+
+    Raises
+    ------
+    ValueError
+        If `dataanalyser_name` is not found in the registry.
     """
     if dataanalyser_name not in _REGISTRY:
         raise ValueError(

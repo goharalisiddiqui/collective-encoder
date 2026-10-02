@@ -12,19 +12,26 @@ _log = logging.getLogger(__name__)
 
 
 class ConcatLabeler(BaseLabeler):
-    """Concatenate labels from multiple sub-labelers in sequential order.
+    """
+    Concatenate labels from multiple sub-labelers in sequential order.
 
     Accepts a list of sub-labeler definitions in ``labelers`` and executes them
     sequentially, concatenating their label names and computed feature values.
     Supports both universe-based FrameLabelers (XTC) and DataFrame-based BatchLabelers (PLUMED).
 
-    Args:
-        universe (mda.Universe, optional): MDAnalysis Universe for universe-based FrameLabelers.
-        dataframe (pd.DataFrame, optional): pandas DataFrame for DataFrame-based BatchLabelers.
-        args: Configuration dict with key ``labelers`` (required) — a list of child labeler
-            definitions. Each entry can be:
-            - Dict: ``{"labeler_type": "...", "labeler_args": {...}}`` (or ``{"type": "...", "args": {...}}``)
-            - Tuple/List: ``["LABELER_TYPE", labeler_args_dict]``
+    Parameters
+    ----------
+    universe : mda.Universe, optional
+        MDAnalysis Universe for universe-based FrameLabelers.
+    dataframe : pd.DataFrame, optional
+        pandas DataFrame for DataFrame-based BatchLabelers.
+    args : dict
+        Configuration dict with key ``labelers`` (required) — a list of child labeler
+        definitions. Each entry can be:
+        - Dict: ``{"labeler_type": "...", "labeler_args": {...}}`` (or ``{"type": "...", "args": {...}}``)
+        - Tuple/List: ``["LABELER_TYPE", labeler_args_dict]``
+    kwargs : dict
+        Additional keyword arguments forwarded to child labelers and the base class.
     """
 
     _IDENTIFIER = "CONCAT"
@@ -70,18 +77,31 @@ class ConcatLabeler(BaseLabeler):
             self.child_labelers.append(child_instance)
 
     def get_label_names(self) -> List[str]:
+        """
+        Return the concatenated list of label names from all child labelers.
+
+        Returns
+        -------
+        list of str
+            Combined names of all generated label columns.
+        """
         names = []
         for child in self.child_labelers:
             names.extend(child.get_label_names())
         return names
 
     def compute(self, indices: Optional[List[int]] = None) -> Union[List[float], np.ndarray]:
-        """Compute concatenated labels for all child labelers.
+        """
+        Compute concatenated labels for all child labelers.
 
-        Args:
-            indices (List[int], optional): DataFrame row indices for BatchLabeler mode.
+        Parameters
+        ----------
+        indices : list of int, optional
+            DataFrame row indices for BatchLabeler mode. If None, operates in FrameLabeler mode.
 
-        Returns:
+        Returns
+        -------
+        list of float or numpy.ndarray
             Flat list of floats for FrameLabeler mode, or 2D NumPy array for BatchLabeler mode.
         """
         if indices is not None:
