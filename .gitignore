@@ -10,7 +10,9 @@ wandb/
 .env
 lightning_logs/
 *.log
-tests/
 md17_data/
 **.egg-info/
 DEVELOPER_GUIDE.md
+.coverage
+htmlcov/
+.pytest_cache/
