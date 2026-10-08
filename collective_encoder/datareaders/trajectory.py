@@ -106,6 +106,17 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
             self.processors.append(processor_cls(**processor_args))
             self.log_msg(f"Initialized processor: {config['type']} with args {processor_args}")
 
+    def read(self, 
+            labeler_type: str,
+            labeler_args: dict,
+            **kwargs):
+        
+        self.read_trajectory(
+            indices=kwargs.get('indices', []),
+            labeler_type=labeler_type,
+            labeler_args=labeler_args,
+        )
+        
     def read_trajectory(self,
                         indices: List[List[int]],
                         labeler_type : str = 'Dummy',
@@ -259,8 +270,8 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         if mol.n_atoms == 0:
             raise ValueError(f"Selection {self.selection} does not match any atoms in the trajectory")
         self.mol = mol
-    
-    def mda_add_default_transforms(self, universe, mol):
+
+    def _add_default_transforms(self, universe, mol):
         """
         Add default transformations (unwrapping, centering) to the universe.
 
@@ -281,7 +292,7 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         universe.trajectory.add_transformations(*transforms)
         return universe
     
-    def extract_topology_info(self):
+    def _extract_topology_info(self):
         """
         Extract atomic numbers, elements, atom ids, and bonds from the MDAnalysis atom group.
         """

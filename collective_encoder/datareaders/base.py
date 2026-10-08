@@ -9,6 +9,25 @@ class BaseDataReader(CEModule, ABC):
     """
     
     @abstractmethod
+    def read(self, 
+            labeler_type: str,
+            labeler_args: dict,
+            **kwargs):
+        """
+        Abstract method to read the trajectory data and compute labels.
+        
+        Parameters
+        ----------
+        labeler_type : str
+            The type of labeler to use for computing labels.
+        labeler_args : dict
+            Arguments to pass to the labeler for label computation.
+        **kwargs
+            Additional keyword arguments for reading the trajectory.
+        """
+        raise NotImplementedError("Subclasses must implement read method")
+
+    @abstractmethod
     def get_total_frames(self):
         """
         Method to get the total number of frames in the trajectory.
@@ -19,20 +38,6 @@ class BaseDataReader(CEModule, ABC):
             The total number of frames or records available.
         """
         raise NotImplementedError("Subclasses must implement get_total_frames method")
-
-    @classmethod
-    def get_identifier(cls) -> str:
-        """
-        Get the identifier for this DataReader type.
-
-        Returns
-        -------
-        str
-            The identifier string.
-        """
-        if cls._IDENTIFIER is None:
-            raise NotImplementedError(f"{cls.__name__} must define a class-level _IDENTIFIER attribute")
-        return cls._IDENTIFIER
     
     def get_label_names(self) -> List[str]:
         """
@@ -51,7 +56,7 @@ class BaseDataReader(CEModule, ABC):
         
         if not hasattr(self, 'label_list'):
             raise AttributeError(f"{type(self).__name__} does not have "
-                                 "'label_list' attribute. Ensure that the "
-                                 "trajectory has been read and labels have been "
-                                 "computed before calling get_label_names.")
+                                "'label_list' attribute. Ensure that the "
+                                "trajectory has been read and labels have been "
+                                "computed before calling get_label_names.")
         return self.label_list
