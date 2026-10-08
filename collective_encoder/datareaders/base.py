@@ -9,13 +9,13 @@ class BaseDataReader(CEModule, ABC):
     """
     
     @abstractmethod
-    def read(self, 
+    def read(self,
             labeler_type: str,
             labeler_args: dict,
             **kwargs):
         """
         Abstract method to read the trajectory data and compute labels.
-        
+
         Parameters
         ----------
         labeler_type : str

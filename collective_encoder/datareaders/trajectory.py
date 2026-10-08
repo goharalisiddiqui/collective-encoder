@@ -106,17 +106,17 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
             self.processors.append(processor_cls(**processor_args))
             self.log_msg(f"Initialized processor: {config['type']} with args {processor_args}")
 
-    def read(self, 
+    def read(self,
             labeler_type: str,
             labeler_args: dict,
             **kwargs):
-        
+
         self.read_trajectory(
             indices=kwargs.get('indices', []),
             labeler_type=labeler_type,
             labeler_args=labeler_args,
         )
-        
+
     def read_trajectory(self,
                         indices: List[List[int]],
                         labeler_type : str = 'Dummy',

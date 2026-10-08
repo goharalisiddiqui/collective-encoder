@@ -21,3 +21,33 @@ Processors can be passed via `args` to `TrajectoryReaderBase` implementations to
 - `Chunk`: Expands sequence start indices into frame ranges of a specified length.
 - `CoarseGrain`: Coarse-grains raw frames by averaging positions and labels over a window.
 - `Filter`: Filters frames based on label values.
+
+## Example Configuration
+
+Data readers can be instantiated dynamically using YAML configuration files passed to data modules. Below is an example of how to configure the `CompressedTrajectoryReader` to process raw `.xtc` or `.dcd` trajectories, apply a coarse-graining processor, and feed the data into a model.
+
+```yaml
+# configuration.yaml
+datamodule_type: CoordinatesDataModule
+datamodule_args:
+  batch_size: 256
+
+  # Configure the Data Reader
+  datareader_type: COMPRESSED_TRAJECTORY
+  datareader_args:
+    topology_file: "system.pdb"
+    trajectory_file: "trajectory.xtc" # Also supports .dcd, .trr, etc.
+    selection: "backbone"
+    parallel: True
+
+    # Configure processors to manipulate sequence reading
+    processors:
+      - type: CoarseGrain
+        args:
+          cg_window: 10
+          sequence_length: 5
+      - type: Filter
+        args:
+          label_index: 0
+          max_val: 2.5
+```
