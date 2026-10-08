@@ -3,8 +3,9 @@ import importlib
 # Maps the canonical identifier (must match _IDENTIFIER on the class) to its
 # (module_path, class_name).  Adding a new reader = one line here.
 _REGISTRY: dict = {
-    "XTC":           ("collective_encoder.datareaders.xtc",           "XTCReader"),
-    "PLUMED_OUTPUT": ("collective_encoder.datareaders.plumed_output",  "PlumedOutputReader"),
+    "COMPRESSED_TRAJECTORY": ("collective_encoder.datareaders.compressed_trajectory", "CompressedTrajectoryReader"),
+    "XTC":                   ("collective_encoder.datareaders.compressed_trajectory", "CompressedTrajectoryReader"), # For backward compatibility
+    "PLUMED_OUTPUT":         ("collective_encoder.datareaders.plumed_output",         "PlumedOutputReader"),
 }
 
 
