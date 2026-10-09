@@ -330,7 +330,7 @@ def train():
     """
     Main CLI entry point for collective-encoder-train.
     """
-    config, metargs = crb.prepare(_SETTINGS)
+    config, metargs = crb._prepare(_SETTINGS)
     run_training_experiment(config, metargs)
 
 

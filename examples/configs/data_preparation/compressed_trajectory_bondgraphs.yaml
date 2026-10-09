@@ -1,0 +1,51 @@
+# Example configuration preparing a dateset
+
+# =============================================================================
+# OUTPUT SETTINGS
+# =============================================================================
+outpath: ./ce             # Directory to save results
+outfolder: datamod            # Subdirectory name for this experiment
+nexp: 1                        # Experiment number (for multiple runs)
+overwrite: False                # Overwrite existing results
+output_to_file: False           # Save training logs to file
+
+# =============================================================================
+# DATA CONFIGURATION
+# =============================================================================
+datamodule_type: COORDINATES   # Data type: COORDINATES, COLVAR
+datamodule_args:
+    # Data reader configuration
+    datareader_type: COMPRESSED_TRAJECTORY 
+    datareader_args:
+        topology_file: ./examples/ala2/data/ala2.tpr   # GROMACS topology file 
+        xtcfile: ./examples/ala2/data/ala2.xtc   # GROMACS trajectory file
+
+        # Atom selection (using MDAnalysis selection syntax (https://userguide.mdanalysis.org/stable/selections.html))
+        selection: "(resname ALA or resname ACE or resname NME) and not element H"
+        # type_to_elements: {"1": Pb, "2": I ...} # A dictionary mapping atom types to elements in case its not present in the topology file.
+
+        parallel: False              # Use parallel processing for data loading
+
+    # Dataset parameters
+    max_frames: 1000           # Number of frames to use from trajectory
+    sequential: False          # Random sampling (True for sequential frames)
+
+    # Train/validation split
+    train_size: 800           # Number of training frames
+    validation_size: 100      # Number of validation frames
+    batch_size: 32            # Training batch size
+    val_batch_size: 64        # Validation batch size
+
+    # test_full_dataset: True   # Use full dataset for testing (True)
+    test_size: 100            
+    test_batch_size: 64       # Testing batch size
+
+    # Datasets
+    dataset_type: "BONDGRAPH"   # Feature type: DISTANCES, POSITIONS, SOAP
+    dataset_args:
+        precompute_graphs: True   # Precompute bond graphs (True for small datasets, False for large datasets)
+        parallel: False              # Use parallel processing for dataset creation
+
+    # Data processing
+    num_workers: 4             # Number of parallel data loading workers
+    norm_type: "minmax"        # Normalization: minmax, standard, none

@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from gslibs.utils.common import recursive_update
+from gslibs.validation.input import check_dict_contains_keys
 
 from collective_encoder.common.config_check import (
     validate_duplicate_keys, 
@@ -20,13 +21,16 @@ from gslibs.utils.filesystem import create_rundir, output_to_file
 
 from collective_encoder.utils import check_dict_contains_keys
 from collective_encoder.datamodules.resolver import get_datamodule
-from collective_encoder.models.resolver import get_net, get_model
+from collective_encoder.models.resolver import get_model
+from collective_encoder import CONFIG_PATH
+
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 torch.set_default_dtype(torch.float64)
 _COMMON_REQUIRED_KEYS = ['outpath', 'outfolder', 'nexp', 'overwrite', 'output_to_file']
 _OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 
                          'num_workers', 'test_batch_size']
+_VALID_MODULES = ['dmod', 'trainer', 'tester']
 
 ##################################
 # Arguments
@@ -61,18 +65,17 @@ def get_required_keys(settings: dict) -> list:
 
 def get_default_config_path(settings: dict) -> str:
     """Get the default config path for the module."""
-    return os.path.join(os.path.dirname(__file__), 
-                                       'configs', 
-                                       settings.get('module'), 
-                                       'defaults.yaml')
+    return os.path.join(CONFIG_PATH, 
+                        settings.get('module'), 
+                        'defaults.yaml')
 
 def get_debug_config_path(settings: dict) -> str:
     """Get the debug config path for the module."""
-    return os.path.join(os.path.dirname(__file__), 
-                                       'configs', 
-                                       settings.get('module'), 
-                                       'debug.yaml')
-def prepare_from_config(config: dict, settings: dict, config_path: str = None, debug: bool = False):
+    return os.path.join(CONFIG_PATH, 
+                        settings.get('module'), 
+                        'debug.yaml')
+
+def prepare_from_config(config: dict, settings: dict, debug: bool = False):
     """
     Prepare runtime directory and metadata arguments from an existing config dict.
 
@@ -115,13 +118,6 @@ def prepare_from_config(config: dict, settings: dict, config_path: str = None, d
                             config['outfolder'], 
                             config['nexp'], 
                             overwrite=config['overwrite'])
-    
-    run_config_target = os.path.join(run_dir, "run_config.yaml")
-    if config_path and os.path.isfile(config_path):
-        shutil.copy2(config_path, run_config_target)
-    else:
-        with open(run_config_target, 'w') as f:
-            yaml.dump(config, f)
 
     ##################################
     # Output to file
@@ -152,8 +148,34 @@ def prepare_from_config(config: dict, settings: dict, config_path: str = None, d
     }
     return config, metargs
 
+def _read_config(config_path: str) -> dict:
+    """
+    Read a YAML configuration file and return its contents as a dictionary.
 
-def prepare(settings: dict):
+    Parameters
+    ----------
+    config_path : str
+        Path to the YAML configuration file.
+
+    Returns
+    -------
+    dict
+        Configuration dictionary.
+    """
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(f"Config file not found at {config_path}")
+    
+    validate_duplicate_keys(config_path)
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    return config
+
+def prepare(settings: dict, config_path, debug: bool = False):
+    return _prepare(settings, config_path, debug)
+
+def _prepare(settings: dict, config_path: str = None, debug: bool = False):
     """
     Prepare the module environment from CLI arguments and default configurations.
 
@@ -167,18 +189,38 @@ def prepare(settings: dict):
     tuple
         Processed configuration dictionary and metadata arguments.
     """
+    if 'module' not in settings:
+        raise ValueError(f"Missing module name in settings.")
+    if settings['module'] not in _VALID_MODULES:
+        raise ValueError(f"Invalid or missing module name in settings. "
+                         f"Valid modules: {_VALID_MODULES}")
+    # Load default configuration
     default_config_path = get_default_config_path(settings)
-    args = parse_args()
-    config_path = args.config
-    debug = args.debug
+    config = _read_config(default_config_path)
     
-    if not os.path.isfile(config_path):
-        raise FileNotFoundError(f"Config file not found at {config_path}")
-    validate_duplicate_keys(config_path)
-    config = yaml.safe_load(open(default_config_path, 'r'))
-    recursive_update(config, yaml.safe_load(open(config_path, 'r')))
+    # Read user-provided configuration
+    if config_path is None:
+        args = parse_args()
+        config_path = args.config
+        debug = args.debug
+    current_config = _read_config(config_path)
     
-    return prepare_from_config(config, settings, config_path=config_path, debug=debug)
+    # Update the default configuration with user-provided values
+    recursive_update(config, current_config)
+    
+    config, settings = prepare_from_config(config, settings, debug=debug)
+    
+    # Save the final configuration
+    run_dir = settings['run_dir']
+    run_config_target = os.path.join(run_dir, "run_config.yaml")
+    if config_path and os.path.isfile(config_path):
+        shutil.copy2(config_path, run_config_target)
+    else:
+        with open(run_config_target, 'w') as f:
+            yaml.dump(config, f)
+    
+    return config, settings
+    
 
 def load_datamodule(config, metargs):
     """

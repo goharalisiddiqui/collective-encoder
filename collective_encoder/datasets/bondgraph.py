@@ -106,7 +106,7 @@ class BondGraphDataset(BaseDataset, Dataset):
         Additional keyword arguments (e.g. ``tag``).
     """
 
-    _IDENTIFIER = "GRAPH"
+    _IDENTIFIER = "BONDGRAPH"
     _REQUIRED_ARGS = ["bond_indices"]
     _OPTIONAL_ARGS = {
         'precompute_graphs': True,

@@ -36,12 +36,12 @@ class CoordinatesDataModule(BaseDataModule):
 
     # Compatible datareaders and datasets
     _IDENTIFIER = "COORDINATES"
-    _COMPATIBLE_DATAREADERS = ["XTC"]
+    _COMPATIBLE_DATAREADERS = ["COMPRESSED_TRAJECTORY"]
     _COMPATIBLE_DATASETS = [
         "DISTANCES", 
         "POSITIONS", 
-        "GRAPH", 
-        "GRAPH_LATENT", 
+        "BONDGRAPH", 
+        "BONDGRAPH_LATENT", 
         "SOAP", 
         "SOAP_PS"
     ]

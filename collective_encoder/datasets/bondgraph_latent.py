@@ -31,7 +31,7 @@ class BondGraphLatentDataset(BondGraphDataset):
     kwargs : dict
         Additional keyword arguments (e.g. ``tag``).
     """
-    _IDENTIFIER = "GRAPH_LATENT"
+    _IDENTIFIER = "BONDGRAPH_LATENT"
     _REQUIRED_ARGS = BondGraphDataset._REQUIRED_ARGS + ["encoder_name", "encoder_ckpt"]
     
     def __init__(
