@@ -18,7 +18,7 @@ def prepare_dmod():
     to quickly load the prepared dataset without regenerating the features from scratch.
     """
 
-    config, metargs = crb.prepare(_SETTINGS)
+    config, metargs = crb._prepare(_SETTINGS)
     dm = crb.load_datamodule(config, metargs)
     run_dir = metargs['run_dir']
     

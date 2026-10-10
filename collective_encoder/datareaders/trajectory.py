@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Union
+import os
+from multiprocessing import Pool
+from tqdm import tqdm
 
 import numpy as np
 import ase
@@ -8,6 +11,83 @@ import MDAnalysis.transformations as trans
 from MDAnalysis.exceptions import NoDataError
 
 from collective_encoder.datareaders.base import BaseDataReader
+from collective_encoder.datalabelers.resolver import get_labeler
+from collective_encoder.datareaders.processors.resolver import get_processor
+
+
+def _read_and_label(args):
+    """Worker function: reads a chunk of frame sequences from a copied Universe.
+
+    Receives a pre-copied Universe (picklable MemoryReader), re-applies trajectory
+    transforms and creates a fresh labeler so no shared state is needed.
+    Takes a single packed tuple so it is compatible with pool.imap.
+    """
+    worker_id, u_copy, selection, atns, at_elements, seqs, labeler_type, labeler_args, run_args = args
+
+    from MDAnalysis.exceptions import NoDataError
+    from collective_encoder.datalabelers.resolver import get_labeler
+
+    mol = u_copy.select_atoms(selection)
+    verbose = run_args.get('verbose', True)
+
+    if worker_id > 0:
+        run_args['verbose'] = False  # Only the main process shows progress bars and logs
+    labeler_cls = get_labeler(labeler_type)
+    labeler = labeler_cls(universe=u_copy,
+                          args=labeler_args,
+                          **run_args,
+                          )
+
+    # Cache residue/atom-name info once — constant across all frames
+    try:
+        residues = np.array([str(r.residue.resname) for r in mol.atoms])
+    except NoDataError:
+        residues = np.array(['UNK'] * mol.n_atoms)
+    try:
+        resids = np.array([r.residue.resid for r in mol.atoms])
+    except NoDataError:
+        resids = np.array([0] * mol.n_atoms)
+    try:
+        atomnames = np.array([str(a.name) for a in mol.atoms])
+    except NoDataError:
+        atomnames = np.array(at_elements)
+    
+    cell = mol.dimensions[:3].copy() if mol.dimensions is not None else np.zeros(3)
+    periodic = not np.all(cell == 0)
+
+    # Re-apply the same transformations to the copied Universe since they are not shared.
+    transforms = []
+    if periodic:
+        transforms.append(trans.unwrap(mol))
+    transforms.append(trans.center_in_box(mol, center='geometry', point=[0.0,0.0,0.0], wrap=False))
+
+    mol_traj, labels, failed_indices = [], [], []
+    for idx in tqdm(seqs,
+                    position=worker_id,
+                    desc=f"Worker {worker_id}",
+                    leave=False,
+                    disable=not verbose,
+                    dynamic_ncols=True):
+        try:
+            u_copy.trajectory[idx]
+        except OSError:
+            failed_indices.append(idx)
+            continue
+        
+        for f in transforms:
+            f(u_copy.trajectory.ts)
+        
+        structure = ase.Atoms(numbers=atns,
+                                positions=mol.atoms.positions.copy(),
+                                cell=cell,
+                                pbc=periodic)
+        structure.set_array('residuenames',   residues)
+        structure.set_array('residuenumbers', resids)
+        structure.set_array('atomtypes',      atomnames)
+        labels.append(labeler.compute())
+        mol_traj.append(structure)
+
+    return mol_traj, labels, failed_indices
 
 class TrajectoryReaderBase(BaseDataReader, ABC):
     """
@@ -23,19 +103,149 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         'parallel': True,
     }
 
-    @abstractmethod
-    def read_trajectory(self) -> Tuple[List[ase.Atoms], List[List[float]]]:
+    def __init__(self, args: Dict[str, Any] = None, **kwargs):
+        super().__init__(args=args, **kwargs)
+        self.processors = []
+        processor_configs = self.args.get('processors', [])
+        for config in processor_configs:
+            processor_cls = get_processor(config['type'])
+            processor_args = config.get('args', {})
+            self.processors.append(processor_cls(**processor_args))
+            self.log_msg(f"Initialized processor: {config['type']} with args {processor_args}")
+
+    def read(self,
+            labeler_type: str,
+            labeler_args: dict,
+            **kwargs):
+
+        self.read_trajectory(
+            indices=kwargs.get('indices', []),
+            labeler_type=labeler_type,
+            labeler_args=labeler_args,
+        )
+
+    def read_trajectory(self,
+                        indices: List[List[int]],
+                        labeler_type : str = 'Dummy',
+                        labeler_args : Dict[str, Union[str, float, List[int]]] = {},
+                        ) -> Tuple[Tuple[List[ase.Atoms]], Tuple[List[List[float]]], Tuple[List[int]]]:
         """
-        Abstract method to read the trajectory and return 
-        a tuple of ASE Atoms objects and their corresponding labels.
+        Read the requested frames and compute labels using multi-processing.
+
+        Parameters
+        ----------
+        indices : list of list of int
+            List of index sequences to read (e.g. for train, val, test splits).
+        labeler_type : str, optional
+            Type of labeler to use, by default 'Dummy'.
+        labeler_args : dict, optional
+            Arguments for the labeler.
 
         Returns
         -------
         tuple
-            Tuple containing list of `ase.Atoms` and their corresponding labels.
+            A tuple containing:
+            - Tuple of lists of `ase.Atoms` (one list per split).
+            - Tuple of lists of labels (one list per split).
+            - Tuple of lists of failed frame indices (one list per split).
         """
-        pass
-    
+        labeler_cls = get_labeler(labeler_type)
+        labeler = labeler_cls(
+            universe=self.u,
+            args=labeler_args,
+        )
+        self.label_list = labeler.get_label_names()
+
+        self.log_msg(f"Reading trajectories...")
+        
+        # Apply processors to prepare sequences
+        prepared_indices = []
+        for seq in indices:
+            processed_seq = seq
+            for processor in self.processors:
+                processed_seq = processor.prepare_seq(processed_seq)
+            prepared_indices.append(processed_seq)
+
+        trajs, labels, all_failed = (), (), ()
+        for seq_idx, index_list in enumerate(tqdm(prepared_indices,
+                               position=0,
+                               disable=not getattr(self, 'verbose', True),
+                               leave=True,
+                               desc="Processing sequences",
+                               dynamic_ncols=True)):
+
+            if not getattr(self, 'parallel', True) or len(index_list) < 8:  # Threshold for parallel processing
+                # Sequential read
+                args = (0, self.u, self.selection, self.atns, self.at_elements, index_list,
+                        labeler_type, labeler_args, getattr(self, 'run_args', {}))
+                print(len(index_list))
+                traj, label, failed = _read_and_label(args)
+            else:
+                # Parallel read
+                n_workers = min(16, os.cpu_count() or 1, max(1, len(index_list)))
+                chunks = [index_list[i::n_workers] for i in range(n_workers)]
+
+                args = [
+                    (i+1, self.u.copy(), self.selection, self.atns, self.at_elements,
+                    chunk, labeler_type, labeler_args, getattr(self, 'run_args', {}))
+                    for i, chunk in enumerate(chunks)
+                ]
+
+                with Pool(processes=len(args)) as pool:
+                    chunk_results = pool.map(_read_and_label, args)
+
+                # Reassemble results
+                n_seqs = len(index_list)
+                traj   = [None] * n_seqs
+                label  = [None] * n_seqs
+                failed = []
+                for worker_idx, result in enumerate(chunk_results):
+                    failed.extend(result[2])
+                    for local_idx, (read_traj, read_label) in enumerate(zip(result[0], result[1])):
+                        original_idx = worker_idx + local_idx * n_workers
+                        traj[original_idx]  = read_traj
+                        label[original_idx] = read_label
+
+            # Integrate imported labels if provided by ExternalDatasetReaderBase
+            if hasattr(self, 'imported_labels') and self.imported_labels:
+                for i, frame_idx in enumerate(index_list):
+                    if frame_idx in failed:
+                        continue
+                    extra_labels = []
+                    for key in self.import_labels:
+                        if key in self.imported_labels:
+                            val = self.imported_labels[key][frame_idx]
+                            # Flatten arrays if necessary, or just append as a single element
+                            if hasattr(val, '__iter__') and not isinstance(val, str):
+                                extra_labels.extend(val)
+                            else:
+                                extra_labels.append(val)
+                    label[i] = list(label[i]) + extra_labels
+
+            # Update label names list on first pass if imported labels exist
+            if seq_idx == 0 and hasattr(self, 'imported_labels') and self.imported_labels:
+                extra_names = []
+                for key in self.import_labels:
+                    if key in self.imported_labels:
+                        val = self.imported_labels[key][0]
+                        if hasattr(val, '__iter__') and not isinstance(val, str):
+                            extra_names.extend([f"{key}_{j}" for j in range(len(val))])
+                        else:
+                            extra_names.append(key)
+                self.label_list = self.label_list + extra_names
+
+            # Apply post-processors
+            for processor in self.processors:
+                traj, label = processor.postprocess_seq(traj, label)
+
+            trajs      += (traj,)
+            labels     += (label,)
+            all_failed += (failed,)
+
+        self.log_msg(f"Finished reading trajectories.")
+        return trajs, labels, all_failed
+
+
     def get_atomic_numbers(self) -> List[int]:
         """
         Get the extracted atomic numbers.
@@ -96,8 +306,8 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         if mol.n_atoms == 0:
             raise ValueError(f"Selection {self.selection} does not match any atoms in the trajectory")
         self.mol = mol
-    
-    def mda_add_default_transforms(self, universe, mol):
+
+    def _add_default_transforms(self, universe, mol):
         """
         Add default transformations (unwrapping, centering) to the universe.
 
@@ -118,7 +328,7 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         universe.trajectory.add_transformations(*transforms)
         return universe
     
-    def extract_topology_info(self):
+    def _extract_topology_info(self):
         """
         Extract atomic numbers, elements, atom ids, and bonds from the MDAnalysis atom group.
         """

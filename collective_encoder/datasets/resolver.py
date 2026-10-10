@@ -31,13 +31,13 @@ def _make_distances(dataset_args: Dict, datareader):
 
 def _make_graph(dataset_args: Dict, datareader):
     from collective_encoder.datasets.bondgraph import BondGraphDataset
-    args = {**dataset_args, "bond_indices": datareader.bonds}
+    args = {**dataset_args, "bond_indices": datareader.get_bonds()}
     return BondGraphDataset, args, GeoDataLoader
 
 
 def _make_graph_latent(dataset_args: Dict, datareader):
     from collective_encoder.datasets.bondgraph_latent import BondGraphLatentDataset
-    args = {**dataset_args, "bond_indices": datareader.bonds}
+    args = {**dataset_args, "bond_indices": datareader.get_bonds()}
     return BondGraphLatentDataset, args, DataLoader
 
 
@@ -62,8 +62,8 @@ _REGISTRY = {
     "DEFAULT":    _make_positions,
     "POSITIONS":  _make_positions,
     "DISTANCES":  _make_distances,
-    "GRAPH":      _make_graph,
-    "GRAPH_LATENT": _make_graph_latent,
+    "BONDGRAPH":      _make_graph,
+    "BONDGRAPH_LATENT": _make_graph_latent,
     "SOAP":       _make_soap,
     "SOAP_PS":    _make_soap_ps,
     "COLVAR":     _make_colvar,
