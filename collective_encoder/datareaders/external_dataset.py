@@ -1,5 +1,6 @@
 import os
 import urllib.request
+from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 import numpy as np
 import MDAnalysis as mda
@@ -7,7 +8,7 @@ import MDAnalysis as mda
 import gslibs.validation as gsv
 from collective_encoder.datareaders.trajectory import TrajectoryReaderBase
 
-class ExternalDatasetReaderBase(TrajectoryReaderBase):
+class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
     """
     Base class for downloading and reading array-based trajectory datasets.
 
@@ -37,19 +38,7 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase):
     })
 
     def __init__(self, args: Dict[str, Any] = None, **kwargs):
-        # We need to bypass the topology checking in the TrajectoryReaderBase,
-        # so we don't call super().__init__ directly until we set up the Universe.
-        # But CEModule requires initialization.
-        super(TrajectoryReaderBase, self).__init__(args=args, **kwargs)
-
-        self.processors = []
-        processor_configs = self.args.get('processors', [])
-        from collective_encoder.datareaders.processors.resolver import get_processor
-        for config in processor_configs:
-            processor_cls = get_processor(config['type'])
-            processor_args = config.get('args', {})
-            self.processors.append(processor_cls(**processor_args))
-            self.log_msg(f"Initialized processor: {config['type']} with args {processor_args}")
+        super().__init__(args=args, **kwargs)
 
         self._validate_molecule()
         self._setup_data_dir()
@@ -57,12 +46,14 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase):
         self.select_atoms()
         self._extract_topology_info()
 
+    @abstractmethod
     def _validate_molecule(self):
         """
         Validate the molecule name. To be implemented by subclasses.
         """
         raise NotImplementedError("Subclasses must implement _validate_molecule")
 
+    @abstractmethod
     def _get_download_url(self) -> str:
         """
         Get the download URL for the requested molecule. To be implemented by subclasses.
@@ -74,13 +65,7 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase):
         Set up the local directory for caching dataset files.
         """
         dataset_name = self.get_identifier().lower()
-        if self.data_dir is None:
-            # Fall back to a local data directory if run_dir isn't available
-            base_dir = getattr(self, 'run_dir', './')
-            self.data_dir = os.path.join(base_dir, 'data', dataset_name)
-
-        # Use safe_create_dir from CEModule
-        self.data_dir = self.safe_create_dir(self.data_dir)
+        self._create_dir(os.path.join("data", dataset_name), var_name="data_dir")
 
     def _download_and_load(self):
         """
@@ -119,7 +104,7 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase):
         """
         if 'R' not in self.raw_data or 'z' not in self.raw_data:
             self.raise_error("Dataset must contain 'R' (coordinates) and 'z' (atomic numbers).")
-
+        
         coords = self.raw_data['R']  # Shape: (n_frames, n_atoms, 3)
         atomic_numbers = self.raw_data['z']  # Shape: (n_atoms,)
 
@@ -143,14 +128,18 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase):
         u.add_TopologyAttr('name', elements)
         u.add_TopologyAttr('type', elements)
         u.add_TopologyAttr('element', elements)
+        u.add_TopologyAttr('atomnum', atomic_numbers)
+        u.add_TopologyAttr('id', list(range(1, n_atoms + 1)))
         u.add_TopologyAttr('resname', ['UNK'])
         u.add_TopologyAttr('resid', [1])
         u.add_TopologyAttr('segid', ['SYSTEM'])
-
+        
         # Load coordinates into memory reader
         # MDAnalysis MemoryReader expects a shape of (n_frames, n_atoms, 3)
-        u.load_new(coords, format="MemoryReader")
+        u.load_new(coords, format="MEMORY")
 
+        u.atoms.guess_bonds()
+        
         self.u = u
 
     def _extract_imported_labels(self):

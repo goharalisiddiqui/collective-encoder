@@ -117,7 +117,7 @@ class BondGraphDataset(BaseDataset, Dataset):
             self,
             structures: List[ase.Atoms],
             labels: Optional[List[float]] = None,
-            dataset_args: Dict[str, Union[float, int, str]] = None,
+            args: Dict[str, Union[float, int, str]] = None,
             **kwargs,
         ):
         """Initialize dataset.
@@ -125,13 +125,15 @@ class BondGraphDataset(BaseDataset, Dataset):
         bond_indices: list of (i,j) atom index pairs defining bonds (single global list applied to every structure).
         If validate_indices=True, will assert indices are in range for each structure.
         """
-        BaseDataset.__init__(self, dataset_args=dataset_args, **kwargs)
+        BaseDataset.__init__(self, args=args, **kwargs)
         Dataset.__init__(self)
         
         self.structures = structures
         self.labels = labels
         self.tag = kwargs.get("tag", None)
-       
+        
+        if self.bond_indices is None or len(self.bond_indices) == 0:
+            self.raise_error("bond_indices cannot be empty.")
         self.bond_indices = [tuple(map(int, b)) for b in self.bond_indices]  # Ensure bond indices are tuples of ints
         # Validate bond indices
         n_atoms0 = len(structures[0])

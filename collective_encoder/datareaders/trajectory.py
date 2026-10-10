@@ -15,7 +15,7 @@ from collective_encoder.datalabelers.resolver import get_labeler
 from collective_encoder.datareaders.processors.resolver import get_processor
 
 
-def _read_and_label_parallel(args):
+def _read_and_label(args):
     """Worker function: reads a chunk of frame sequences from a copied Universe.
 
     Receives a pre-copied Universe (picklable MemoryReader), re-applies trajectory
@@ -51,11 +51,15 @@ def _read_and_label_parallel(args):
         atomnames = np.array([str(a.name) for a in mol.atoms])
     except NoDataError:
         atomnames = np.array(at_elements)
+    
+    cell = mol.dimensions[:3].copy() if mol.dimensions is not None else np.zeros(3)
+    periodic = not np.all(cell == 0)
 
     # Re-apply the same transformations to the copied Universe since they are not shared.
-    transforms = [trans.unwrap(mol),
-                      trans.center_in_box(mol, center='geometry', point=[0.0,0.0,0.0], wrap=False)]
-    u_copy.trajectory.add_transformations(*transforms)
+    transforms = []
+    if periodic:
+        transforms.append(trans.unwrap(mol))
+    transforms.append(trans.center_in_box(mol, center='geometry', point=[0.0,0.0,0.0], wrap=False))
 
     mol_traj, labels, failed_indices = [], [], []
     for idx in tqdm(seqs,
@@ -69,11 +73,14 @@ def _read_and_label_parallel(args):
         except OSError:
             failed_indices.append(idx)
             continue
+        
+        for f in transforms:
+            f(u_copy.trajectory.ts)
+        
         structure = ase.Atoms(numbers=atns,
                                 positions=mol.atoms.positions.copy(),
-                                cell=mol.dimensions[:3].copy())
-        if not np.all(mol.dimensions[:3] == 0):
-            structure.set_pbc([True, True, True])
+                                cell=cell,
+                                pbc=periodic)
         structure.set_array('residuenames',   residues)
         structure.set_array('residuenumbers', resids)
         structure.set_array('atomtypes',      atomnames)
@@ -150,7 +157,7 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         self.label_list = labeler.get_label_names()
 
         self.log_msg(f"Reading trajectories...")
-
+        
         # Apply processors to prepare sequences
         prepared_indices = []
         for seq in indices:
@@ -169,9 +176,10 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
 
             if not getattr(self, 'parallel', True) or len(index_list) < 8:  # Threshold for parallel processing
                 # Sequential read
-                args = (0, self.u.copy(), self.selection, self.atns, self.at_elements, index_list,
+                args = (0, self.u, self.selection, self.atns, self.at_elements, index_list,
                         labeler_type, labeler_args, getattr(self, 'run_args', {}))
-                traj, label, failed = _read_and_label_parallel(args)
+                print(len(index_list))
+                traj, label, failed = _read_and_label(args)
             else:
                 # Parallel read
                 n_workers = min(16, os.cpu_count() or 1, max(1, len(index_list)))
@@ -184,7 +192,7 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
                 ]
 
                 with Pool(processes=len(args)) as pool:
-                    chunk_results = pool.map(_read_and_label_parallel, args)
+                    chunk_results = pool.map(_read_and_label, args)
 
                 # Reassemble results
                 n_seqs = len(index_list)

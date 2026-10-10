@@ -36,7 +36,7 @@ class CoordinatesDataModule(BaseDataModule):
 
     # Compatible datareaders and datasets
     _IDENTIFIER = "COORDINATES"
-    _COMPATIBLE_DATAREADERS = ["COMPRESSED_TRAJECTORY"]
+    _COMPATIBLE_DATAREADERS = ["COMPRESSED_TRAJECTORY", "MD17"]
     _COMPATIBLE_DATASETS = [
         "DISTANCES", 
         "POSITIONS", 

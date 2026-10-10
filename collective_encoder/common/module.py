@@ -60,6 +60,15 @@ class CEModule(ABC):
             self.ce_log_dict("Initialization args", self.args, indent=2)
 
     def _create_dir(self, name: str, var_name: str = None) -> None:
+        """
+        Create a directory under the run directory and assign its path to an attribute.
+        
+        Args:
+            name (str): Name of the directory to create.
+            var_name (str, optional): Name of the attribute to assign the directory path to.
+                If None, defaults to the same as `name`.
+        
+        """
         if var_name is None:
             var_name = name
         dir_path = os.path.join(self.run_dir, name)
@@ -72,6 +81,8 @@ class CEModule(ABC):
                         nexp=1,
                         overwrite=False)
         self.log_info(f"Created directory: {dir_path}")
+        if hasattr(self, var_name):
+            self.log_warn(f"Overwriting existing attribute '{var_name}' with new directory path.")
         self.__setattr__(var_name, dir_path)
 
     def safe_create_dir(self, dir_path: str) -> None:
@@ -88,9 +99,7 @@ class CEModule(ABC):
         return dir_path
     
     def create_results_dir(self):
-        results_dir = os.path.join(self.run_dir, "results")
-        os.makedirs(results_dir, exist_ok=True) 
-        self.results_dir = results_dir
+        self._create_dir("results", var_name="results_dir")
     
     def create_results_file(self):
         if not hasattr(self, "results_dir"):
@@ -228,3 +237,8 @@ class CEModule(ABC):
 
         self._ce_log.info(message)
         _emit(data, level=1)
+
+
+    def get_identifier(self) -> str:
+        """Return the identifier string for this module."""
+        return self._IDENTIFIER
