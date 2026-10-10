@@ -6,6 +6,7 @@ _REGISTRY: dict = {
     "COMPRESSED_TRAJECTORY": ("collective_encoder.datareaders.compressed_trajectory", "CompressedTrajectoryReader"),
     "XTC":                   ("collective_encoder.datareaders.compressed_trajectory", "CompressedTrajectoryReader"), # For backward compatibility
     "PLUMED_OUTPUT":         ("collective_encoder.datareaders.plumed_output",         "PlumedOutputReader"),
+    "MD17":                  ("collective_encoder.datareaders.datasets.md17",         "MD17Reader"),
 }
 
 

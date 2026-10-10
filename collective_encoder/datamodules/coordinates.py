@@ -40,8 +40,8 @@ class CoordinatesDataModule(BaseDataModule):
     _COMPATIBLE_DATASETS = [
         "DISTANCES", 
         "POSITIONS", 
-        "BONDGRAPH", 
-        "BONDGRAPH_LATENT", 
+        "BONDGRAPH",
+        "BONDGRAPH_LATENT",
         "SOAP", 
         "SOAP_PS"
     ]

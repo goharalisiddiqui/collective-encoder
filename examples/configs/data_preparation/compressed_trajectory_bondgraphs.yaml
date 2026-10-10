@@ -15,9 +15,9 @@ output_to_file: False           # Save training logs to file
 datamodule_type: COORDINATES   # Data type: COORDINATES, COLVAR
 datamodule_args:
     # Data reader configuration
-    datareader_type: COMPRESSED_TRAJECTORY 
+    datareader_type: COMPRESSED_TRAJECTORY
     datareader_args:
-        topology_file: ./examples/ala2/data/ala2.tpr   # GROMACS topology file 
+        topology_file: ./examples/ala2/data/ala2.tpr   # GROMACS topology file
         xtcfile: ./examples/ala2/data/ala2.xtc   # GROMACS trajectory file
 
         # Atom selection (using MDAnalysis selection syntax (https://userguide.mdanalysis.org/stable/selections.html))
@@ -37,7 +37,7 @@ datamodule_args:
     val_batch_size: 64        # Validation batch size
 
     # test_full_dataset: True   # Use full dataset for testing (True)
-    test_size: 100            
+    test_size: 100
     test_batch_size: 64       # Testing batch size
 
     # Datasets

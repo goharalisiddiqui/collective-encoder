@@ -160,12 +160,12 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
             prepared_indices.append(processed_seq)
 
         trajs, labels, all_failed = (), (), ()
-        for index_list in tqdm(prepared_indices,
+        for seq_idx, index_list in enumerate(tqdm(prepared_indices,
                                position=0,
                                disable=not getattr(self, 'verbose', True),
                                leave=True,
                                desc="Processing sequences",
-                               dynamic_ncols=True):
+                               dynamic_ncols=True)):
 
             if not getattr(self, 'parallel', True) or len(index_list) < 8:  # Threshold for parallel processing
                 # Sequential read
@@ -197,6 +197,34 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
                         original_idx = worker_idx + local_idx * n_workers
                         traj[original_idx]  = read_traj
                         label[original_idx] = read_label
+
+            # Integrate imported labels if provided by ExternalDatasetReaderBase
+            if hasattr(self, 'imported_labels') and self.imported_labels:
+                for i, frame_idx in enumerate(index_list):
+                    if frame_idx in failed:
+                        continue
+                    extra_labels = []
+                    for key in self.import_labels:
+                        if key in self.imported_labels:
+                            val = self.imported_labels[key][frame_idx]
+                            # Flatten arrays if necessary, or just append as a single element
+                            if hasattr(val, '__iter__') and not isinstance(val, str):
+                                extra_labels.extend(val)
+                            else:
+                                extra_labels.append(val)
+                    label[i] = list(label[i]) + extra_labels
+
+            # Update label names list on first pass if imported labels exist
+            if seq_idx == 0 and hasattr(self, 'imported_labels') and self.imported_labels:
+                extra_names = []
+                for key in self.import_labels:
+                    if key in self.imported_labels:
+                        val = self.imported_labels[key][0]
+                        if hasattr(val, '__iter__') and not isinstance(val, str):
+                            extra_names.extend([f"{key}_{j}" for j in range(len(val))])
+                        else:
+                            extra_names.append(key)
+                self.label_list = self.label_list + extra_names
 
             # Apply post-processors
             for processor in self.processors:

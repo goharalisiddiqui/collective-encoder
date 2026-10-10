@@ -65,14 +65,14 @@ def get_required_keys(settings: dict) -> list:
 
 def get_default_config_path(settings: dict) -> str:
     """Get the default config path for the module."""
-    return os.path.join(CONFIG_PATH, 
-                        settings.get('module'), 
+    return os.path.join(CONFIG_PATH,
+                        settings.get('module'),
                         'defaults.yaml')
 
 def get_debug_config_path(settings: dict) -> str:
     """Get the debug config path for the module."""
-    return os.path.join(CONFIG_PATH, 
-                        settings.get('module'), 
+    return os.path.join(CONFIG_PATH,
+                        settings.get('module'),
                         'debug.yaml')
 
 def prepare_from_config(config: dict, settings: dict, debug: bool = False):
@@ -164,12 +164,12 @@ def _read_config(config_path: str) -> dict:
     """
     if not os.path.isfile(config_path):
         raise FileNotFoundError(f"Config file not found at {config_path}")
-    
+
     validate_duplicate_keys(config_path)
-    
+
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
-    
+
     return config
 
 def prepare(settings: dict, config_path, debug: bool = False):
@@ -204,12 +204,12 @@ def _prepare(settings: dict, config_path: str = None, debug: bool = False):
         config_path = args.config
         debug = args.debug
     current_config = _read_config(config_path)
-    
+
     # Update the default configuration with user-provided values
     recursive_update(config, current_config)
-    
+
     config, settings = prepare_from_config(config, settings, debug=debug)
-    
+
     # Save the final configuration
     run_dir = settings['run_dir']
     run_config_target = os.path.join(run_dir, "run_config.yaml")
@@ -218,7 +218,7 @@ def _prepare(settings: dict, config_path: str = None, debug: bool = False):
     else:
         with open(run_config_target, 'w') as f:
             yaml.dump(config, f)
-    
+
     return config, settings
     
 

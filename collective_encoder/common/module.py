@@ -58,7 +58,7 @@ class CEModule(ABC):
             self._ce_log.info("[Initializing module: %s]", self.__class__.__name__)
             self._ce_log.info("=" * 80)
             self.ce_log_dict("Initialization args", self.args, indent=2)
-    
+
     def _create_dir(self, name: str, var_name: str = None) -> None:
         if var_name is None:
             var_name = name
@@ -67,8 +67,8 @@ class CEModule(ABC):
             os.makedirs(dir_path, exist_ok=True)
         else:
             stem = os.path.basename(dir_path)
-            dir_path = create_rundir(path=os.path.dirname(dir_path), 
-                        stem=stem, 
+            dir_path = create_rundir(path=os.path.dirname(dir_path),
+                        stem=stem,
                         nexp=1,
                         overwrite=False)
         self.log_info(f"Created directory: {dir_path}")
@@ -81,7 +81,7 @@ class CEModule(ABC):
         else:
             stem = os.path.basename(dir_path)
             dir_path = create_rundir(path=os.path.dirname(dir_path), 
-                        stem=stem, 
+                        stem=stem,
                         nexp=1,
                         overwrite=False)
         self.log_info(f"Created directory: {dir_path}")
