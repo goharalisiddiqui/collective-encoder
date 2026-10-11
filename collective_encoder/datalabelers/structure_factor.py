@@ -1,15 +1,12 @@
-import logging
 from typing import Dict, List, Union, Optional
 
 import MDAnalysis as mda
 import numpy as np
 
-from .base import FrameLabeler
-
-_log = logging.getLogger(__name__)
+from .base import BaseLabeler
 
 
-class StaticStructureFactorLabeler(FrameLabeler):
+class StaticStructureFactorLabeler(BaseLabeler):
     """
     Compute the isotropic static structure factor S(q) for the current trajectory frame.
 
@@ -89,7 +86,7 @@ class StaticStructureFactorLabeler(FrameLabeler):
         """
         return self.label_names
 
-    def compute(self) -> List[float]:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Compute the static structure factor for the current frame.
 
@@ -119,4 +116,4 @@ class StaticStructureFactorLabeler(FrameLabeler):
         
         # S(q) = 1 + (2 / N) * sum_{j < k} sin(q * r_{jk}) / (q * r_{jk})
         S_q = 1.0 + (2.0 / float(n_atoms)) * np.sum(sinc_QR, axis=1)
-        return S_q.tolist()
+        return S_q

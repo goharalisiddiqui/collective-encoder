@@ -8,8 +8,6 @@ import pandas as pd
 from .base import BaseLabeler
 from .resolver import get_labeler
 
-_log = logging.getLogger(__name__)
-
 
 class ConcatLabeler(BaseLabeler):
     """

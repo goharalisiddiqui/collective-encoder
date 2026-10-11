@@ -48,7 +48,7 @@ class DummyLabeler(BaseLabeler):
         """
         return ['dummy']
 
-    def compute(self, indices: Optional[List[int]] = None) -> Union[List[float], np.ndarray]:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Return zeros; works for both frame-based and batch-based call sites.
 

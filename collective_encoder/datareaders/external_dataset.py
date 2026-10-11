@@ -1,12 +1,13 @@
 import os
 import urllib.request
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 import numpy as np
 import MDAnalysis as mda
 
-import gslibs.validation as gsv
+from collective_encoder.datalabelers.base import BaseLabeler
 from collective_encoder.datareaders.trajectory import TrajectoryReaderBase
+from collective_encoder.datalabelers.resolver import get_labeler
 
 class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
     """
@@ -14,7 +15,7 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
 
     This class handles downloading `.npz` files, extracting atomic numbers and
     coordinates, constructing an in-memory MDAnalysis Universe, and exposing
-    pre-computed labels via `import_labels`.
+    pre-computed labels via :class:`~collective_encoder.datalabelers.from_external.FromExternalLabeler`.
 
     Parameters
     ----------
@@ -23,18 +24,18 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
         - ``molecule_name`` (str): The name of the molecule to load.
         - ``data_dir`` (str, optional): The directory where data should be downloaded.
           Defaults to ``./data/<dataset_name>``.
-        - ``import_labels`` (list of str, optional): List of keys in the `.npz` file
-          to extract as pre-computed labels (e.g., ``["E", "F"]``).
         - ``parallel`` (bool, optional): Whether to use multiprocessing.
     kwargs : dict
         Additional arguments forwarded to `TrajectoryReaderBase`.
     """
+    _COMPATIBLE_LABELERS = TrajectoryReaderBase._COMPATIBLE_LABELERS + [
+        "FROM_EXTERNAL"
+    ]
     _IDENTIFIER = None  # To be defined by subclasses
     _REQUIRED_ARGS = TrajectoryReaderBase._REQUIRED_ARGS + ['molecule_name']
     _OPTIONAL_ARGS = TrajectoryReaderBase._OPTIONAL_ARGS.copy()
     _OPTIONAL_ARGS.update({
         'data_dir': None,
-        'import_labels': [],
     })
 
     def __init__(self, args: Dict[str, Any] = None, **kwargs):
@@ -94,7 +95,6 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
             self.raise_error(f"Failed to load .npz file {filepath}: {e}")
 
         self._construct_universe()
-        self._extract_imported_labels()
 
     def _construct_universe(self):
         """
@@ -142,18 +142,6 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
         
         self.u = u
 
-    def _extract_imported_labels(self):
-        """
-        Extract pre-computed labels from the raw data.
-        """
-        self.imported_labels = {}
-        for label_key in self.import_labels:
-            if label_key in self.raw_data:
-                self.imported_labels[label_key] = self.raw_data[label_key]
-                self.log_msg(f"Imported pre-computed label: {label_key} with shape {self.raw_data[label_key].shape}")
-            else:
-                self.log_warn(f"Requested import_label '{label_key}' not found in dataset.")
-
     def get_total_frames(self) -> int:
         """
         Get the total number of frames considering processor adjustments.
@@ -163,3 +151,14 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
             for processor in self.processors:
                 total = processor.adjust_total_frames(total)
         return total
+
+    def _initialize_labeler(self,
+                          labeler_type: str,
+                          labeler_args: dict) -> BaseLabeler:
+        """
+        Instantiate the labeler for this external dataset reader, passing the dataset.
+        """
+        labeler_cls = get_labeler(labeler_type)
+        return labeler_cls(dataset=self.raw_data, 
+                           args=labeler_args, 
+                           **self.get_run_args())

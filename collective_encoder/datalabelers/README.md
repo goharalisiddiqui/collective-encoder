@@ -25,3 +25,4 @@ The base class for calculating properties of the data. Often, subclasses will in
 - `SteinhardtOrderParameterLabeler`: Calculates rotational invariants (Steinhardt parameters) for identifying crystal structures.
 - `ColumnSelectorLabeler`: Selects pre-existing columns or features from the data.
 - `ConcatLabeler`: Concatenates the outputs of multiple independent labelers into a single label tensor.
+- `FromExternalLabeler`: Extracts pre-computed labels from external datasets (e.g. NPZ files).

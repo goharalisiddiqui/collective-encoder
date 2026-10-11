@@ -1,13 +1,12 @@
 import os
 from multiprocessing import Pool
-from typing import Any, List, Tuple, Dict, Optional, Union
+from typing import List, Tuple, Dict, Optional, Union
 import math
 
 import numpy as np
 import ase
 
 import torch
-from torch import Tensor
 from torch_geometric.data import Data, Dataset
 from tqdm import tqdm
 
@@ -19,23 +18,6 @@ from .utils.bondgraph import (assemble_bonds, bond_node_features,
 
 from gslibs.utils.filesystem import create_rundir
 
-# import metatensor.torch as mts
-# import metatomic.torch as mta
-
-# class MetatomicBondGraphDataset(torch.nn.Module):
-#     def __init__(self):
-#         super().__init__()
-
-     
-
-#     def forward(
-#         self,
-#         systems: List[mta.System],
-#         outputs: Dict[str, mta.ModelOutput],
-#         selected_atoms: Optional[mts.Labels] = None,
-#     ) -> torch.Tensor:
-
-#         pass
 
 def _compute_graph(structure: ase.Atoms, bond_indices: List[Tuple[int, int]]) -> Data:
     """Standalone graph computation from an ASE Atoms object and bond index list.
@@ -218,8 +200,31 @@ class BondGraphDataset(BaseDataset, Dataset):
     def __len__(self):
         return self.len()
 
+    def len(self) -> int: # for PyG Dataset compatibility
+        return len(self.structures)
+
     def __getitem__(self, idx):
         return self.get(idx)
+    
+    def get(self, idx: int) -> Data:  # for PyG Dataset compatibility
+        if self.precompute_graphs:
+            graph_path = os.path.join(self.precompute_graphs_dir, f"graph_{idx}.pt")
+            graph = torch.load(graph_path, weights_only=False)
+        else:
+            graph = self._compute_graph(idx)
+        return graph
+    
+    def get_num_node_features(self) -> int:
+        if not hasattr(self, 'node_feat'): # For backwards compatibility with old checkpoints that don't have these attributes saved
+            sample = self.get(0)
+            self.node_feat = sample.x.shape[1]
+        return self.node_feat
+
+    def get_num_edge_features(self) -> int:
+        if not hasattr(self, 'edge_feat'): # For backwards compatibility with old checkpoints that don't have these attributes saved
+            sample = self.get(0)
+            self.edge_feat = sample.edge_attr.shape[1]
+        return self.edge_feat
 
     def get_datapoint_shape(self) -> Dict[str, Tuple]:
         """
@@ -272,33 +277,29 @@ class BondGraphDataset(BaseDataset, Dataset):
         """
         return self.bond_index, self.angle_index, self.torsion_index
 
-    def len(self) -> int: # for PyG Dataset compatibility
-        return len(self.structures)
-    
-    def get_num_node_features(self) -> int:
-        if not hasattr(self, 'node_feat'): # For backwards compatibility with old checkpoints that don't have these attributes saved
-            sample = self.get(0)
-            self.node_feat = sample.x.shape[1]
-        return self.node_feat
-
-    def get_num_edge_features(self) -> int:
-        if not hasattr(self, 'edge_feat'): # For backwards compatibility with old checkpoints that don't have these attributes saved
-            sample = self.get(0)
-            self.edge_feat = sample.edge_attr.shape[1]
-        return self.edge_feat
-
-    def get(self, idx: int) -> Data:  # for PyG Dataset compatibility
-        if self.precompute_graphs:
-            graph_path = os.path.join(self.precompute_graphs_dir, f"graph_{idx}.pt")
-            graph = torch.load(graph_path, weights_only=False)
-        else:
-            graph = self._compute_graph(idx)
-        return graph
-    
     def get_template_graph(self, 
                            k: int = 3,
                            residue_names: Optional[List[str]] = None,
                            atom_names: Optional[List[str]] = None) -> Data:
+        """
+        Build a atom graph without coordinates information used to infer the topological information of the molecule
+        Ref: https://openreview.net/forum?id=m5xRuGtQEi
+}
+
+        Parameters
+        ----------
+        k : int, optional
+            Number of nearest neighbors to consider.
+        residue_names : list of str, optional
+            List of residue names to include in the template.
+        atom_names : list of str, optional
+            List of atom names to include in the template.
+
+        Returns
+        -------
+        Data
+            Template graph.
+        """
         atomic_numbers = self.structures[0].get_atomic_numbers()
         return build_template_graph(atomic_numbers,
                                     self.bond_indices, 

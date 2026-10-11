@@ -10,9 +10,11 @@ import ase
 import MDAnalysis.transformations as trans
 from MDAnalysis.exceptions import NoDataError
 
+from collective_encoder.datalabelers.base import BaseLabeler
 from collective_encoder.datareaders.base import BaseDataReader
 from collective_encoder.datalabelers.resolver import get_labeler
 from collective_encoder.datareaders.processors.resolver import get_processor
+from MDAnalysis.exceptions import NoDataError
 
 
 def _read_and_label(args):
@@ -22,22 +24,15 @@ def _read_and_label(args):
     transforms and creates a fresh labeler so no shared state is needed.
     Takes a single packed tuple so it is compatible with pool.imap.
     """
-    worker_id, u_copy, selection, atns, at_elements, seqs, labeler_type, labeler_args, run_args = args
-
-    from MDAnalysis.exceptions import NoDataError
-    from collective_encoder.datalabelers.resolver import get_labeler
+    worker_id, u_copy, selection, atns, at_elements, seqs, labeler = args
 
     mol = u_copy.select_atoms(selection)
-    verbose = run_args.get('verbose', True)
+        
+    labeler.reinitialize(universe =u_copy)  # Re-initialize labeler with the copied Universe
 
-    if worker_id > 0:
-        run_args['verbose'] = False  # Only the main process shows progress bars and logs
-    labeler_cls = get_labeler(labeler_type)
-    labeler = labeler_cls(universe=u_copy,
-                          args=labeler_args,
-                          **run_args,
-                          )
-
+    verbose = worker_id == 0  # Only the main process shows progress bars and logs
+    if not verbose:
+        labeler.verbose = False 
     # Cache residue/atom-name info once — constant across all frames
     try:
         residues = np.array([str(r.residue.resname) for r in mol.atoms])
@@ -84,7 +79,7 @@ def _read_and_label(args):
         structure.set_array('residuenames',   residues)
         structure.set_array('residuenumbers', resids)
         structure.set_array('atomtypes',      atomnames)
-        labels.append(labeler.compute())
+        labels.append(labeler.compute([idx]))
         mol_traj.append(structure)
 
     return mol_traj, labels, failed_indices
@@ -97,6 +92,15 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
     unwrapping trajectories, and extracting topological data (elements,
     atomic numbers, bonds) for downstream models.
     """
+    _COMPATIBLE_LABELERS  = BaseDataReader._COMPATIBLE_LABELERS + [
+        "COORDINATION",
+        "DISTANCE",
+        "DIHEDRAL",
+        "STRUCTURE_FACTOR",
+        "DEBYE_STRUCTURE_FACTOR",
+        "STEINHARDT_ORDER_PARAMETER",
+    ]
+
     _OPTIONAL_ARGS = {
         'selection': "all",
         'type_to_elements': None,
@@ -124,6 +128,15 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
             labeler_args=labeler_args,
         )
 
+    def _initialize_labeler(self,
+                          labeler_type: str,
+                          labeler_args: dict) -> BaseLabeler:
+        """
+        Instantiate the labeler for this trajectory reader.
+        """
+        labeler_cls = get_labeler(labeler_type)
+        return labeler_cls(universe=self.u, args=labeler_args, **self.get_run_args())
+
     def read_trajectory(self,
                         indices: List[List[int]],
                         labeler_type : str = 'Dummy',
@@ -149,10 +162,9 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
             - Tuple of lists of labels (one list per split).
             - Tuple of lists of failed frame indices (one list per split).
         """
-        labeler_cls = get_labeler(labeler_type)
-        labeler = labeler_cls(
-            universe=self.u,
-            args=labeler_args,
+        labeler = self.initialize_labeler(
+            labeler_type=labeler_type,
+            labeler_args=labeler_args,
         )
         self.label_list = labeler.get_label_names()
 
@@ -174,10 +186,10 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
                                desc="Processing sequences",
                                dynamic_ncols=True)):
 
-            if not getattr(self, 'parallel', True) or len(index_list) < 8:  # Threshold for parallel processing
+            if not self.parallel or len(index_list) < 8:  # Threshold for parallel processing
                 # Sequential read
-                args = (0, self.u, self.selection, self.atns, self.at_elements, index_list,
-                        labeler_type, labeler_args, getattr(self, 'run_args', {}))
+                args = (0, self.u, self.selection, self.atns, 
+                        self.at_elements, index_list, labeler)
                 print(len(index_list))
                 traj, label, failed = _read_and_label(args)
             else:
@@ -186,8 +198,8 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
                 chunks = [index_list[i::n_workers] for i in range(n_workers)]
 
                 args = [
-                    (i+1, self.u.copy(), self.selection, self.atns, self.at_elements,
-                    chunk, labeler_type, labeler_args, getattr(self, 'run_args', {}))
+                    (i+1, self.u.copy(), self.selection, self.atns, 
+                     self.at_elements,chunk, labeler)
                     for i, chunk in enumerate(chunks)
                 ]
 
@@ -205,34 +217,6 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
                         original_idx = worker_idx + local_idx * n_workers
                         traj[original_idx]  = read_traj
                         label[original_idx] = read_label
-
-            # Integrate imported labels if provided by ExternalDatasetReaderBase
-            if hasattr(self, 'imported_labels') and self.imported_labels:
-                for i, frame_idx in enumerate(index_list):
-                    if frame_idx in failed:
-                        continue
-                    extra_labels = []
-                    for key in self.import_labels:
-                        if key in self.imported_labels:
-                            val = self.imported_labels[key][frame_idx]
-                            # Flatten arrays if necessary, or just append as a single element
-                            if hasattr(val, '__iter__') and not isinstance(val, str):
-                                extra_labels.extend(val)
-                            else:
-                                extra_labels.append(val)
-                    label[i] = list(label[i]) + extra_labels
-
-            # Update label names list on first pass if imported labels exist
-            if seq_idx == 0 and hasattr(self, 'imported_labels') and self.imported_labels:
-                extra_names = []
-                for key in self.import_labels:
-                    if key in self.imported_labels:
-                        val = self.imported_labels[key][0]
-                        if hasattr(val, '__iter__') and not isinstance(val, str):
-                            extra_names.extend([f"{key}_{j}" for j in range(len(val))])
-                        else:
-                            extra_names.append(key)
-                self.label_list = self.label_list + extra_names
 
             # Apply post-processors
             for processor in self.processors:

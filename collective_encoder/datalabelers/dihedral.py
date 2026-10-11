@@ -1,10 +1,11 @@
+import numpy as np
 import MDAnalysis as mda
-from typing import Dict, List, Union
+from typing import Optional, Dict, List, Union
 
-from .base import FrameLabeler
+from .base import BaseLabeler
 
 
-class DihedralValueLabeler(FrameLabeler):
+class DihedralValueLabeler(BaseLabeler):
     """
     Compute backbone dihedral angles (phi/psi) for the current trajectory frame.
 
@@ -70,7 +71,7 @@ class DihedralValueLabeler(FrameLabeler):
         """
         return self.label_list
 
-    def compute(self) -> List[float]:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Compute the dihedral angles for the current frame.
 
@@ -90,5 +91,5 @@ class DihedralValueLabeler(FrameLabeler):
             )
             dihedrals.append(dihedral)
 
-        return dihedrals
+        return np.array(dihedrals, dtype=float)
 

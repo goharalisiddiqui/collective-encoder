@@ -2,11 +2,14 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from collective_encoder.common.module import CEModule
+from collective_encoder.datalabelers.base import BaseLabeler
 
 class BaseDataReader(CEModule, ABC):
     """
     Abstract base class for data readers.
     """
+    _COMPATIBLE_LABELERS = ["CONCAT", "DUMMY"]
+
     
     @abstractmethod
     def read(self,
@@ -60,3 +63,36 @@ class BaseDataReader(CEModule, ABC):
                                 "trajectory has been read and labels have been "
                                 "computed before calling get_label_names.")
         return self.label_list
+    
+    def initialize_labeler(self, labeler_type: str, labeler_args: dict) -> BaseLabeler:
+        """
+        Initialize the labeler based on the provided type and arguments.
+
+        Parameters
+        ----------
+        labeler_type : str
+            The type of labeler to use for computing labels.
+        labeler_args : dict
+            Arguments to pass to the labeler for label computation.
+        """
+        if labeler_type is None:
+            labeler_type = "DUMMY" 
+        if labeler_type not in self._COMPATIBLE_LABELERS:
+            raise ValueError(f"Labeler type '{labeler_type}' is not compatible with this data reader. "
+                             f"Compatible labelers: {self._COMPATIBLE_LABELERS}")
+        
+        return self._initialize_labeler(labeler_type, labeler_args)
+    
+    @abstractmethod
+    def _initialize_labeler(self, labeler_type: str, labeler_args: dict) -> BaseLabeler:
+        """
+        Internal method to initialize the labeler. Subclasses should implement this.
+
+        Parameters
+        ----------
+        labeler_type : str
+            The type of labeler to use for computing labels.
+        labeler_args : dict
+            Arguments to pass to the labeler for label computation.
+        """
+        raise NotImplementedError("Subclasses must implement _initialize_labeler method")

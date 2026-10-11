@@ -1,10 +1,11 @@
+import numpy as np
 import MDAnalysis as mda
-from typing import Dict, List, Union
+from typing import Optional, Dict, List, Union
 
-from .base import FrameLabeler
+from .base import BaseLabeler
 
 
-class DistanceValueLabeler(FrameLabeler):
+class DistanceValueLabeler(BaseLabeler):
     """
     Compute inter-atomic distances for the current trajectory frame.
 
@@ -56,7 +57,7 @@ class DistanceValueLabeler(FrameLabeler):
         """
         return [f'distance_value_{i+1}' for i in range(len(self.dist_atoms))]
 
-    def compute(self) -> List[float]:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Compute inter-atomic distances for the current frame.
 
@@ -74,4 +75,5 @@ class DistanceValueLabeler(FrameLabeler):
                 atoms[1].position.reshape(1, 3)
             ).flatten()[0]
             dists.append(dist)
-        return dists
+
+        return np.array(dists, dtype=float)

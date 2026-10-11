@@ -53,6 +53,7 @@ class CoordinatesDataModule(BaseDataModule):
         "STRUCTURE_FACTOR",
         "DEBYE_STRUCTURE_FACTOR",
         "STEINHARDT_ORDER_PARAMETER",
+        "FROM_EXTERNAL"
     ]  # Add other coordinate-based labelers
     
     _REQUIRED_ARGS = BaseDataModule._REQUIRED_ARGS + [

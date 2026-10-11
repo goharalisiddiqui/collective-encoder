@@ -1,16 +1,13 @@
-import logging
-from typing import Dict, List, Union, Optional
+from typing import Optional, Dict, List, Union, Optional
 
 import MDAnalysis as mda
 import numpy as np
 from ase.data import atomic_numbers
 
-from .base import FrameLabeler
-
-_log = logging.getLogger(__name__)
+from .base import BaseLabeler
 
 
-class DebyeStructureFactorLabeler(FrameLabeler):
+class DebyeStructureFactorLabeler(BaseLabeler):
     """
     Compute the multi-component element-weighted Debye structure factor S(q) or intensity I(q).
 
@@ -122,7 +119,7 @@ class DebyeStructureFactorLabeler(FrameLabeler):
         """
         return self.label_names
 
-    def compute(self) -> List[float]:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Compute the Debye structure factor or intensity for the current frame.
 
@@ -157,4 +154,4 @@ class DebyeStructureFactorLabeler(FrameLabeler):
             # Normalized structure factor S(q)
             res = (self.sum_b_sq + 2.0 * pair_sum) / self.sum_b_sq
 
-        return res.tolist()
+        return np.array(res, dtype=float)

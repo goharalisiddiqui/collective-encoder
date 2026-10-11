@@ -45,6 +45,10 @@ datamodule_args:
     #     group1: "0:10"          # First group of atoms for distance calculation
     #     group2: "0:10"          # Second group of atoms for distance calculation
 
+    labeler_type: "FROM_EXTERNAL"  # Labeler type: FROM_EXTERNAL, CONCAT, DUMMY
+    labeler_args:
+        keys: [E, F]          # Keys for labels (e.g., energy, forces)
+
     # Data processing
     num_workers: 4             # Number of parallel data loading workers
     norm_type: "minmax"        # Normalization: minmax, standard, none

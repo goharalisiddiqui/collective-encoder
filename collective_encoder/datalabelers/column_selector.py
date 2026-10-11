@@ -1,11 +1,11 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Union
+from typing import Optional, Dict, List, Union
 
-from .base import BatchLabeler
+from .base import BaseLabeler
 
 
-class ColumnSelectorLabeler(BatchLabeler):
+class ColumnSelectorLabeler(BaseLabeler):
     """
     Extract specific columns from a PLUMED/tabular DataFrame as labels.
 
@@ -62,7 +62,7 @@ class ColumnSelectorLabeler(BatchLabeler):
         """
         return self.columns
 
-    def compute(self, indices: List[int]) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Compute labels for the given DataFrame row indices.
 

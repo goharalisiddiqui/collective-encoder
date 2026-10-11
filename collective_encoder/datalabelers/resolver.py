@@ -10,6 +10,7 @@ _REGISTRY: dict = {
     "DEBYE_STRUCTURE_FACTOR":  (".debye",            "DebyeStructureFactorLabeler"),
     "STEINHARDT_ORDER_PARAMETER": (".steinhardt",    "SteinhardtOrderParameterLabeler"),
     "CONCAT":                  (".concat",           "ConcatLabeler"),
+    "FROM_EXTERNAL":           (".from_external",    "FromExternalLabeler"),
 }
 
 _PACKAGE = "collective_encoder.datalabelers"
@@ -36,11 +37,15 @@ def get_labeler(labeler_type: str):
     """
     if labeler_type is None:
         labeler_type = "DUMMY"
-    if labeler_type not in _REGISTRY:
-        raise ValueError(
-            f"Unknown labeler type: '{labeler_type}'. "
-            f"Available: {sorted(set(_REGISTRY) - {'Dummy'})}"
-        )
-    module_rel, class_name = _REGISTRY[labeler_type]
+    lookup_key = labeler_type.upper() if isinstance(labeler_type, str) else labeler_type
+    if lookup_key not in _REGISTRY:
+        if labeler_type in _REGISTRY:
+            lookup_key = labeler_type
+        else:
+            raise ValueError(
+                f"Unknown labeler type: '{labeler_type}'. "
+                f"Available: {sorted(set(_REGISTRY) - {'Dummy'})}"
+            )
+    module_rel, class_name = _REGISTRY[lookup_key]
     module = importlib.import_module(module_rel, package=_PACKAGE)
     return getattr(module, class_name)

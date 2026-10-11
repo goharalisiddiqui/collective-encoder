@@ -15,8 +15,6 @@ class MD17Reader(ExternalDatasetReaderBase):
         Dictionary of configuration options. Valid keys include:
         - ``molecule_name`` (str): The name of the MD17 molecule.
         - ``data_dir`` (str, optional): The directory where data should be downloaded.
-        - ``import_labels`` (list of str, optional): Pre-computed labels to extract
-          (e.g., ``["E", "F"]`` for energies and forces).
         - ``parallel`` (bool, optional): Whether to use multiprocessing.
     kwargs : dict
         Additional arguments forwarded to `ExternalDatasetReaderBase`.
