@@ -1,10 +1,11 @@
+import numpy as np
 import MDAnalysis as mda
-from typing import Dict, List, Union
+from typing import Optional, Dict, List, Union
 
-from .base import FrameLabeler
+from .base import BaseLabeler
 
 
-class CoordinationCountLabeler(FrameLabeler):
+class CoordinationCountLabeler(BaseLabeler):
     """
     Count atoms within a cutoff distance for the current trajectory frame.
 
@@ -69,7 +70,7 @@ class CoordinationCountLabeler(FrameLabeler):
         """
         return [f'coordination_count_{b}' for b in self.bins]
 
-    def compute(self) -> List[float]:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Compute the coordination count labels for the current frame.
 
@@ -94,5 +95,5 @@ class CoordinationCountLabeler(FrameLabeler):
                 if count >= b:
                     counts[i] += 1
         
-        return counts
+        return np.array(counts, dtype=float)
 

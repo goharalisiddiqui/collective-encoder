@@ -7,20 +7,20 @@ These labels are useful for supervision or enforcing physics-informed loss
 calculations. Implementations inherit from `BaseLabeler`, `FrameLabeler`,
 or `BatchLabeler`.
 """
-from .base import BaseLabeler, FrameLabeler, BatchLabeler
+from .base import BaseLabeler
 from .structure_factor import StaticStructureFactorLabeler
 from .debye import DebyeStructureFactorLabeler
 from .steinhardt import SteinhardtOrderParameterLabeler
 from .concat import ConcatLabeler
+from .from_external import FromExternalLabeler
 from .resolver import get_labeler
 
 __all__ = [
     "BaseLabeler",
-    "FrameLabeler",
-    "BatchLabeler",
     "StaticStructureFactorLabeler",
     "DebyeStructureFactorLabeler",
     "SteinhardtOrderParameterLabeler",
     "ConcatLabeler",
+    "FromExternalLabeler",
     "get_labeler",
 ]

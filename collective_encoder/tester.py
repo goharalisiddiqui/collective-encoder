@@ -14,7 +14,7 @@ def test():
     attaches any specified test plotters, and runs the PyTorch Lightning evaluation loop.
     """
 
-    config, metargs = crb.prepare(_SETTINGS)
+    config, metargs = crb._prepare(_SETTINGS)
     dm = crb.load_datamodule(config, metargs)
     model = crb.load_model(config, metargs, dm)
     run_dir = metargs['run_dir']

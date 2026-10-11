@@ -1,13 +1,10 @@
-import logging
 from typing import Dict, List, Union, Optional
 
 import MDAnalysis as mda
 import numpy as np
 import scipy.special as sp
 
-from .base import FrameLabeler
-
-_log = logging.getLogger(__name__)
+from .base import BaseLabeler
 
 
 def _sph_harm(l: int, m: int, theta: np.ndarray, phi: np.ndarray) -> np.ndarray:
@@ -20,7 +17,7 @@ def _sph_harm(l: int, m: int, theta: np.ndarray, phi: np.ndarray) -> np.ndarray:
         raise RuntimeError("scipy.special does not have sph_harm_y or sph_harm.")
 
 
-class SteinhardtOrderParameterLabeler(FrameLabeler):
+class SteinhardtOrderParameterLabeler(BaseLabeler):
     """
     Compute Steinhardt bond-orientational order parameters q_l and Q_l.
 
@@ -97,7 +94,7 @@ class SteinhardtOrderParameterLabeler(FrameLabeler):
         """
         return self.label_names
 
-    def compute(self) -> List[float]:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
         """
         Compute the Steinhardt order parameters for the current frame.
 
@@ -192,4 +189,4 @@ class SteinhardtOrderParameterLabeler(FrameLabeler):
                 Q_l = float(np.sqrt(norm_factor * np.sum(np.abs(Q_lm) ** 2)))
                 results.append(Q_l)
 
-        return results
+        return np.array(results, dtype=float)

@@ -36,12 +36,12 @@ class CoordinatesDataModule(BaseDataModule):
 
     # Compatible datareaders and datasets
     _IDENTIFIER = "COORDINATES"
-    _COMPATIBLE_DATAREADERS = ["XTC"]
+    _COMPATIBLE_DATAREADERS = ["COMPRESSED_TRAJECTORY", "MD17"]
     _COMPATIBLE_DATASETS = [
         "DISTANCES", 
         "POSITIONS", 
-        "GRAPH", 
-        "GRAPH_LATENT", 
+        "BONDGRAPH",
+        "BONDGRAPH_LATENT",
         "SOAP", 
         "SOAP_PS"
     ]
@@ -53,6 +53,7 @@ class CoordinatesDataModule(BaseDataModule):
         "STRUCTURE_FACTOR",
         "DEBYE_STRUCTURE_FACTOR",
         "STEINHARDT_ORDER_PARAMETER",
+        "FROM_EXTERNAL"
     ]  # Add other coordinate-based labelers
     
     _REQUIRED_ARGS = BaseDataModule._REQUIRED_ARGS + [
@@ -307,7 +308,7 @@ class CoordinatesDataModule(BaseDataModule):
         self.datapoint_shape = self.train_data.get_datapoint_shape() if \
             len(self.train_data) > 0 else \
                 self.predict_data.get_datapoint_shape()
-        self.label_list = self.datareader.label_list
+        self.label_list = self.datareader.get_label_names()
 
         self.log_msg(f"Loaded dataset with {self.num_frames} frames -> "
                      f"Train: {len(self.train_data)}, "
