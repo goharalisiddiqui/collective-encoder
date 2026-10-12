@@ -58,8 +58,6 @@ dev = [
     "flake8>=4.0.0",
     "isort>=5.10.0",
     "mypy>=0.950",
-    "jupyterlab",
-    "ipython>=9.3.0",
 ]
 sweeps = [
     "optuna>=4.0.0",
