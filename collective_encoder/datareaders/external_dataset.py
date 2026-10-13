@@ -1,5 +1,7 @@
 import os
+import tarfile
 import urllib.request
+import zipfile
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 import numpy as np
@@ -13,9 +15,10 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
     """
     Base class for downloading and reading array-based trajectory datasets.
 
-    This class handles downloading `.npz` files, extracting atomic numbers and
-    coordinates, constructing an in-memory MDAnalysis Universe, and exposing
-    pre-computed labels via :class:`~collective_encoder.datalabelers.from_external.FromExternalLabeler`.
+    This class handles downloading datasets (including archives like `.tar.bz2`),
+    extracting atomic numbers and coordinates, constructing an in-memory MDAnalysis
+    Universe, and exposing pre-computed labels via
+    :class:`~collective_encoder.datalabelers.from_external.FromExternalLabeler`.
 
     Parameters
     ----------
@@ -57,33 +60,101 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
     @abstractmethod
     def _get_download_url(self) -> str:
         """
-        Get the download URL for the requested molecule. To be implemented by subclasses.
+        Get the download URL for the requested molecule or archive. To be implemented by subclasses.
         """
         raise NotImplementedError("Subclasses must implement _get_download_url")
+
+    def _get_target_filepath(self) -> str:
+        """
+        Return the local path to the target .npz data file.
+        Subclasses can override this to point inside extracted archive directories.
+        """
+        url = self._get_download_url()
+        filename = url.split('/')[-1]
+        return os.path.join(self.data_dir, filename)
 
     def _setup_data_dir(self):
         """
         Set up the local directory for caching dataset files.
+        Uses a stable directory without generating numbered run dirs.
         """
-        dataset_name = self.get_identifier().lower()
-        self._create_dir(os.path.join("data", dataset_name), var_name="data_dir")
+        self._create_dir("md17_data", 
+                         var_name="data_dir", 
+                         use_existing=True, 
+                         in_exec_dir=True)
+
+    def _download_file(self, url: str, destination: str):
+        """
+        Download a file over HTTP using a custom User-Agent and streaming chunks.
+        """
+        self.log_msg(f"Downloading {os.path.basename(destination)} from {url}...")
+        tmp_destination = destination + ".tmp"
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (collective-encoder)"}
+            )
+            with urllib.request.urlopen(req) as resp, open(tmp_destination, "wb") as out_f:
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out_f.write(chunk)
+            os.replace(tmp_destination, destination)
+            self.log_msg(f"Download complete: {destination}")
+        except Exception as e:
+            if os.path.exists(tmp_destination):
+                os.remove(tmp_destination)
+            self.raise_error(f"Failed to download dataset from {url}: {e}")
+
+    def _extract_archive(self, archive_path: str, extract_dir: str):
+        """
+        Extract an archive (.tar.bz2, .tar.gz, .tar, .zip) into extract_dir.
+        """
+        self.log_msg(f"Extracting {archive_path} to {extract_dir}...")
+        try:
+            if archive_path.endswith((".tar.bz2", ".tbz2", ".tar.gz", ".tgz", ".tar")):
+                with tarfile.open(archive_path, "r:*") as tar:
+                    if hasattr(tarfile, 'data_filter'):
+                        tar.extractall(path=extract_dir, filter='data')
+                    else:
+                        tar.extractall(path=extract_dir)
+            elif archive_path.endswith(".zip"):
+                with zipfile.ZipFile(archive_path, "r") as zf:
+                    zf.extractall(path=extract_dir)
+            else:
+                self.raise_error(f"Unsupported archive format: {archive_path}")
+            self.log_msg("Extraction complete.")
+        except Exception as e:
+            self.raise_error(f"Failed to extract archive {archive_path}: {e}")
 
     def _download_and_load(self):
         """
-        Download the dataset if it doesn't exist, load it into numpy,
-        and construct the in-memory MDAnalysis Universe.
+        Ensure the dataset file exists (downloading and uncompressing once if necessary),
+        load it into numpy, and construct the in-memory MDAnalysis Universe.
         """
-        url = self._get_download_url()
-        filename = url.split('/')[-1]
-        filepath = os.path.join(self.data_dir, filename)
+        filepath = self._get_target_filepath()
 
         if not os.path.exists(filepath):
-            self.log_msg(f"Downloading {filename} from {url}...")
-            try:
-                urllib.request.urlretrieve(url, filepath)
-                self.log_msg(f"Download complete: {filepath}")
-            except Exception as e:
-                self.raise_error(f"Failed to download dataset from {url}: {e}")
+            url = self._get_download_url()
+            url_filename = url.split('/')[-1]
+            archive_path = os.path.join(self.data_dir, url_filename)
+            is_archive = url_filename.endswith((".tar.bz2", ".tbz2", ".tar.gz", ".tgz", ".tar", ".zip"))
+
+            if is_archive:
+                # If archive doesn't exist, download it
+                if not os.path.exists(archive_path):
+                    self._download_file(url, archive_path)
+                # Extract archive
+                self._extract_archive(archive_path, self.data_dir)
+            else:
+                # Direct file download
+                self._download_file(url, filepath)
+
+            # Re-check target filepath after extraction
+            filepath = self._get_target_filepath()
+            if not os.path.exists(filepath):
+                self.raise_error(f"Target data file '{filepath}' not found after downloading/extracting from {url}.")
         else:
             self.log_msg(f"Using cached dataset: {filepath}")
 
@@ -100,13 +171,23 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
         """
         Construct an empty MDAnalysis Universe and populate it with coordinates
         and atomic numbers from the dataset.
-        Assumes `self.raw_data` has 'R' (coordinates) and 'z' (atomic numbers).
+        Looks for coordinates in 'coords' (or 'R') and atomic numbers in 'nuclear_charges' (or 'z').
         """
-        if 'R' not in self.raw_data or 'z' not in self.raw_data:
-            self.raise_error("Dataset must contain 'R' (coordinates) and 'z' (atomic numbers).")
-        
-        coords = self.raw_data['R']  # Shape: (n_frames, n_atoms, 3)
-        atomic_numbers = self.raw_data['z']  # Shape: (n_atoms,)
+        coords = None
+        for k in ('coords', 'R'):
+            if k in self.raw_data:
+                coords = self.raw_data[k]
+                break
+        if coords is None:
+            self.raise_error("Dataset must contain coordinates under 'coords' or 'R'.")
+
+        atomic_numbers = None
+        for k in ('nuclear_charges', 'z'):
+            if k in self.raw_data:
+                atomic_numbers = self.raw_data[k]
+                break
+        if atomic_numbers is None:
+            self.raise_error("Dataset must contain atomic numbers under 'nuclear_charges' or 'z'.")
 
         n_frames = coords.shape[0]
         n_atoms = coords.shape[1]
@@ -159,6 +240,8 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
         Instantiate the labeler for this external dataset reader, passing the dataset.
         """
         labeler_cls = get_labeler(labeler_type)
+        run_args = self.get_run_args().copy()
+        run_args.pop("dataset", None)
         return labeler_cls(dataset=self.raw_data, 
                            args=labeler_args, 
-                           **self.get_run_args())
+                           **run_args)

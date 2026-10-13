@@ -8,6 +8,7 @@ import numpy as np
 
 from collective_encoder.common.config_check import validate_required_fields
 from gslibs.utils.filesystem import create_rundir
+from collective_encoder import PARENT_DIR
 
 class CEModule(ABC):
     """
@@ -59,7 +60,12 @@ class CEModule(ABC):
             self._ce_log.info("=" * 80)
             self.ce_log_dict("Initialization args", self.args, indent=2)
 
-    def _create_dir(self, name: str, var_name: str = None) -> None:
+    def _create_dir(self, 
+                    name: str, 
+                    var_name: str = None, 
+                    use_existing: bool = False,
+                    in_exec_dir: bool = False
+                    ) -> None:
         """
         Create a directory under the run directory and assign its path to an attribute.
         
@@ -71,8 +77,11 @@ class CEModule(ABC):
         """
         if var_name is None:
             var_name = name
-        dir_path = os.path.join(self.run_dir, name)
-        if not os.path.exists(dir_path):
+        if in_exec_dir:
+            dir_path = os.path.join(PARENT_DIR, name)
+        else:
+            dir_path = os.path.join(self.run_dir, name)
+        if not os.path.exists(dir_path) or use_existing:
             os.makedirs(dir_path, exist_ok=True)
         else:
             stem = os.path.basename(dir_path)

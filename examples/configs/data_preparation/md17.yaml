@@ -17,7 +17,7 @@ datamodule_args:
     # Data reader configuration
     datareader_type: MD17 
     datareader_args:
-        molecule_name: "aspirin"        # Molecule name (e.g., aspirin, benzene, ethanol)
+        molecule_name: "benzene"        # Molecule name (e.g., aspirin, benzene, ethanol)
         parallel : False                     # Use parallel processing for data reading
 
     # Dataset parameters
@@ -47,7 +47,7 @@ datamodule_args:
 
     labeler_type: "FROM_EXTERNAL"  # Labeler type: FROM_EXTERNAL, CONCAT, DUMMY
     labeler_args:
-        keys: [E, F]          # Keys for labels (e.g., energy, forces)
+        keys: [energies, forces]          # Keys for labels (e.g., energy, forces)
 
     # Data processing
     num_workers: 4             # Number of parallel data loading workers
