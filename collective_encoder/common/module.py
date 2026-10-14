@@ -8,7 +8,7 @@ import numpy as np
 
 from collective_encoder.common.config_check import validate_required_fields
 from gslibs.utils.filesystem import create_rundir
-from collective_encoder import PARENT_DIR
+from collective_encoder import EXECUTION_DIR
 
 class CEModule(ABC):
     """
@@ -78,7 +78,7 @@ class CEModule(ABC):
         if var_name is None:
             var_name = name
         if in_exec_dir:
-            dir_path = os.path.join(PARENT_DIR, name)
+            dir_path = os.path.join(EXECUTION_DIR, name)
         else:
             dir_path = os.path.join(self.run_dir, name)
         if not os.path.exists(dir_path) or use_existing:
