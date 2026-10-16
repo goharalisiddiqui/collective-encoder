@@ -137,6 +137,7 @@ def main_prepare_dmod() -> None:
     _add_common_args(parser)
     _run_prepare_dmod(parser.parse_args())
 
+
 def main_test() -> None:
     """
     Entry point for the collective-encoder-test command.
