@@ -22,6 +22,27 @@ EPSILON = 1e-7
 
 # Flow prior used in https://doi.org/10.1063/5.0105120
 class CELossKLDFlow(CELossKLDUniformGaussian):
+    """
+    KLD loss against a learned normalizing flow prior.
+
+    Instead of a fixed standard normal prior, this computes the KL divergence
+    using a Neural Spline Flow (NSF) / RealNVP prior, as used in data-driven
+    collective variable models. Requires the `nflows` library.
+
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary. Required keys:
+        - ``latent_dim`` (int): Dimensionality of the latent space.
+        Optional keys:
+        - ``num_blocks`` (int, default 4): Number of flow blocks.
+        - ``hidden_units`` (int, default 20): Hidden units in the flow network.
+        - ``spline_knots`` (int, default 31): Knots for the rational quadratic spline.
+        - ``domain`` (tuple, default (-10.0, 10.0)): Domain boundaries for splines.
+        Includes all base arguments from `CELossKLDUniformGaussian`.
+    kwargs : dict
+        Additional keyword arguments.
+    """
     _IDENTIFIER = "CELossKLDFlow"
     _REQUIRED_ARGS = CELossKLDUniformGaussian._REQUIRED_ARGS + ['latent_dim']
     _OPTIONAL_ARGS = CELossKLDUniformGaussian._OPTIONAL_ARGS.copy()
@@ -46,17 +67,7 @@ class CELossKLDFlow(CELossKLDUniformGaussian):
             meta: Dict[str, torch.Tensor],
             ) -> torch.Tensor:
         """
-        KL divergence between Gaussian encoder and NSF RealNVP prior.
-        
-        Args:
-            mu: Encoder mean [batch_size, latent_dim]
-            logvar: Encoder log variance [batch_size, latent_dim]
-            flow: NSF RealNVP flow module (from nflows library)
-                Must have: flow.forward(z) -> (z_transformed, ldj)
-            latent_dim: Dimension of latent space
-        
-        Returns:
-            kld: Scalar KL divergence
+        Compute KL divergence between Gaussian encoder and NSF RealNVP prior.
         
         Mathematical formula:
             KL(q(z|x) || p(z)) = E[log q(z|x) - log p(z)]
@@ -65,6 +76,24 @@ class CELossKLDFlow(CELossKLDUniformGaussian):
             - q(z|x) = N(z; mu, exp(logvar))  [Gaussian encoder]
             - p(z) implicit from NSF: z' = f^{-1}(z) where z' ~ N(0, I)
             - log p(z) = log N(f^{-1}(z); 0, I) + log|det J_{f^{-1}}(z)|
+
+        Parameters
+        ----------
+        inp : torch.Tensor
+            Network input (unused).
+        latent : torch.Tensor
+            Sampled latent variables.
+        output : torch.Tensor
+            Network output (unused).
+        labels : torch.Tensor
+            Ground truth labels (unused).
+        meta : dict
+            Metadata dictionary containing ``mu_x`` and ``logvar_x``.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar KL divergence tensor.
         """
         mu = meta[self.mu_name]
         logvar = meta[self.logvar_name]
@@ -121,11 +150,7 @@ class CELossKLDFlow(CELossKLDUniformGaussian):
         - Domain: [-10, 10], 31 knot locations
         - Neural network: 1 hidden layer, 20 units, ReLU
         
-        Usage:
-            flow = build_nsf_realnvp_flow(latent_dim=8)
-        
-        Note: Requires nflows library
-            pip install nflows
+        Note: Requires nflows library (`pip install nflows`).
         """
         
         bijectors = []

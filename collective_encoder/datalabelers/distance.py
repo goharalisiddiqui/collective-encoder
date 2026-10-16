@@ -1,20 +1,27 @@
+import numpy as np
 import MDAnalysis as mda
-from typing import Dict, List, Union
+from typing import Optional, Dict, List, Union
 
-from .base import FrameLabeler
+from .base import BaseLabeler
 
 
-class DistanceValueLabeler(FrameLabeler):
-    """Compute inter-atomic distances for the current trajectory frame.
+class DistanceValueLabeler(BaseLabeler):
+    """
+    Compute inter-atomic distances for the current trajectory frame.
 
     Each entry in ``selections`` must select exactly two atoms; the Euclidean
     distance between them is returned as a label column.
 
-    Args:
-        universe: MDAnalysis Universe positioned at the target frame.
-        args: Configuration dict with key ``selections`` (required) — a list
-            of MDAnalysis selection strings, each selecting exactly 2 atoms
-            (e.g. ``['resid 1 and name CA', 'resid 5 and name CA']``).
+    Parameters
+    ----------
+    universe : MDAnalysis.Universe
+        MDAnalysis Universe positioned at the target frame.
+    args : dict
+        Configuration dict with key ``selections`` (required) — a list
+        of MDAnalysis selection strings, each selecting exactly 2 atoms
+        (e.g. ``['resid 1 and name CA', 'resid 5 and name CA']``).
+    kwargs : dict
+        Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "DISTANCE"
@@ -40,9 +47,25 @@ class DistanceValueLabeler(FrameLabeler):
             self.raise_error("No valid atom pairs found")
 
     def get_label_names(self) -> List[str]:
+        """
+        Return the names of the label columns.
+
+        Returns
+        -------
+        list of str
+            Label names for each computed distance.
+        """
         return [f'distance_value_{i+1}' for i in range(len(self.dist_atoms))]
 
-    def compute(self) -> List[float]:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Compute inter-atomic distances for the current frame.
+
+        Returns
+        -------
+        list of float
+            The computed Euclidean distances in Ångstroms.
+        """
         from MDAnalysis.lib.distances import distance_array
 
         dists = []
@@ -52,4 +75,5 @@ class DistanceValueLabeler(FrameLabeler):
                 atoms[1].position.reshape(1, 3)
             ).flatten()[0]
             dists.append(dist)
-        return dists
+
+        return np.array(dists, dtype=float)

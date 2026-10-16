@@ -1,0 +1,352 @@
+import logging
+import shutil
+_log = logging.getLogger(__name__)
+import os
+import yaml
+
+import argparse
+import warnings
+
+import numpy as np
+
+import torch
+
+from gslibs.utils.common import recursive_update
+from gslibs.validation.input import check_dict_contains_keys
+
+from collective_encoder.common.config_check import (
+    validate_duplicate_keys, 
+)
+from gslibs.utils.filesystem import create_rundir, output_to_file
+
+from collective_encoder.utils import check_dict_contains_keys
+from collective_encoder.common.registry import get_module
+from collective_encoder import CONFIG_PATH
+
+
+warnings.filterwarnings("ignore", ".*does not have many workers.*")
+torch.set_default_dtype(torch.float64)
+_COMMON_REQUIRED_KEYS = ['outpath', 'outfolder', 'nexp', 'overwrite', 'output_to_file']
+_OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 
+                         'num_workers', 'test_batch_size']
+_VALID_MODULES = ['dmod', 'trainer', 'tester']
+
+##################################
+# Arguments
+##################################
+def parse_args():
+    """
+    Parse common command-line arguments for scripts in the collective encoder framework.
+
+    Returns
+    -------
+    argparse.Namespace
+        Parsed command-line arguments.
+    """
+    desc = "Prepare datamodule for training a collective encoder model based on the provided configuration."
+    parser = argparse.ArgumentParser(description=desc)
+
+    # Run Settings
+    parser.add_argument('--config', required=True, type=str,
+                        help='')
+    parser.add_argument('--debug', action='store_true',
+                        help='Run in debug mode with small data and epochs')
+    
+    args = parser.parse_args()
+
+    return args
+
+def get_required_keys(settings: dict) -> list:
+    """Get the required keys for the module."""
+    req_keys = settings.get('required_keys', [])
+    req_keys = list(set(req_keys + _COMMON_REQUIRED_KEYS))
+    return req_keys
+
+def get_default_config_path(settings: dict) -> str:
+    """Get the default config path for the module."""
+    return os.path.join(CONFIG_PATH,
+                        settings.get('module'),
+                        'defaults.yaml')
+
+def get_debug_config_path(settings: dict) -> str:
+    """Get the debug config path for the module."""
+    return os.path.join(CONFIG_PATH,
+                        settings.get('module'),
+                        'debug.yaml')
+
+def prepare_from_config(config: dict, settings: dict, debug: bool = False):
+    """
+    Prepare runtime directory and metadata arguments from an existing config dict.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary.
+    settings : dict
+        Module-specific settings (e.g., required keys, module name).
+    config_path : str, optional
+        Path to the configuration file, if available.
+    debug : bool, optional
+        Whether to run in debug mode.
+
+    Returns
+    -------
+    tuple
+        Tuple containing the processed config dictionary and metadata arguments dict.
+    """
+    if 'module' not in settings:
+        raise ValueError("Module name must be specified in settings.")
+    
+    required_keys = get_required_keys(settings)
+    debug_config_path = get_debug_config_path(settings)
+    
+    if debug or config.get('debug', False):
+        config['debug'] = True
+        if os.path.isfile(debug_config_path):
+            recursive_update(config, yaml.safe_load(open(debug_config_path, 'r')))
+        torch.manual_seed(0)
+        np.random.seed(0)
+        print("Running in debug mode.")
+        
+    check_dict_contains_keys(config, required_keys=required_keys)
+
+    ##################################
+    # Output directory
+    ##################################
+    run_dir = create_rundir(config['outpath'], 
+                            config['outfolder'], 
+                            config['nexp'], 
+                            overwrite=config['overwrite'])
+
+    ##################################
+    # Output to file
+    ##################################
+    if config.get('output_to_file', False):
+        output_to_file(run_dir, filename="out.txt")
+    
+    ##################################
+    # Meta args used in all modules
+    ##################################
+    logging_level = config.get('verbose', 'INFO')
+    if logging_level is True:
+        logging_level = 'INFO'
+    if logging_level is False:
+        logging_level = 'WARNING'
+    if not hasattr(logging, str(logging_level).upper()):
+        raise ValueError(f"Invalid logging level: {logging_level}. "
+                         f"Valid levels: {logging._nameToLevel.keys()}")
+    logging_level = getattr(logging, str(logging_level).upper(), logging.INFO)
+    logging.basicConfig(filename=os.path.join(run_dir, "run.log"),
+                        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                        level=logging_level,
+                        force=True)
+    metargs = {
+        'verbose': config.get('verbose', True),
+        'root_logger_name': settings['module'],
+        'run_dir': run_dir,
+    }
+    return config, metargs
+
+def _read_config(config_path: str) -> dict:
+    """
+    Read a YAML configuration file and return its contents as a dictionary.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the YAML configuration file.
+
+    Returns
+    -------
+    dict
+        Configuration dictionary.
+    """
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(f"Config file not found at {config_path}")
+
+    validate_duplicate_keys(config_path)
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+
+    return config
+
+def prepare(settings: dict, config_path, debug: bool = False):
+    return _prepare(settings, config_path, debug)
+
+def _prepare(settings: dict, config_path: str = None, debug: bool = False):
+    """
+    Prepare the module environment from CLI arguments and default configurations.
+
+    Parameters
+    ----------
+    settings : dict
+        Module-specific settings.
+
+    Returns
+    -------
+    tuple
+        Processed configuration dictionary and metadata arguments.
+    """
+    if 'module' not in settings:
+        raise ValueError(f"Missing module name in settings.")
+    if settings['module'] not in _VALID_MODULES:
+        raise ValueError(f"Invalid or missing module name in settings. "
+                         f"Valid modules: {_VALID_MODULES}")
+    # Load default configuration
+    default_config_path = get_default_config_path(settings)
+    config = _read_config(default_config_path)
+    
+    # Read user-provided configuration
+    if config_path is None:
+        args = parse_args()
+        config_path = args.config
+        debug = args.debug
+    current_config = _read_config(config_path)
+
+    # Update the default configuration with user-provided values
+    recursive_update(config, current_config)
+
+    config, settings = prepare_from_config(config, settings, debug=debug)
+
+    # Save the final configuration
+    run_dir = settings['run_dir']
+    run_config_target = os.path.join(run_dir, "run_config.yaml")
+    if config_path and os.path.isfile(config_path):
+        shutil.copy2(config_path, run_config_target)
+    else:
+        with open(run_config_target, 'w') as f:
+            yaml.dump(config, f)
+
+    return config, settings
+    
+
+def load_datamodule(config, metargs):
+    """
+    Load or initialize a DataModule based on configuration settings.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary containing DataModule parameters or path to a saved DataModule.
+    metargs : dict
+        Metadata arguments passed to the DataModule constructor.
+
+    Returns
+    -------
+    pytorch_lightning.LightningDataModule
+        The initialized or loaded DataModule.
+    """
+    if 'load_datamodule' in config:
+        dmod_path = config['load_datamodule']
+        _log.info("Loading datamodule from: " + dmod_path)
+        dmod_ckpt = os.path.join(dmod_path, "datamodule.pth")
+        
+        # torch.serialization.add_safe_globals(torch.serialization.get_unsafe_globals_in_checkpoint(dmod_ckpt)) # !!! Very Unsafe, only do this if you trust the source of the checkpoint !!!
+        dm = torch.load(dmod_ckpt, weights_only=False)
+        dm_args = dm.get_args()
+        dm_override_args = config.get('datamodule_args', {})
+        for key, value in dm_override_args.items():
+            if key not in _OVERRIDABLE_DMOD_ARGS:
+                if config.get('debug', False):
+                    continue
+                raise ValueError(f"Cannot override datamodule argument '{key}'. "
+                                 f"Allowed keys: {_OVERRIDABLE_DMOD_ARGS}")
+            _log.info(f"Overriding datamodule argument '{key}' with "
+                      f"value: {value}, previous value: {getattr(dm, key, 'N/A')}")
+            dm_args[key] = value
+            setattr(dm, key, value)
+    else:
+        dm_type = config['datamodule_type']
+        dm_args = config['datamodule_args']
+        dm_cls = get_module('datamodules', dm_type)
+        dm = dm_cls(args=dm_args, **metargs)
+    
+    return dm
+
+def load_model(config, metargs, dm):
+    """
+    Load or initialize a CEModel based on configuration and the provided DataModule.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary containing model parameters or a path to a saved checkpoint.
+    metargs : dict
+        Metadata arguments.
+    dm : pytorch_lightning.LightningDataModule
+        DataModule instance to extract shape and type parameters.
+
+    Returns
+    -------
+    CEModelBase
+        The initialized or loaded model.
+    """
+    nn_args = {
+        'lrate': config.get('lrate', 1e-3),
+        'weight_decay': config.get('weight_decay', 0.0),
+        'normIn': config.get('normIn', False),
+        'scheduler': config.get('scheduler', False),
+        'scheduler_args': config.get('scheduler_args', {}),
+    }
+    nn_args.update(config.get('network_args', config.get('model_args', {})))
+    load_path = config.get('load_network', config.get('load_model', None))
+
+    if load_path is not None:
+        if len(config.get('network_args', config.get('model_args', {}))) > 0:
+            _log.warning("network_args/model_args will be ignored when loading a model.")
+
+        ckpt_path = os.path.join(load_path, "checkpoints")
+        potential_ckpts = [a for a in os.listdir(ckpt_path) if a.endswith(".ckpt")]
+        if len(potential_ckpts) == 0:
+            raise FileNotFoundError(f"No checkpoint found in {ckpt_path}")
+        for name in ['best', 'saved', 'last']:
+            if name + ".ckpt" in potential_ckpts:
+                nn_ckpt = os.path.join(ckpt_path, name + ".ckpt")
+                break
+        else:
+            _log.warning("No 'best', 'saved', or 'last' checkpoint found. "
+                            "Using the first available checkpoint.") 
+            nn_ckpt = os.path.join(ckpt_path, potential_ckpts[0])
+        _log.info("Loading network from: " + nn_ckpt)
+        
+        # We need the network type
+        if os.path.isfile(os.path.join(load_path, "run_config.yaml")):
+            with open(os.path.join(load_path, "run_config.yaml"), 'r') as f:
+                loaded_config = yaml.safe_load(f)
+            nn_type = loaded_config.get('network_type', loaded_config.get('model_type', None))
+            if nn_type is None:
+                raise ValueError("Missing 'network_type' or 'model_type' in loaded configuration.")
+        else:
+            nn_type = config.get('network_type', config.get('model_type', None))
+            if nn_type is None:
+                raise ValueError("'run_config.yaml' not found in the loaded "
+                                 "model directory, 'model_type' must be "
+                                 "specified in the current configuration "
+                                 "to load the model.")
+        
+        # torch.serialization.add_safe_globals(torch.serialization.get_unsafe_globals_in_checkpoint(dmod_ckpt)) # !!! Very Unsafe, only do this if you trust the source of the checkpoint !!!
+        nn_args_saved = torch.load(nn_ckpt, 
+                            weights_only=False, 
+                            map_location=torch.device('cpu')
+                        )['hyper_parameters']['args']
+        nn_cls = get_module("models", nn_type)
+        forbidden_overrides = ['normIn'] # Some arguments cannot be overridden when loading a model
+        nn_args_saved.update({k: v for k, v in nn_args.items() if k not in forbidden_overrides})
+        nn_args = nn_cls.extract_args_from_datamodule(dm, nn_args_saved)
+        model = nn_cls.load_from_checkpoint(nn_ckpt, args=nn_args, **metargs)
+    
+    else:
+        nn_type = config.get('network_type', config.get('model_type', None))
+        if nn_type is None:
+            raise ValueError("Missing 'network_type' or 'model_type' in configuration.")
+        nn_cls = get_module("models", nn_type)
+        nn_args = nn_cls.extract_args_from_datamodule(dm, nn_args)
+        model = nn_cls(args=nn_args, **metargs)
+    
+    return model
+
+
+
+
+    

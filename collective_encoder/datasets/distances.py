@@ -1,49 +1,72 @@
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, Tuple
 
 import numpy as np
 import ase
 
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torch.nn.functional import pairwise_distance
+from tqdm import tqdm
 
 from .base import BaseDataset
 from gslibs.utils.common import parse_slice
 
+from collective_encoder.datareaders.base import BaseDataReader
+
 
 class DistancesDataset(Dataset, BaseDataset):
-    ''' Dataset for pairwise distances between two groups of atoms.
+    """
+    Dataset for pairwise distances between two groups of atoms.
 
     The groups can be specified using python slice notation, e.g. "0:3" for the first three atoms.
     The dataset returns the distances between all pairs of atoms in the two groups for each structure.
 
-    Args:
-        structures (List[ase.Atoms]): List of ASE Atoms objects representing the structures.
-        labels (List[float]): List of labels (e.g. energies) corresponding to each structure.
-        group1 (str): Slice notation for the first group of atoms (default: "0").
-        group2 (str): Slice notation for the second group of atoms (default: "0").
-        atm_ids (List[int], optional): List of atom IDs corresponding to the atoms in the structures. If provided, will print the atom IDs for each distance pair.
-    
-    Returns:
-        distances (torch.Tensor): Tensor of shape (num_structures, num_pairs) containing the distances.
-        labels (torch.Tensor): Tensor of shape (num_structures,) containing the labels.
-    '''
+    Parameters
+    ----------
+    structures : list of ase.Atoms
+        List of ASE Atoms objects representing the structures.
+    labels : list of float
+        List of labels (e.g. energies) corresponding to each structure.
+    args : dict, optional
+        Configuration dictionary containing options like:
+        - ``group1`` (str): Slice notation for the first group of atoms.
+        - ``group2`` (str): Slice notation for the second group of atoms.
+        - ``atm_ids`` (list of int, optional): Atom IDs corresponding to the atoms in the structures.
+    kwargs : dict
+        Additional keyword arguments.
+    """
     _IDENTIFIER = "DISTANCES"
-    _REQUIRED_ARGS = []
     _OPTIONAL_ARGS = {
         'group1': None,
         'group2': None,
         'atm_ids': None,
     }
+    
+    @classmethod
+    def _prepare_dataset(cls, 
+                         dataset_args: Dict[str, Union[float, int, str]], 
+                         datareader: BaseDataReader) \
+        -> Tuple[type, Dict[str, Union[float, int, str]], type]:
+        """
+        Prepare the dataset. This method is a placeholder for any preprocessing steps.
+
+        Parameters
+        ----------
+        dataset_args : dict
+            Configuration dictionary (not used in this dataset).
+        datareader : BaseDataReader
+            Data reader instance (to inject information into dataset args).
+        """
+        return cls, {**dataset_args, "atm_ids": datareader.get_atom_ids()}, DataLoader
 
     def __init__(
         self,
         structures: List[ase.Atoms],
         labels: List[float],
-        dataset_args: Dict[str, Union[float, int, str]] = None,
+        args: Dict[str, Union[float, int, str]] = None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(args=args, **kwargs)
         assert len(structures) == len(labels), "Number of structures and labels must match"
         atns = structures[0].get_atomic_numbers()
 
@@ -66,7 +89,7 @@ class DistancesDataset(Dataset, BaseDataset):
         self.data_shape = (len(pairs),)
         self.pairs = pairs
         self.distances = []
-        for s in structures:
+        for s in tqdm(structures, desc="Calculating distances"):
             distances = []
             positions = s.get_positions()
             for i, j in pairs:
@@ -78,27 +101,80 @@ class DistancesDataset(Dataset, BaseDataset):
         self.num_inputs = len(pairs)
         
         if self.atm_ids is not None:
-            self.ce_log_list("Atom IDs", self.atm_ids)
+            self.log_info(f"Distance index to atom ID mapping for {len(pairs)} pairs:")
             for ind, (i, j) in enumerate(pairs):
-                self.log_msg(f"Distance {ind}: {self.atm_ids[i]} <-> {self.atm_ids[j]}")
+                self.log_msg(f" {ind}: {self.atm_ids[i]} <-> {self.atm_ids[j]}")
         
     def __len__(self):
+        """
+        Return the number of samples in the dataset.
+
+        Returns
+        -------
+        int
+            Total number of samples.
+        """
         return len(self.distances)
 
     def __getitem__(self, index):
+        """
+        Get the sample at the specified index.
+
+        Parameters
+        ----------
+        index : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        tuple
+            Tuple of `(distances, labels)` as PyTorch tensors.
+        """
         x = (self.distances[index], self.labels[index])
         return x
     
     def get_datapoint_shape(self):
+        """
+        Return the shape of a single data point's features.
+
+        Returns
+        -------
+        tuple
+            The shape of the extracted features.
+        """
         return self.data_shape
     
     def get_data(self):
+        """
+        Get all distances and labels as NumPy arrays.
+
+        Returns
+        -------
+        tuple
+            Tuple of (distances_array, labels_array).
+        """
         return np.array([d.numpy() for d in self.distances]), np.array([l.numpy() for l in self.labels])
 
     def get_norm_data(self):
+        """
+        Return array of data used to fit normalizers (scalers).
+
+        Returns
+        -------
+        numpy.ndarray
+            Data to be normalized.
+        """
         return np.array([d.numpy() for d in self.distances])
     
     def get_metatomic_dataprocessor(self):
+        """
+        Get the Metatomic data processor for distance datasets.
+
+        Returns
+        -------
+        MetatomicDistanceDataset
+            A dataset wrapper compatible with Metatomic pipelines.
+        """
         return MetatomicDistanceDataset(self.pairs)
 
 # ------------------------------------------------------------------

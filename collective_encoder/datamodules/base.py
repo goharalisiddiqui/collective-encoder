@@ -45,6 +45,7 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
         'predict_batch_size': 0,
         'norm_type': 'standard',
         'num_workers': 1,
+        "data_analysers": None,
     }
 
     def __init__(self,
@@ -84,6 +85,41 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
         # Dataloader class to be set by subclasses
         self.dl_cls = None
         self.check_module_compatibility()
+    
+    def ext_analyse_data(self, 
+                         data_analysers: List[Dict[str, Any]]):
+        """External method to trigger data analysis."""
+        self._call_analysers(data_analysers, metargs=self.get_run_args())
+
+    def _analyze_data(self):
+        """Run data analysis if data analysers are specified."""
+        if self.data_analysers is None:
+            return
+        self._call_analysers(self.data_analysers, metargs=self.get_run_args())
+    
+    def _call_analysers(self, 
+                        data_analysers: List[Dict[str, Any]], 
+                        metargs: Dict[str, Any]):
+        from collective_encoder.common.registry import get_module
+        for analyser_info in data_analysers:
+            analyser_type = analyser_info.get('analyser_type', None)
+            analyser_args = analyser_info.get('analyser_args', {})
+            if analyser_type is None:
+                self.log_warn("Data analyser type not specified; skipping this analyser.")
+                continue
+            analyser_cls = get_module("dataanalysers", analyser_type)
+            analyser_args['datamodule_args'] = self.get_args()
+            analyser_args['datamodule_labels_list'] = self.get_label_names()
+            analyser = analyser_cls(args=analyser_args, 
+                                    **metargs)
+            if self.train_data is not None and len(self.train_data) > 0:
+                analyser.write_data(self.train_data, label="train")
+            if self.val_data is not None and len(self.val_data) > 0:
+                analyser.write_data(self.val_data, label="val")
+            if self.test_data is not None and len(self.test_data) > 0:
+                analyser.write_data(self.test_data, label="test")
+            if self.predict_data is not None and len(self.predict_data) > 0:
+                analyser.write_data(self.predict_data, label="predict")
 
     def _check_batch_sizes(self):
         """Validate batch sizes against dataset sizes."""

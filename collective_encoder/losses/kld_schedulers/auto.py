@@ -47,10 +47,7 @@ class KLDAutoScheduler(KLDSchedulerBase):
         if metric_value < self.prev_metric:
             self.prev_metric = metric_value
         else:
-            self.value = min(self.kld_max, self.value * (1 + self.increase_factor) 
-                            if self.value > 0 else 
-                            self.kld_initial + self.increase_factor 
-                                                * (self.kld_max - self.value))
+            self.value = min(self.kld_max, self.value * (1.0 + self.increase_factor))
             if self.value != self.kld_max:
                 self.log_info(f"Validation metric '{monitor_metric}' did not improve "
                             f"(current: {metric_value:.4f}, best: {self.prev_metric:.4f}). "

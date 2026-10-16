@@ -6,6 +6,14 @@ import sys
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
+    """
+    Add common arguments (like --config and --debug) to an argparse parser.
+
+    Parameters
+    ----------
+    parser : argparse.ArgumentParser
+        The parser to modify.
+    """
     parser.add_argument('--config', '-c', required=True, type=str,
                         help='Path to configuration YAML file')
     parser.add_argument('--debug', action='store_true',
@@ -13,6 +21,14 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _run_train(args: argparse.Namespace) -> None:
+    """
+    Execute the training command.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
     from collective_encoder.trainer import main as engine_main
     original_argv = sys.argv.copy()
     try:
@@ -25,6 +41,14 @@ def _run_train(args: argparse.Namespace) -> None:
 
 
 def _run_prepare_dmod(args: argparse.Namespace) -> None:
+    """
+    Execute the prepare datamodule command.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
     from collective_encoder.prepare_dmod import main as prepare_dmod_main
     original_argv = sys.argv.copy()
     try:
@@ -36,6 +60,14 @@ def _run_prepare_dmod(args: argparse.Namespace) -> None:
         sys.argv = original_argv
 
 def _run_test(args: argparse.Namespace) -> None:
+    """
+    Execute the testing command.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
     from collective_encoder.tester import main as tester_main
     original_argv = sys.argv.copy()
     try:
@@ -47,8 +79,45 @@ def _run_test(args: argparse.Namespace) -> None:
         sys.argv = original_argv
 
 
+def _run_optuna(args: argparse.Namespace) -> None:
+    """
+    Execute the optuna hyperparameter optimization command.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
+    from collective_encoder.hyperparameter_optimization.runner import main as optuna_main
+    original_argv = sys.argv.copy()
+    try:
+        cmd = ['collective-encoder-optuna', '--config', args.config]
+        if args.debug:
+            cmd.append('--debug')
+        if getattr(args, 'n_trials', None) is not None:
+            cmd.extend(['--n-trials', str(args.n_trials)])
+        if getattr(args, 'executor', None) is not None:
+            cmd.extend(['--executor', str(args.executor)])
+        if getattr(args, 'slurm_header_file', None) is not None:
+            cmd.extend(['--slurm-header-file', str(args.slurm_header_file)])
+        if getattr(args, 'slurm_poll_interval', None) is not None:
+            cmd.extend(['--slurm-poll-interval', str(args.slurm_poll_interval)])
+        if getattr(args, 'n_jobs', None) is not None:
+            cmd.extend(['--n-jobs', str(args.n_jobs)])
+        if getattr(args, 'plot_only', False):
+            cmd.append('--plot-only')
+        if getattr(args, 'dashboard', False):
+            cmd.append('--dashboard')
+        sys.argv = cmd
+        optuna_main()
+    finally:
+        sys.argv = original_argv
+
+
 def main_train() -> None:
-    """Entry point for the collective-encoder-train command."""
+    """
+    Entry point for the collective-encoder-train command.
+    """
     parser = argparse.ArgumentParser(
         description="Train a collective encoder model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -58,7 +127,9 @@ def main_train() -> None:
 
 
 def main_prepare_dmod() -> None:
-    """Entry point for the collective-encoder-prepare_dmod command."""
+    """
+    Entry point for the collective-encoder-prepare_dmod command.
+    """
     parser = argparse.ArgumentParser(
         description="Prepare data module for collective encoder",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -66,8 +137,11 @@ def main_prepare_dmod() -> None:
     _add_common_args(parser)
     _run_prepare_dmod(parser.parse_args())
 
+
 def main_test() -> None:
-    """Entry point for the collective-encoder-test command."""
+    """
+    Entry point for the collective-encoder-test command.
+    """
     parser = argparse.ArgumentParser(
         description="Test a collective encoder model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -76,8 +150,18 @@ def main_test() -> None:
     _run_test(parser.parse_args())
 
 
+def main_optuna() -> None:
+    """
+    Entry point for the collective-encoder-optuna command.
+    """
+    from collective_encoder.hyperparameter_optimization.runner import main as optuna_main
+    optuna_main()
+
+
 def main() -> None:
-    """Main entry point that dispatches to subcommands."""
+    """
+    Main entry point that dispatches to subcommands.
+    """
     parser = argparse.ArgumentParser(
         description="Collective Encoder: ML framework for molecular dynamics",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -95,6 +179,17 @@ def main() -> None:
     test_parser = subparsers.add_parser('test', help='Test a model')
     _add_common_args(test_parser)
     test_parser.set_defaults(func=_run_test)
+
+    optuna_parser = subparsers.add_parser('optuna', help='Run hyperparameter study with Optuna')
+    _add_common_args(optuna_parser)
+    optuna_parser.add_argument('--n-trials', '-n', type=int, default=None, help='Number of trials')
+    optuna_parser.add_argument('--executor', type=str, choices=['local', 'slurm'], default=None, help='Execution backend')
+    optuna_parser.add_argument('--slurm-header-file', type=str, default=None, help='Slurm header file')
+    optuna_parser.add_argument('--slurm-poll-interval', type=int, default=None, help='Slurm poll interval in seconds')
+    optuna_parser.add_argument('--n-jobs', '-j', type=int, default=None, help='Number of parallel workers / Slurm jobs')
+    optuna_parser.add_argument('--plot-only', action='store_true', help='Generate plots without running trials')
+    optuna_parser.add_argument('--dashboard', action='store_true', help='Launch optuna-dashboard')
+    optuna_parser.set_defaults(func=_run_optuna)
 
     args = parser.parse_args()
 

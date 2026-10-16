@@ -1,18 +1,41 @@
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, Tuple
 import warnings
 
 import ase
 
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 
 from .base import BaseDataset
 
+from collective_encoder.datareaders.base import BaseDataReader
+from .utils.soap import soap_modifications
+
 
 class SOAPDataset(Dataset, BaseDataset):
-    '''
-    Docstring for SOAPDataset
-    '''
+    """
+    Dataset for computing Smooth Overlap of Atomic Positions (SOAP) descriptors.
+
+    Uses `featomic` to compute spherical expansion components.
+
+    Parameters
+    ----------
+    structures : list of ase.Atoms
+        List of molecular structures.
+    labels : list of float
+        Target labels for each structure.
+    dataset_args : dict, optional
+        Configuration dictionary with required and optional keys:
+        - ``selected_atoms`` (required): List of atom indices to center descriptors on.
+        - ``cutoff`` (required): SOAP cutoff radius in Å.
+        - ``angular_list`` (list of int, default [4]): Spherical harmonics degrees to include.
+        - ``smoothing_width`` (float, default 1.5): Smoothing width for cutoff.
+        - ``gaussian_width`` (float, default 1.0): Gaussian width for density.
+        - ``n_radial`` (int, default 4): Number of radial basis functions.
+        - ``excluded_types`` (list of int, default [1]): Atomic numbers to exclude (e.g. H=1).
+    kwargs : dict
+        Additional keyword arguments.
+    """
     
     _IDENTIFIER = "SOAP"
     _REQUIRED_ARGS = ['selected_atoms', 'cutoff']
@@ -23,6 +46,23 @@ class SOAPDataset(Dataset, BaseDataset):
         'n_radial': 4,
         'excluded_types': [1],  # Exclude hydrogen by default
     }
+    
+    @classmethod
+    def _prepare_dataset(cls, 
+                         dataset_args: Dict[str, Union[float, int, str]], 
+                         datareader: BaseDataReader) \
+        -> Tuple[type, Dict[str, Union[float, int, str]], type]:
+        """
+        Prepare the dataset. This method is a placeholder for any preprocessing steps.
+
+        Parameters
+        ----------
+        dataset_args : dict
+            Configuration dictionary (not used in this dataset).
+        datareader : BaseDataReader
+            Data reader instance (to inject information into dataset args).
+        """
+        return cls, soap_modifications({**dataset_args}, datareader), DataLoader
     
     def __init__(
         self,
@@ -111,21 +151,74 @@ class SOAPDataset(Dataset, BaseDataset):
         print("="*80)
         
     def __len__(self):
+        """
+        Return the number of samples in the dataset.
+
+        Returns
+        -------
+        int
+            Total number of samples.
+        """
         return self.descriptors.shape[0]
 
     def __getitem__(self, index):
+        """
+        Get the sample at the specified index.
+
+        Parameters
+        ----------
+        index : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        tuple
+            Tuple of `(descriptors, labels)` as PyTorch tensors.
+        """
         return self.descriptors[index], self.labels[index]
     
     def get_data(self):
+        """
+        Get all descriptors and labels.
+
+        Returns
+        -------
+        tuple
+            Tuple of (descriptors, labels).
+        """
         return self.descriptors, self.labels
     
     def get_norm_data(self):
+        """
+        Return array of data used to fit normalizers (scalers).
+
+        Returns
+        -------
+        torch.Tensor
+            Data to be normalized.
+        """
         return self.descriptors
     
     def get_datapoint_shape(self):
+        """
+        Return the shape of a single data point's features.
+
+        Returns
+        -------
+        tuple
+            The shape of the extracted features.
+        """
         return self.descriptors.shape[1:]
 
     def get_metatomic_dataprocessor(self):
+        """
+        Get the Metatomic data processor for SOAP datasets.
+
+        Returns
+        -------
+        MetatomicSOAPDataset
+            A dataset wrapper compatible with Metatomic pipelines.
+        """
         return MetatomicSOAPDataset(self.spex, 
                                     self.selected_keys, 
                                     self.selected_atoms,
