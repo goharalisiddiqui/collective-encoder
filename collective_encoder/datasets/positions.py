@@ -7,6 +7,7 @@ import ase
 
 import torch
 from torch.utils.data import Dataset
+from collective_encoder.datareaders.base import BaseDataReader
 
 from .base import BaseDataset
 
@@ -32,7 +33,7 @@ class PositionsDataset(Dataset, BaseDataset):
     _IDENTIFIER = "POSITIONS"
     _REQUIRED_ARGS = []
     _OPTIONAL_ARGS = {}
-
+    
     def __init__(
         self,
         structures: List[ase.Atoms],

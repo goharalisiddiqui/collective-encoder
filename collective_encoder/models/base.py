@@ -9,7 +9,7 @@ from torch_geometric.data import Data
 
 from collective_encoder.common.module import CEModule
 from collective_encoder.metrics.mae import CEMetricMAE
-from collective_encoder.metrics.resolver import get_metric_cls
+from collective_encoder.common.registry import get_module
 
 
 class CEModelBase(nn.Module, CEModule, ABC):
@@ -62,7 +62,7 @@ class CEModelBase(nn.Module, CEModule, ABC):
         }
         for metric in self.extra_test_metrics:
             try:
-                metric_cls = get_metric_cls(metric['name'])
+                metric_cls = get_module("metrics", metric['name'])
                 self.test_metrics[metric['name']] = metric_cls(metric.get('args', {}), **kwargs)
                 self.log_info(f"Initialized test metric '{metric['name']}' with args: {metric.get('args', {})}")
             except Exception as e:
@@ -302,12 +302,12 @@ class CEModelBase(nn.Module, CEModule, ABC):
         self.test_plotters.append((plotter_name, plotter_args))
 
     def _plot_test_start(self) -> None:
-        from collective_encoder.testplotters.resolver import get_testplotter
+        from collective_encoder.common.registry import get_module
 
         initialized_plotters = []
         for name, args in self.test_plotters:
             try:
-                plotter_cls = get_testplotter(name)
+                plotter_cls = get_module("testplotters", name)
                 plotter_args = (args or {}).copy()
                 if hasattr(self, "logger"):
                     plotter_args["logger"] = self.logger

@@ -8,9 +8,12 @@ import ase
 
 import torch
 from torch_geometric.data import Data, Dataset
+from torch_geometric.loader import DataLoader as GeoDataLoader
 from tqdm import tqdm
 
 from .base import BaseDataset
+from collective_encoder.datareaders.base import BaseDataReader
+from collective_encoder.datareaders.base import BaseDataReader
 
 from .utils.bondgraph import (assemble_bonds, bond_node_features, 
                               angle_and_torsion_edges,
@@ -94,6 +97,23 @@ class BondGraphDataset(BaseDataset, Dataset):
         'precompute_graphs': True,
         'parallel': True,
     }
+    
+    @classmethod
+    def _prepare_dataset(cls, 
+                         dataset_args: Dict[str, Union[float, int, str]], 
+                         datareader: BaseDataReader) \
+        -> Tuple[type, Dict[str, Union[float, int, str]], type]:
+        """
+        Prepare the dataset. This method is a placeholder for any preprocessing steps.
+
+        Parameters
+        ----------
+        dataset_args : dict
+            Configuration dictionary (not used in this dataset).
+        datareader : BaseDataReader
+            Data reader instance (to inject information into dataset args).
+        """
+        return cls, {**dataset_args, "bond_indices": datareader.get_bonds()}, GeoDataLoader
 
     def __init__(
             self,

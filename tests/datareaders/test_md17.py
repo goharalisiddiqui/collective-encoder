@@ -4,11 +4,11 @@ import pytest
 import numpy as np
 
 from collective_encoder.datareaders.datasets.md17 import MD17Reader
-from collective_encoder.datareaders.resolver import get_datareader
+from collective_encoder.common.registry import get_module
 
 
 def test_resolver_md17():
-    cls = get_datareader("MD17")
+    cls = get_module("datareaders", "MD17")
     assert cls is MD17Reader
 
 

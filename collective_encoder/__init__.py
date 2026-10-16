@@ -11,3 +11,19 @@ __version__ = "0.1.0"
 LIBRARY_ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(LIBRARY_ROOT, 'configs')
 EXECUTION_DIR = os.getcwd()
+
+
+from .common.registry import register, get, available
+
+from . import (
+    dataanalysers,
+    datalabelers,
+    datamodules,
+    datareaders,
+    datasets,
+    loggers,
+    losses,
+    metrics,
+    models,
+    testplotters,
+)

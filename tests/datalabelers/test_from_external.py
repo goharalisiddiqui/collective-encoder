@@ -4,7 +4,7 @@ import numpy as np
 import MDAnalysis as mda
 
 from collective_encoder.datalabelers.from_external import FromExternalLabeler
-from collective_encoder.datalabelers.resolver import get_labeler
+from collective_encoder.common.registry import get_module
 from collective_encoder.datareaders.external_dataset import ExternalDatasetReaderBase
 
 
@@ -92,8 +92,8 @@ def test_from_external_single_column_2d():
 
 
 def test_resolver_lookup():
-    cls1 = get_labeler("FROM_EXTERNAL")
-    cls2 = get_labeler("from_external")
+    cls1 = get_module("datalabelers", "FROM_EXTERNAL")
+    cls2 = get_module("datalabelers", "from_external")
     assert cls1 is FromExternalLabeler
     assert cls2 is FromExternalLabeler
 

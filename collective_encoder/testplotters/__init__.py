@@ -5,16 +5,30 @@ Provides base classes and implementations for generating scatter plots,
 correlation matrices, and evaluating disentanglement metrics.
 """
 
-from collective_encoder.testplotters.base import BaseTestPlotter
-from collective_encoder.testplotters.disentanglement import DisentanglementPlotter
-from collective_encoder.testplotters.latent_correlations import LatentCorrelationsPlotter
-from collective_encoder.testplotters.resolver import get_testplotter
-from collective_encoder.testplotters.simple import SimplePlotter
 
-__all__ = [
-    "BaseTestPlotter",
-    "DisentanglementPlotter",
-    "LatentCorrelationsPlotter",
-    "SimplePlotter",
-    "get_testplotter",
-]
+from collective_encoder.common.registry import define_kind, register, lazy_exports
+from .base import BaseTestPlotter
+
+define_kind("testplotters", BaseTestPlotter)
+
+_BUILTINS = {
+    "SimplePlotter": ("collective_encoder.testplotters.simple", "SimplePlotter"),
+    "ALA2plotter": ("collective_encoder.testplotters.ala2", "ALA2plotter"),
+    "DisentanglementBetaMetric": ("collective_encoder.testplotters.disentanglement_metrics.beta", "DisentanglementBetaMetric"),
+    "DisentanglementFactorMetric": ("collective_encoder.testplotters.disentanglement_metrics.factor", "DisentanglementFactorMetric"),
+    "DisentanglementDCIMetric": ("collective_encoder.testplotters.disentanglement_metrics.dci", "DisentanglementDCIMetric"),
+    "DisentanglementMIGMetric": ("collective_encoder.testplotters.disentanglement_metrics.mig", "DisentanglementMIGMetric"),
+    "DisentanglementModularityMetric": ("collective_encoder.testplotters.disentanglement_metrics.modularity", "DisentanglementModularityMetric"),
+    "DisentanglementSAPMetric": ("collective_encoder.testplotters.disentanglement_metrics.sap", "DisentanglementSAPMetric"),
+    "LatentCorrelationsPlotter": ("collective_encoder.testplotters.latent_correlations", "LatentCorrelationsPlotter"),
+    "DisentanglementPlotter": ("collective_encoder.testplotters.disentanglement", "DisentanglementPlotter"),
+}
+
+for _name, (_source, _attr) in _BUILTINS.items():
+    register("testplotters", _name, _source, _attr)          # uses the "source:attr" form
+
+__getattr__, __dir__ = lazy_exports(
+    __name__, {t: f"{m}:{t}" for m, t in _BUILTINS.values()}
+)
+
+__all__ = ["BaseTestPlotter"] + [t for m, t in _BUILTINS.values()]

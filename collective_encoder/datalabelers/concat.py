@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .base import BaseLabeler
-from .resolver import get_labeler
+from collective_encoder.common.registry import get_module
 
 
 class ConcatLabeler(BaseLabeler):
@@ -70,7 +70,7 @@ class ConcatLabeler(BaseLabeler):
             if not child_type:
                 self.raise_error(f"Missing labeler_type at index {idx} in 'labelers'")
 
-            labeler_cls = get_labeler(child_type)
+            labeler_cls = get_module("datalabelers", child_type)
             child_instance = labeler_cls(args=child_args, **child_kwargs)
             self.child_labelers.append(child_instance)
 

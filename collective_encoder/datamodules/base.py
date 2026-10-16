@@ -100,14 +100,14 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
     def _call_analysers(self, 
                         data_analysers: List[Dict[str, Any]], 
                         metargs: Dict[str, Any]):
-        from collective_encoder.dataanalysers.resolver import get_dataanalyser
+        from collective_encoder.common.registry import get_module
         for analyser_info in data_analysers:
             analyser_type = analyser_info.get('analyser_type', None)
             analyser_args = analyser_info.get('analyser_args', {})
             if analyser_type is None:
                 self.log_warn("Data analyser type not specified; skipping this analyser.")
                 continue
-            analyser_cls = get_dataanalyser(analyser_type)
+            analyser_cls = get_module("dataanalysers", analyser_type)
             analyser_args['datamodule_args'] = self.get_args()
             analyser_args['datamodule_labels_list'] = self.get_label_names()
             analyser = analyser_cls(args=analyser_args, 

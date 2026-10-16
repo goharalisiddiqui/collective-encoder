@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from collective_encoder.datamodules.base import BaseDataModule
-from collective_encoder.datareaders.resolver import get_datareader
+from collective_encoder.common.registry import get_module
 from collective_encoder.datasets.resolver import get_dataset_cls_dl
 
 class CoordinatesDataModule(BaseDataModule):
@@ -110,7 +110,7 @@ class CoordinatesDataModule(BaseDataModule):
     
     def _initialize_datareader(self):
         # Initialize the trajectory reader
-        datareader_cls = get_datareader(self.datareader_type)
+        datareader_cls = get_module("datareaders", self.datareader_type)
         self.datareader = datareader_cls(args=self.datareader_args,
                                          **self.run_args)
         self.log_info(f"Total frames in trajectory: {self.datareader.get_total_frames()}")

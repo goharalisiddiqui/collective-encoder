@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict, Optional, Tuple, Union
 
-from collective_encoder.datalabelers.resolver import get_labeler
+from collective_encoder.common.registry import get_module
 import gslibs.validation as gsv
 from gslibs.utils.plumed import plumed_outfile_reader
 
@@ -122,7 +122,7 @@ class PlumedOutputReader(BaseDataReader):
         self.log_msg("Reading PLUMED collective variable data...")
         
         # Get the labels from labeler
-        labeler_cls = get_labeler(labeler_type)
+        labeler_cls = get_module("datalabelers", labeler_type)
         labeler = labeler_cls(
             dataframe=self.data,
             args=labeler_args,

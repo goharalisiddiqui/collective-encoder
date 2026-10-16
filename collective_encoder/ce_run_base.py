@@ -20,8 +20,7 @@ from collective_encoder.common.config_check import (
 from gslibs.utils.filesystem import create_rundir, output_to_file
 
 from collective_encoder.utils import check_dict_contains_keys
-from collective_encoder.datamodules.resolver import get_datamodule
-from collective_encoder.models.resolver import get_model
+from collective_encoder.common.registry import get_module
 from collective_encoder import CONFIG_PATH
 
 
@@ -260,7 +259,7 @@ def load_datamodule(config, metargs):
     else:
         dm_type = config['datamodule_type']
         dm_args = config['datamodule_args']
-        dm_cls = get_datamodule(dm_type)
+        dm_cls = get_module('datamodules', dm_type)
         dm = dm_cls(args=dm_args, **metargs)
     
     return dm
@@ -331,7 +330,7 @@ def load_model(config, metargs, dm):
                             weights_only=False, 
                             map_location=torch.device('cpu')
                         )['hyper_parameters']['args']
-        nn_cls = get_model(nn_type)
+        nn_cls = get_module("models", nn_type)
         forbidden_overrides = ['normIn'] # Some arguments cannot be overridden when loading a model
         nn_args_saved.update({k: v for k, v in nn_args.items() if k not in forbidden_overrides})
         nn_args = nn_cls.extract_args_from_datamodule(dm, nn_args_saved)
@@ -341,7 +340,7 @@ def load_model(config, metargs, dm):
         nn_type = config.get('network_type', config.get('model_type', None))
         if nn_type is None:
             raise ValueError("Missing 'network_type' or 'model_type' in configuration.")
-        nn_cls = get_model(nn_type)
+        nn_cls = get_module("models", nn_type)
         nn_args = nn_cls.extract_args_from_datamodule(dm, nn_args)
         model = nn_cls(args=nn_args, **metargs)
     

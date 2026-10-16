@@ -1,15 +1,17 @@
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, Tuple
 
 import numpy as np
 import ase
 
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torch.nn.functional import pairwise_distance
 from tqdm import tqdm
 
 from .base import BaseDataset
 from gslibs.utils.common import parse_slice
+
+from collective_encoder.datareaders.base import BaseDataReader
 
 
 class DistancesDataset(Dataset, BaseDataset):
@@ -39,6 +41,23 @@ class DistancesDataset(Dataset, BaseDataset):
         'group2': None,
         'atm_ids': None,
     }
+    
+    @classmethod
+    def _prepare_dataset(cls, 
+                         dataset_args: Dict[str, Union[float, int, str]], 
+                         datareader: BaseDataReader) \
+        -> Tuple[type, Dict[str, Union[float, int, str]], type]:
+        """
+        Prepare the dataset. This method is a placeholder for any preprocessing steps.
+
+        Parameters
+        ----------
+        dataset_args : dict
+            Configuration dictionary (not used in this dataset).
+        datareader : BaseDataReader
+            Data reader instance (to inject information into dataset args).
+        """
+        return cls, {**dataset_args, "atm_ids": datareader.get_atom_ids()}, DataLoader
 
     def __init__(
         self,

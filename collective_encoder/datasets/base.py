@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Any, List, Union, Dict
+from typing import Any, Union, Dict, Tuple
 
 import numpy as np
+import torch
 
 from collective_encoder.common.module import CEModule
-from collective_encoder.common.config_check import validate_required_fields
+from collective_encoder.datareaders.base import BaseDataReader
+from torch.utils.data import DataLoader
 
 class BaseDataset(CEModule, ABC):
     """
@@ -20,6 +22,24 @@ class BaseDataset(CEModule, ABC):
     kwargs : dict
         Additional keyword arguments forwarded to the parent `CEModule`.
     """
+    
+    @classmethod
+    def _prepare_dataset(cls, 
+                         dataset_args: Dict[str, Union[float, int, str]], 
+                         datareader: BaseDataReader) \
+        -> Tuple[type, Dict[str, Union[float, int, str]], type]:
+        """
+        Prepare the dataset. This method is a placeholder for any preprocessing steps.
+
+        Parameters
+        ----------
+        dataset_args : dict
+            Configuration dictionary (not used in this dataset).
+        datareader : BaseDataReader
+            Data reader instance (to inject information into dataset args).
+        """
+        return cls, dataset_args, DataLoader
+        
 
     def __init__(self,
                  args: Dict[str, Union[float, int, str]] = None,

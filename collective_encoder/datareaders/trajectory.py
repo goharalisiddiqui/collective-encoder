@@ -12,7 +12,7 @@ from MDAnalysis.exceptions import NoDataError
 
 from collective_encoder.datalabelers.base import BaseLabeler
 from collective_encoder.datareaders.base import BaseDataReader
-from collective_encoder.datalabelers.resolver import get_labeler
+from collective_encoder.common.registry import get_module
 from collective_encoder.datareaders.processors.resolver import get_processor
 from MDAnalysis.exceptions import NoDataError
 
@@ -134,7 +134,7 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         """
         Instantiate the labeler for this trajectory reader.
         """
-        labeler_cls = get_labeler(labeler_type)
+        labeler_cls = get_module("datalabelers", labeler_type)
         return labeler_cls(universe=self.u, args=labeler_args, **self.get_run_args())
 
     def read_trajectory(self,

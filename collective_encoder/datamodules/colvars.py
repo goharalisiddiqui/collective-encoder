@@ -1,5 +1,5 @@
 from collective_encoder.datamodules.coordinates import CoordinatesDataModule
-from collective_encoder.datareaders.resolver import get_datareader
+from collective_encoder.common.registry import get_module
 
 
 class ColvarsDataModule(CoordinatesDataModule):
@@ -54,7 +54,7 @@ class ColvarsDataModule(CoordinatesDataModule):
         """
         Initialise the PLUMED datareader without reading atomic metadata.
         """
-        datareader_cls = get_datareader(self.hparams.datareader_type)
+        datareader_cls = get_module("datareaders", self.hparams.datareader_type)
         self.datareader = datareader_cls(**self.hparams.datareader_args)
         # COLVAR files have no atomic numbers, bonds, or element symbols.
         # These attributes are intentionally left unset; methods that access

@@ -1,38 +1,10 @@
-import importlib
+from collective_encoder.common.registry import get_module
 
-_REGISTRY: dict = {
-    "gaussian":         ("collective_encoder.losses.kld_uniform_gaussian",      "CELossKLDUniformGaussian"),
-    "gaussian_mixture": ("collective_encoder.losses.kld_gaussian_mixture",      "CELossKLDGaussianMixture"),
-    "nflow":             ("collective_encoder.losses.kld_flow",                  "CELossKLDFlow")
+_MAP: dict = {
+    "gaussian":          "CELossKLDUniformGaussian",
+    "gaussian_mixture":  "CELossKLDGaussianMixture",
+    "nflow":             "CELossKLDFlow"
 }
-
-
-def get_kld_cls(name: str):
-    """
-    Return the KLD loss class mapped to a given string identifier.
-
-    Parameters
-    ----------
-    name : str
-        The registered string identifier for the target KLD loss.
-
-    Returns
-    -------
-    type
-        The corresponding KLD loss class.
-
-    Raises
-    ------
-    ValueError
-        If `name` is not found in the registry.
-    """
-    if name not in _REGISTRY:
-        raise ValueError(
-            f"Unknown KLD loss name: '{name}'. "
-            f"Available: {sorted(_REGISTRY)}"
-        )
-    module_path, class_name = _REGISTRY[name]
-    return getattr(importlib.import_module(module_path), class_name)
 
 def create_kld_loss(name: str, args: dict, **kwargs):
     """
@@ -52,5 +24,6 @@ def create_kld_loss(name: str, args: dict, **kwargs):
     CELossBase
         An instantiated KLD loss module.
     """
-    kld_cls = get_kld_cls(name)
+    
+    kld_cls = get_module("losses", _MAP[name])
     return kld_cls(args=args, **kwargs)

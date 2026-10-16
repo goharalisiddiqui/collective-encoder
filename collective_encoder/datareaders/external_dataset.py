@@ -9,7 +9,7 @@ import MDAnalysis as mda
 
 from collective_encoder.datalabelers.base import BaseLabeler
 from collective_encoder.datareaders.trajectory import TrajectoryReaderBase
-from collective_encoder.datalabelers.resolver import get_labeler
+from collective_encoder.common.registry import get_module
 
 class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
     """
@@ -239,7 +239,7 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
         """
         Instantiate the labeler for this external dataset reader, passing the dataset.
         """
-        labeler_cls = get_labeler(labeler_type)
+        labeler_cls = get_module("datalabelers", labeler_type)
         run_args = self.get_run_args().copy()
         run_args.pop("dataset", None)
         return labeler_cls(dataset=self.raw_data, 
