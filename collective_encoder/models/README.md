@@ -1,28 +1,44 @@
 # Models
 
-This module defines the high-level machine learning models within the Collective Encoder framework. These models wrap PyTorch modules, Scikit-learn estimators, or custom implementations and interface directly with the main PyTorch Lightning `Trainer`.
+This module defines the machine learning models in the Collective Encoder framework, encompassing both deep neural networks (autoencoders, variational autoencoders, graph autoencoders) and classical statistical dimensionality reduction models (PCA, ICA, TICA).
 
 ## Interface
 
-All model classes inherit from PyTorch Lightning's `LightningModule` and the framework's `CEModuleBase` (defined in `base.py`).
+All models inherit from `CEModelBase` (`base.py`). Deep learning models trained with PyTorch Lightning further inherit from `CENetBase` (`neural_nets/base.py`), which subclasses both `CEModelBase` and `pytorch_lightning.LightningModule`.
 
-### `CEModelBase`
-The abstract base class for all models. It defines the standard lifecycle methods for PyTorch Lightning, such as `training_step`, `validation_step`, and `test_step`. It also manages the instantiation of underlying neural networks (`nets`), loss functions, metrics, and optimizers.
+### `CEModelBase` & `CENetBase`
 
-Subclasses are expected to:
-- Instantiate their core architectures in `__init__`.
-- Define how input data is processed and passed to the loss functions/metrics in the step methods.
+- **`CEModelBase`**: Manages input normalization buffers (`Mean`, `Range`, `normIn`, `normSet`), encoding/decoding interfaces (`encoder`, `decoder`, `forward`), test plotter lifecycle, and checkpoint serialization.
+- **`CENetBase`**: Adds PyTorch Lightning lifecycle methods (`training_step`, `validation_step`, `test_step`, `configure_optimizers`), loss/metric aggregation, and learning rate scheduling.
+
+## Registration & Resolution
+
+Models are registered under the `"models"` kind in [`__init__.py`](__init__.py) using `collective_encoder.common.registry`:
+- **Kind definition**: `define_kind("models", CEModelBase)`
+- **Resolution**: `get_module("models", model_type)` from `collective_encoder.common.registry` (there is no `resolver.py` in `models/`).
+- **Adding a new Model**: Subclass `CEModelBase` (or `CENetBase`) and register it in `_BUILTINS` inside `models/__init__.py` or from an external package (such as `surrogate_dynamics`) via:
+  ```python
+  from collective_encoder.common.registry import register
+  register("models", "MY_MODEL", "my_package.models", "MyModel")
+  ```
 
 ## Available Models
 
-### Deep Learning Models (Neural Nets)
-Located within the `neural_nets/` subfolder.
-- `AENet`: Standard Autoencoder.
-- `VAENet`: Variational Autoencoder.
-- `BGENet` / `BGEV2Net`: Bond Graph Autoencoders for molecular graph data.
-- `DVAENet` / `EDVAENet`: Distributed VAEs and Equivariant Distributed VAEs.
+### Deep Learning Models (`models/neural_nets/`)
 
-### Classical/Statistical Models
-- `PCAModel`: Principal Component Analysis.
-- `ICAModel`: Independent Component Analysis.
-- `TICAModel`: Time-lagged Independent Component Analysis.
+| Registry Key | Class | Description |
+| :--- | :--- | :--- |
+| `AE` / `sAE` | `AE` / `sAE` | Standard and supervised Feedforward Autoencoders. |
+| `VAE` / `sVAE` | `VAE` / `sVAE` | Standard and supervised Variational Autoencoders. |
+| `DVAE` / `sDVAE` | `DVAE` / `sDVAE` | Disentangled / Distributed Variational Autoencoders. |
+| `EDVAE` | `EDVAE` | Ensemble / Equivariant Disentangled Variational Autoencoder. |
+| `BGE` | `BondGraphEncoderDecoder` | Bond Graph Autoencoder operating on molecular graph representations. |
+| `BGE_V2` | `BondGraphEncoderDecoderV2` | Enhanced Bond Graph Autoencoder (v2). |
+
+### Classical / Statistical Models
+
+| Registry Key | Class | Description |
+| :--- | :--- | :--- |
+| `PCA` (or `PCAEncoder`) | `PCAModel` | Principal Component Analysis. |
+| `ICA` (or `ICAEncoder`) | `ICAModel` | Independent Component Analysis. |
+| `TICA` (or `TICAEncoder`) | `TICAModel` | Time-lagged Independent Component Analysis. |

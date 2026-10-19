@@ -104,4 +104,9 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
+markers = [
+    "unit: fast, isolated unit tests",
+    "integration: multi-component integration tests",
+    "slow: tests that require external datasets or longer runtime",
+]
 addopts = "--cov=collective_encoder --cov-report=html --cov-report=term"

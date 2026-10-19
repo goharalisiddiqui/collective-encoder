@@ -2,10 +2,10 @@ import numpy as np
 import MDAnalysis as mda
 from typing import Optional, Dict, List, Union
 
-from .base import BaseLabeler
+from .mda import MDALabeler
 
 
-class DihedralValueLabeler(BaseLabeler):
+class DihedralValueLabeler(MDALabeler):
     """
     Compute backbone dihedral angles (phi/psi) for the current trajectory frame.
 

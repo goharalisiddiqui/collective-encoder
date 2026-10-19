@@ -64,7 +64,8 @@ class CEModule(ABC):
                     name: str, 
                     var_name: str = None, 
                     use_existing: bool = False,
-                    in_exec_dir: bool = False
+                    in_exec_dir: bool = False,
+                    base_type: str = "run"
                     ) -> None:
         """
         Create a directory under the run directory and assign its path to an attribute.
@@ -75,12 +76,20 @@ class CEModule(ABC):
                 If None, defaults to the same as `name`.
         
         """
+        _BASE_PATH_MODEL = {
+            "run": self.run_dir,
+            "exec": EXECUTION_DIR,
+            "execution": EXECUTION_DIR,
+            "abs": "",
+            "absolute": "",
+        }
         if var_name is None:
             var_name = name
-        if in_exec_dir:
-            dir_path = os.path.join(EXECUTION_DIR, name)
-        else:
-            dir_path = os.path.join(self.run_dir, name)
+
+        if in_exec_dir: # backward compatibility
+            base_type = "exec"
+        dir_path = os.path.join(_BASE_PATH_MODEL.get(base_type, ""), name)
+
         if not os.path.exists(dir_path) or use_existing:
             os.makedirs(dir_path, exist_ok=True)
         else:
@@ -124,7 +133,7 @@ class CEModule(ABC):
     
     def save_npy(self, arr: np.ndarray, label: str) -> None:
         if not hasattr(self, "results_dir"):
-            self.creater_results_dir()
+            self.create_results_dir()
         npy_path = os.path.join(self.results_dir, f"{label.lower().replace(' ', '_')}.npy")
         np.save(npy_path, arr)
         self.log_result_msg(f"@@ Saved {label} to {npy_path}")

@@ -39,7 +39,7 @@ class CELossMSEDict(CELossBase):
         if self.weights == None:
             self.weights = [1.0] * len(self.keys)
         
-        if len(self.keys) != len (self.weights):
+        if len(self.keys) != len(self.weights):
             self.raise_error(f"Keys {self.keys} and weights {self.weights} must be of same length.")
         
         self.loss_fn = torch.nn.MSELoss(reduction=self.reduction)

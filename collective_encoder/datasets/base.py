@@ -113,3 +113,15 @@ class BaseDataset(CEModule, ABC):
         if cls._IDENTIFIER is None:
             raise NotImplementedError(f"{cls.__name__} must define a class-level _IDENTIFIER attribute")
         return cls._IDENTIFIER
+
+    @abstractmethod
+    def get_data(self):
+        """
+        Get all distances and labels as NumPy arrays.
+
+        Returns
+        -------
+        tuple
+            Tuple of (distances_array, labels_array).
+        """
+        raise NotImplementedError("Subclasses must implement get_data method")

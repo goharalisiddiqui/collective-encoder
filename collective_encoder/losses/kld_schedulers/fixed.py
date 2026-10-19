@@ -15,5 +15,5 @@ class KLDFixedScheduler(KLDSchedulerBase):
     ):
         super().__init__(args=args, **kwargs)
     
-    def get_kld_max(self, plmodule: pl.LightningModule) -> float:
+    def get_kld_max(self) -> float:
         return self.value

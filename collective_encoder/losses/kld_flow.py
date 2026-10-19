@@ -13,10 +13,9 @@ try:
     from nflows.transforms.permutations import RandomPermutation
     from nflows.distributions.normal import StandardNormal
     from nflows.transforms.splines import rational_quadratic_spline
+    _HAS_NFLOWS = True
 except ImportError:
-    raise ImportError(
-        "Please install nflows: pip install nflows\n"
-    )
+    _HAS_NFLOWS = False
 
 EPSILON = 1e-7
 
@@ -56,6 +55,8 @@ class CELossKLDFlow(CELossKLDUniformGaussian):
     def __init__(self,
                 args: Dict[str, Any] = None,
                 **kwargs):
+        if not _HAS_NFLOWS:
+            raise ImportError("Please install nflows: pip install nflows\n")
         super().__init__(args=args, **kwargs)
         self.create_flow()
 

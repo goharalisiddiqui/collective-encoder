@@ -1,11 +1,12 @@
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Optional, Tuple, Union
+from typing import Any, List, Dict, Optional, Tuple, Union
 
 from collective_encoder.common.registry import get_module
 import gslibs.validation as gsv
 from gslibs.utils.plumed import plumed_outfile_reader
 
+from collective_encoder.datalabelers.base import BaseLabeler
 from collective_encoder.datareaders.base import BaseDataReader
 
 
@@ -20,8 +21,11 @@ class PlumedOutputReader(BaseDataReader):
 
     Parameters
     ----------
-    plumed_file : str
-        Path to the PLUMED output file.
+    args : dict, optional
+        Configuration dictionary containing ``plumed_file`` and optional
+        ``columns``, ``ignore_list``, and ``column_match``.
+    plumed_file : str, optional
+        Path to the PLUMED output file (can also be passed via ``args``).
     columns : list of str, optional
         Specific columns to read from the file. If None, reads all available columns.
     ignore_list : list of str, optional
@@ -32,40 +36,56 @@ class PlumedOutputReader(BaseDataReader):
         Additional arguments passed to the parent class.
     """
     _IDENTIFIER = "PLUMED_OUTPUT"
+    _COMPATIBLE_LABELERS = BaseDataReader._COMPATIBLE_LABELERS + ["COLUMN_SELECTOR"]
+    _REQUIRED_ARGS = ["plumed_file"]
+    _OPTIONAL_ARGS = {
+        "columns": None,
+        "ignore_list": None,
+        "column_match": None,
+    }
 
     def __init__(self,
-                 plumed_file: str,
+                 args: Optional[Dict[str, Any]] = None,
+                 plumed_file: Optional[str] = None,
                  columns: Optional[List[str]] = None,
                  ignore_list: Optional[List[str]] = None,
                  column_match: Optional[str] = None,
                  **kwargs):
-        super().__init__(**kwargs)
+        merged_args = dict(args) if args is not None else {}
+        if plumed_file is not None:
+            merged_args["plumed_file"] = plumed_file
+        if columns is not None:
+            merged_args["columns"] = columns
+        if ignore_list is not None:
+            merged_args["ignore_list"] = ignore_list
+        if column_match is not None:
+            merged_args["column_match"] = column_match
 
-        # Store parameters
-        self.plumed_file = plumed_file
-        self.columns = columns
-        self.ignore_list = ignore_list or []
-        self.column_match = column_match
+        super().__init__(args=merged_args, **kwargs)
 
-        # Check if file exists
-        gsv.check_exists(plumed_file=plumed_file)
-        gsv.check_mutually_exclusive(columns=columns, 
-                                     column_match=column_match, 
-                                     require_one=True)
-        self.log_msg(f"Loading PLUMED output from file {plumed_file}")
+        self.ignore_list = self.ignore_list or []
+
+        # Check if file exists and validate column selection arguments
+        gsv.check_exists(plumed_file=self.plumed_file)
+        gsv.check_mutually_exclusive(
+            columns=self.columns,
+            column_match=self.column_match,
+            require_one=False,
+        )
+        self.log_msg(f"Loading PLUMED output from file {self.plumed_file}")
 
         # Read the data using the utility functions
         try:
             self.data = plumed_outfile_reader(
-                plumed_outfile=plumed_file,
-                columns=columns,
-                ignore_list=ignore_list,
-                column_match=column_match,
+                plumed_outfile=self.plumed_file,
+                columns=self.columns,
+                ignore_list=self.ignore_list,
+                column_match=self.column_match,
                 vstime=False
             )
 
         except Exception as e:
-            raise ValueError(f"Failed to read PLUMED output file {plumed_file}: {e}")
+            raise ValueError(f"Failed to read PLUMED output file {self.plumed_file}: {e}")
 
         self.log_msg(f"Successfully loaded PLUMED data with shape {self.data.shape}")
         self.log_msg(f"Available columns: {list(self.data.columns)}")
@@ -94,11 +114,41 @@ class PlumedOutputReader(BaseDataReader):
         """
         return self.n_frames
 
+    def read(
+        self,
+        labeler_type: str = "DUMMY",
+        labeler_args: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ):
+        """
+        Read PLUMED output data using the specified labeler.
+        """
+        return self.read_trajectory(
+            indices=kwargs.get("indices", []),
+            labeler_type=labeler_type,
+            labeler_args=labeler_args or {},
+        )
+
+    def _initialize_labeler(
+        self,
+        labeler_type: str,
+        labeler_args: Dict[str, Any],
+    ) -> BaseLabeler:
+        """
+        Instantiate the labeler for this PLUMED reader.
+        """
+        labeler_cls = get_module("datalabelers", labeler_type)
+        return labeler_cls(
+            dataframe=self.data,
+            args=labeler_args or {},
+            **self.get_run_args(),
+        )
+
     def read_trajectory(self,
                        indices: List[List[int]],
-                       labeler_type : str = 'Dummy',
-                       labeler_args : Dict[str, Union[str, float, List[int]]] = {},
-                    ) -> Tuple[List[np.ndarray], List[np.ndarray], List]:
+                       labeler_type: str = 'DUMMY',
+                       labeler_args: Optional[Dict[str, Union[str, float, List[int]]]] = None,
+                    ) -> Tuple[List[np.ndarray], List[np.ndarray], Tuple[List[int], ...]]:
         """
         Read the PLUMED collective variable data for requested index splits.
 
@@ -107,7 +157,7 @@ class PlumedOutputReader(BaseDataReader):
         indices : list of list of int
             List of index sequences to read (e.g. for train, val, test splits).
         labeler_type : str, optional
-            Type of labeler to use, by default 'Dummy'.
+            Type of labeler to use, by default 'DUMMY'.
         labeler_args : dict, optional
             Arguments for the labeler.
 
@@ -117,18 +167,19 @@ class PlumedOutputReader(BaseDataReader):
             A tuple containing:
             - List of numpy arrays with collective variable data.
             - List of numpy arrays with corresponding labels computed by the labeler.
-            - Empty list (indicating no partial frame failures in this context).
+            - Tuple of empty lists (indicating no partial frame failures per split).
         """
         self.log_msg("Reading PLUMED collective variable data...")
-        
-        # Get the labels from labeler
-        labeler_cls = get_module("datalabelers", labeler_type)
-        labeler = labeler_cls(
-            dataframe=self.data,
-            args=labeler_args,
+
+        if labeler_type in (None, "Dummy"):
+            labeler_type = "DUMMY"
+
+        labeler = self.initialize_labeler(
+            labeler_type=labeler_type,
+            labeler_args=labeler_args or {},
         )
         self.label_list = labeler.get_label_names()
-        
+
         trajs, labels = [], []
 
         for seq_indices in indices:
@@ -141,8 +192,10 @@ class PlumedOutputReader(BaseDataReader):
             # Convert to numpy array
             traj_data = seq_data.values  # Shape: (n_frames, n_features)
 
-            # For compatibility, also provide as list of lists
-            label_data = labeler.compute(seq_indices)
+            if len(seq_indices) == 0:
+                label_data = np.empty((0, len(self.label_list)))
+            else:
+                label_data = labeler.compute(seq_indices)
 
             trajs.append(traj_data)
             labels.append(label_data)
@@ -152,4 +205,4 @@ class PlumedOutputReader(BaseDataReader):
                     f"{[t.shape for t in trajs]} and "
                     f"label shapes {[l.shape for l in labels]}.")
 
-        return trajs, labels, []
+        return trajs, labels, tuple([] for _ in indices)

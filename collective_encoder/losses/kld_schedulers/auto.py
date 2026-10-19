@@ -34,7 +34,7 @@ class KLDAutoScheduler(KLDSchedulerBase):
         if self.increase_factor <= 0:
             self.raise_error("increase_factor must be > 0")
 
-    def get_kld_max(self, plmodule: pl.LightningModule) -> float:
+    def get_kld_max(self) -> float:
         return self.value
 
     def on_validation_epoch_end(self, plmodule: pl.LightningModule):

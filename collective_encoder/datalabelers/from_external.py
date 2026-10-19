@@ -1,7 +1,6 @@
 import itertools
 from typing import Any, Dict, List, Optional, Union
 import numpy as np
-import MDAnalysis as mda
 
 from .base import BaseLabeler
 

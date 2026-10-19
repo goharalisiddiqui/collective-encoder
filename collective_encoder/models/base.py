@@ -384,6 +384,9 @@ class CEModelBase(nn.Module, CEModule, ABC):
                     elif stage == "test":
                         self.log_warning(f"Metric '{name}' returned a non-scalar meta value for key '{key}' during testing. "
                                          "Skipping logging for this meta value.")
+            if stage == "test":
+                # Add 'test_' prefix to test meta to avoid name collisions with training/validation metrics
+                result_meta = {f"test_{key}": value for key, value in result_meta.items()}
             meta.update(result_meta)
         return results
 

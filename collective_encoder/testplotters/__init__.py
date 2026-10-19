@@ -13,7 +13,6 @@ define_kind("testplotters", BaseTestPlotter)
 
 _BUILTINS = {
     "SimplePlotter": ("collective_encoder.testplotters.simple", "SimplePlotter"),
-    "ALA2plotter": ("collective_encoder.testplotters.ala2", "ALA2plotter"),
     "DisentanglementBetaMetric": ("collective_encoder.testplotters.disentanglement_metrics.beta", "DisentanglementBetaMetric"),
     "DisentanglementFactorMetric": ("collective_encoder.testplotters.disentanglement_metrics.factor", "DisentanglementFactorMetric"),
     "DisentanglementDCIMetric": ("collective_encoder.testplotters.disentanglement_metrics.dci", "DisentanglementDCIMetric"),

@@ -28,7 +28,7 @@ def _read_and_label(args):
 
     mol = u_copy.select_atoms(selection)
         
-    labeler.reinitialize(universe =u_copy)  # Re-initialize labeler with the copied Universe
+    labeler.reinitialize(universe = u_copy)  # Re-initialize labeler with the copied Universe
 
     verbose = worker_id == 0  # Only the main process shows progress bars and logs
     if not verbose:
@@ -105,12 +105,13 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         'selection': "all",
         'type_to_elements': None,
         'parallel': True,
+        'processors': None,
     }
 
     def __init__(self, args: Dict[str, Any] = None, **kwargs):
         super().__init__(args=args, **kwargs)
         self.processors = []
-        processor_configs = self.args.get('processors', [])
+        processor_configs = self.args.get('processors') or []
         for config in processor_configs:
             processor_cls = get_processor(config['type'])
             processor_args = config.get('args', {})

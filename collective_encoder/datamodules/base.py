@@ -34,7 +34,6 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
     _IDENTIFIER: str = None
     _COMPATIBLE_DATAREADERS: List[str] = []
     _COMPATIBLE_DATASETS: List[str] = []
-    _COMPATIBLE_LABELERS: List[str] = []
     _REQUIRED_ARGS = ['train_size', 'batch_size']
     _OPTIONAL_ARGS = {
         'validation_size': 0,
@@ -334,19 +333,12 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
         """Get list of compatible dataset types."""
         return cls._COMPATIBLE_DATASETS
 
-    @classmethod
-    def get_compatible_labelers(cls) -> List[str]:
-        """Get list of compatible labeler types."""
-        return cls._COMPATIBLE_LABELERS
-    
     def check_module_compatibility(self):
         """Check if the provided datareader, dataset, and labeler types are compatible with this DataModule."""
         if hasattr(self, 'datareader_type') and self.datareader_type is not None:
             self.check_datareader_compatibility(self.datareader_type)
         if hasattr(self, 'dataset_type') and self.dataset_type is not None:
             self.check_dataset_compatibility(self.dataset_type)
-        if hasattr(self, 'labeler_type') and self.labeler_type is not None:
-            self.check_labeler_compatibility(self.labeler_type)
 
     def check_datareader_compatibility(self, datareader_id : str):
         """Check if the provided datareader type is compatible with this DataModule."""
@@ -364,10 +356,3 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
                              f"with {type(self).__name__}, which supports "
                              f"{compatible_datasets}")
     
-    def check_labeler_compatibility(self, labeler_id : str):
-        """Check if the provided labeler type is compatible with this DataModule."""
-        compatible_labelers = self.get_compatible_labelers()
-        if labeler_id not in compatible_labelers:
-            raise ValueError(f"Labeler type {labeler_id} is not compatible "
-                             f"with {type(self).__name__}, which supports "
-                             f"{compatible_labelers}")

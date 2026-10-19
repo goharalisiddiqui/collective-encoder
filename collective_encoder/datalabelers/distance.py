@@ -2,10 +2,10 @@ import numpy as np
 import MDAnalysis as mda
 from typing import Optional, Dict, List, Union
 
-from .base import BaseLabeler
+from .mda import MDALabeler
 
 
-class DistanceValueLabeler(BaseLabeler):
+class DistanceValueLabeler(MDALabeler):
     """
     Compute inter-atomic distances for the current trajectory frame.
 

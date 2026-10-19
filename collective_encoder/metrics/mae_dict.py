@@ -60,7 +60,7 @@ class CEMetricMAEDict(CEMetricBase):
         """
         mae = {}
         for key in self.keys:
-            mae[key] = (
+            mae[key + '_mae'] = (
                 F.l1_loss(output[key], labels[key], reduction=self.reduction)
                 if labels[key].numel() > 0
                 else torch.tensor(0.0, device=output[key].device)

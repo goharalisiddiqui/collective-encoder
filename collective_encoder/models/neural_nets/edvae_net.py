@@ -29,6 +29,7 @@ class EDVAE(DVAE):
         embedded_length = int(np.prod(raw_shape))
         
         self.encoder_network[0] = embedded_length
+        self.decoder_network[-1] = embedded_length
 
         if self.embedding_type == "flatten":
             self.embedding = nn.Flatten()

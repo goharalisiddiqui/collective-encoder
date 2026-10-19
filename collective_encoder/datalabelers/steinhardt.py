@@ -4,7 +4,7 @@ import MDAnalysis as mda
 import numpy as np
 import scipy.special as sp
 
-from .base import BaseLabeler
+from .mda import MDALabeler
 
 
 def _sph_harm(l: int, m: int, theta: np.ndarray, phi: np.ndarray) -> np.ndarray:
@@ -17,7 +17,7 @@ def _sph_harm(l: int, m: int, theta: np.ndarray, phi: np.ndarray) -> np.ndarray:
         raise RuntimeError("scipy.special does not have sph_harm_y or sph_harm.")
 
 
-class SteinhardtOrderParameterLabeler(BaseLabeler):
+class SteinhardtOrderParameterLabeler(MDALabeler):
     """
     Compute Steinhardt bond-orientational order parameters q_l and Q_l.
 

@@ -1,37 +1,50 @@
 # Losses
 
-This module defines loss functions used by the neural networks during training.
+This module defines loss functions used by neural network models during training.
 
 ## Interface
 
 All loss functions must inherit from `CELossBase` defined in `base.py`.
 
 ### `CELossBase`
-Inherits from both `torch.nn.Module` and `CEModule`.
-Subclasses must implement the `forward` method, which is the standard PyTorch mechanism for defining the forward pass computation.
 
-The `forward` method signature looks like this:
+Inherits from both `torch.nn.Module` and `CEModule`. Subclasses must implement `forward`:
+
 ```python
-def forward(self,
-            inp: torch.Tensor,
-            latent: torch.Tensor,
-            output: torch.Tensor,
-            labels: torch.Tensor,
-            meta: Dict[str, torch.Tensor],
-            ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+def forward(
+    self,
+    inp: torch.Tensor,
+    latent: torch.Tensor,
+    output: torch.Tensor,
+    labels: torch.Tensor,
+    meta: Dict[str, torch.Tensor],
+) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
 ```
-It returns a tuple:
-1. The total scalar loss value (`torch.Tensor`) that will be used for backpropagation.
-2. A dictionary of additional loss components or metrics (`Dict[str, torch.Tensor]`) which will be logged but not backpropagated automatically unless included in the scalar loss.
+It returns a tuple of:
+1. The primary scalar loss tensor (`torch.Tensor`) used for backpropagation.
+2. A dictionary of auxiliary loss components or diagnostics (`Dict[str, torch.Tensor]`) for logging.
 
-## KLD and Regularization
-There are specialized implementations for computing Kullback-Leibler Divergence (KLD) needed by Variational Autoencoders (VAEs).
-- KLD computation modules (`kld_uniform_gaussian.py`, `kld_gaussian_mixture.py`, `kld_flow.py`)
-- KLD schedulers inside the `kld_schedulers` subfolder for annealing the beta parameter during training.
+## Registration & Resolution
+
+Losses are registered under the `"losses"` kind in [`__init__.py`](__init__.py) using `collective_encoder.common.registry`:
+- **Kind definition**: `define_kind("losses", CELossBase)`
+- **Resolution**: `get_module("losses", loss_type)` from `collective_encoder.common.registry` (replacing the legacy `resolver.py`).
+- **Adding a new Loss**: Subclass `CELossBase` and register it in `_BUILTINS` inside `losses/__init__.py` or via:
+  ```python
+  from collective_encoder.common.registry import register
+  register("losses", "MY_LOSS", "my_package.losses", "MyLoss")
+  ```
 
 ## Available Losses
-- `MSELoss` / `MSELossDict`: Standard Mean Squared Error reconstruction losses.
-- `NLLLoss`: Negative Log-Likelihood loss.
-- `BondDeviationLoss`: A physics-informed loss to penalize non-physical bond lengths.
-- `StericLoss`: Penalizes atoms being too close to each other.
-- `LatentMSELoss`: Forces the encoded latent space to match external targets/labels.
+
+| Registry Key | Class | Description |
+| :--- | :--- | :--- |
+| `CELossMSE` | `CELossMSE` | Standard Mean Squared Error reconstruction loss. |
+| `CELossMSEDict` | `CELossMSEDict` | Dictionary-based MSE loss for multi-head outputs (e.g., bond lengths, angles, dihedrals in `BGE`). |
+| `CELossNLL` | `CELossNLL` | Gaussian Negative Log-Likelihood reconstruction loss. |
+| `CELossLatent` | `CELossLatent` | Supervises the latent space directly against target labels. |
+| `CELossSteric` | `CELossSteric` | Physics-informed loss penalizing steric clashes (interatomic distances below a threshold). |
+| `CELossBondDeviation` | `CELossBondDeviation` | Physics-informed loss penalizing non-physical covalent bond length deviations. |
+| `CELossKLDUniformGaussian` | `CELossKLDUniformGaussian` | Standard VAE Kullback-Leibler divergence against an isotropic Gaussian prior. |
+| `CELossKLDGaussianMixture` | `CELossKLDGaussianMixture` | KLD against a learnable or fixed Gaussian Mixture prior. |
+| `CELossKLDFlow` | `CELossKLDFlow` | KLD with a normalizing flow prior. |

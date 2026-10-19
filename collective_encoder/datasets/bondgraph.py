@@ -268,6 +268,18 @@ class BondGraphDataset(BaseDataset, Dataset):
         }
         return shapes
     
+    def get_data(self):
+        """
+        Get all graphs.
+
+        Returns
+        -------
+        tuple
+            Tuple of (graphs_list, labels_list).
+        """
+        graphs = [self.get(idx) for idx in range(self.len())]
+        return graphs
+    
     def get_norm_data(self) -> np.ndarray:
         """
         Return array of data to be normalized.

@@ -36,7 +36,7 @@ class CoordinatesDataModule(BaseDataModule):
 
     # Compatible datareaders and datasets
     _IDENTIFIER = "COORDINATES"
-    _COMPATIBLE_DATAREADERS = ["COMPRESSED_TRAJECTORY", "MD17"]
+    _COMPATIBLE_DATAREADERS = ["COMPRESSED_TRAJECTORY", "XTC", "MD17"]
     _COMPATIBLE_DATASETS = [
         "DISTANCES", 
         "POSITIONS", 
@@ -45,21 +45,12 @@ class CoordinatesDataModule(BaseDataModule):
         "SOAP", 
         "SOAP_PS"
     ]
-    _COMPATIBLE_LABELERS = [
-        "CONCAT",
-        "COORDINATION", 
-        "DIHEDRAL", 
-        "DISTANCE",
-        "STRUCTURE_FACTOR",
-        "DEBYE_STRUCTURE_FACTOR",
-        "STEINHARDT_ORDER_PARAMETER",
-        "FROM_EXTERNAL"
-    ]  # Add other coordinate-based labelers
     
     _REQUIRED_ARGS = BaseDataModule._REQUIRED_ARGS + [
         "datareader_type",
         "dataset_type",
     ]
+    
     _OPTIONAL_ARGS = BaseDataModule._OPTIONAL_ARGS.copy()
     _OPTIONAL_ARGS.update({
         "labeler_type": None,
@@ -174,7 +165,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.test_indices = np.arange(self.max_frames)
         else:
             self.test_indices  = np.arange(start + self.train_size + self.validation_size,
-                                            start + required_size)
+                                            start + self.train_size + self.validation_size + self.test_size)
         if len(self.test_indices) > 0:
             self.log_info(f"Test indices: {self.test_indices[0]} - {self.test_indices[-1]}")
         

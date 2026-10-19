@@ -6,7 +6,7 @@ import ase
 
 import torch
 
-from embeddings.resolver import get_encdec
+from collective_encoder.common.registry import get_module
 from .bondgraph import BondGraphDataset
 
 class BondGraphLatentDataset(BondGraphDataset):
@@ -46,7 +46,7 @@ class BondGraphLatentDataset(BondGraphDataset):
                          dataset_args=dataset_args,
                          **kwargs)
         
-        self.encoder = get_encdec(self.encoder_name).load_from_checkpoint(
+        self.encoder = get_module("models", self.encoder_name).load_from_checkpoint(
             self.encoder_ckpt, strict=False, map_location=torch.device('cpu')
         )
         self.encoder.eval()

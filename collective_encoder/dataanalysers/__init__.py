@@ -15,12 +15,8 @@ from .base import BaseDataAnalyser
 define_kind("dataanalysers", BaseDataAnalyser)
 
 _BUILTINS = {
-    "LABELS":     ("collective_encoder.dataanalysers.labels",    "LabelsAnalyser"),
-    "DATAPOINTS":     ("collective_encoder.dataanalysers.datapoints",    "DatapointsAnalyser"),
-    "GRAPH_DATAPOINTS": ("collective_encoder.dataanalysers.graphs", "GraphDatapointsAnalyser"),
-    "LABELS_DIHEDRAL": ("collective_encoder.dataanalysers.dihedrals", "LabelsDihedralAnalyser"),
-    "DATAPOINTS_DIHEDRAL": ("collective_encoder.dataanalysers.dihedrals", "DatapointsDihedralAnalyser"),
-    "GRAPH_DATAPOINTS_DIHEDRAL": ("collective_encoder.dataanalysers.dihedrals", "GraphDatapointsDihedralAnalyser"),
+    "SIMPLE":     ("collective_encoder.dataanalysers.simple",    "SimpleDataAnalyser"),
+    "GRAPH":     ("collective_encoder.dataanalysers.graph",    "GraphDataAnalyser"),
 }
 
 for _name, (_source, _attr) in _BUILTINS.items():

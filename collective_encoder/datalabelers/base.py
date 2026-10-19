@@ -1,9 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, List, Union
+from typing import Optional, List
 
-import pandas as pd
 import numpy as np
-import MDAnalysis as mda
 
 from collective_encoder.common.module import CEModule
 
@@ -38,6 +36,8 @@ class BaseLabeler(CEModule, ABC):
             Positional arguments for reinitialization.
         """
         pass
+        
+        
 
     @abstractmethod
     def get_label_names(self) -> List[str]:

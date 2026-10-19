@@ -3,10 +3,10 @@ from typing import Dict, List, Union, Optional
 import MDAnalysis as mda
 import numpy as np
 
-from .base import BaseLabeler
+from .mda import MDALabeler
 
 
-class StaticStructureFactorLabeler(BaseLabeler):
+class StaticStructureFactorLabeler(MDALabeler):
     """
     Compute the isotropic static structure factor S(q) for the current trajectory frame.
 

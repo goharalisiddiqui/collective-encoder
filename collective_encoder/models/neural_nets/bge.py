@@ -81,7 +81,7 @@ class BondGraphEncoderDecoder(CENetBase):
         assert len(self.loss_weights) == 4, "loss_weights must be a list of 4 floats"
         check_dict_contains_keys(self.encoder_args, required_keys=['latent_dim'])
         
-        self.template_khop = self.decoder_args.get('template_khop', None)
+        self.template_khop = self.decoder_args.pop('template_khop', None)
         self.latent_dim = self.encoder_args['latent_dim']
 
         self._init_encoder()
@@ -97,10 +97,14 @@ class BondGraphEncoderDecoder(CENetBase):
             self.losses['latent'] = CELossLatent({}, **kwargs)
         
         self.metrics = {
-            'mae': CEMetricMAEDict({}, **kwargs)
+            'mae': CEMetricMAEDict({
+                'keys': self.out_labels,
+                }, **kwargs)
         }
         self.test_metrics = {
-            'mae': CEMetricMAEDict({}, **kwargs)
+            'mae': CEMetricMAEDict({
+                'keys': self.out_labels,
+                }, **kwargs)
         }
 
     def get_norm_len(self):

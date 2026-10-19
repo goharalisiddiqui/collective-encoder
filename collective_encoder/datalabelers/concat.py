@@ -73,6 +73,20 @@ class ConcatLabeler(BaseLabeler):
             labeler_cls = get_module("datalabelers", child_type)
             child_instance = labeler_cls(args=child_args, **child_kwargs)
             self.child_labelers.append(child_instance)
+    
+    def reinitialize(self, *args, **kwargs) -> None:
+        """
+        Reinitialize all child labelers with the provided arguments.
+
+        Parameters
+        ----------
+        *args : tuple
+            Positional arguments for reinitialization.
+        **kwargs : dict
+            Keyword arguments for reinitialization.
+        """
+        for child in self.child_labelers:
+            child.reinitialize(*args, **kwargs)
 
     def get_label_names(self) -> List[str]:
         """

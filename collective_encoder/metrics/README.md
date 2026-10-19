@@ -1,25 +1,42 @@
 # Metrics
 
-This module provides metric calculation classes used to track and evaluate network performance during and after training (e.g., in validation loops or testing phases). Note that unlike `losses`, these metrics are not used for backpropagation.
+This module provides observational evaluation metric classes used to track model performance during validation and testing without contributing gradients during backpropagation.
 
 ## Interface
 
 All metric classes must inherit from `CEMetricBase` found in `base.py`.
 
 ### `CEMetricBase`
-Inherits from `CEModule` and provides an abstract `calculate` method. The signature is identical to the forward pass of a loss function:
+
+Inherits from `CEModule` and defines an abstract `calculate` method with the same signature as `CELossBase.forward`:
+
 ```python
-def calculate(self,
-            inp: torch.Tensor,
-            latent: torch.Tensor,
-            output: torch.Tensor,
-            labels: torch.Tensor,
-            meta: Dict[str, torch.Tensor],
-            ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+def calculate(
+    self,
+    inp: torch.Tensor,
+    latent: torch.Tensor,
+    output: torch.Tensor,
+    labels: torch.Tensor,
+    meta: Dict[str, torch.Tensor],
+) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
 ```
-It returns a tuple of the primary metric value and a dictionary of secondary metrics (which can be empty).
+It returns a tuple of the primary scalar metric value and a dictionary of secondary metrics.
+
+## Registration & Resolution
+
+Metrics are registered under the `"metrics"` kind in [`__init__.py`](__init__.py) using `collective_encoder.common.registry`:
+- **Kind definition**: `define_kind("metrics", CEMetricBase)`
+- **Resolution**: `get_module("metrics", metric_type)` from `collective_encoder.common.registry` (replacing the legacy `resolver.py`).
+- **Adding a new Metric**: Subclass `CEMetricBase` and register it in `_BUILTINS` inside `metrics/__init__.py` or via:
+  ```python
+  from collective_encoder.common.registry import register
+  register("metrics", "MY_METRIC", "my_package.metrics", "MyMetric")
+  ```
 
 ## Available Metrics
 
-- `MAEMetric` / `MAEMetricDict`: Mean Absolute Error. Useful for intuitive human-readable reconstruction errors (as opposed to MSE).
-- `KLDMetric`: A metric identical to the KLD loss that can be tracked without affecting the optimization graph if KLD is only being monitored.
+| Registry Key | Class | Description |
+| :--- | :--- | :--- |
+| `MAE` | `CEMetricMAE` | Mean Absolute Error between inputs and reconstructed outputs. |
+| `MAE_DICT` | `CEMetricMAEDict` | Component-wise Mean Absolute Error for dictionary outputs (e.g., `BGE` models). |
+| `KLD` | `CEMetricKLD` | Tracks Kullback-Leibler divergence as a validation/test metric. |

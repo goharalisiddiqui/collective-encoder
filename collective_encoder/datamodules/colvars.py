@@ -1,3 +1,5 @@
+from typing import Any, Dict
+
 from collective_encoder.datamodules.coordinates import CoordinatesDataModule
 from collective_encoder.common.registry import get_module
 
@@ -17,12 +19,8 @@ class ColvarsDataModule(CoordinatesDataModule):
 
     Parameters
     ----------
-    datareader_type : str
-        Type string for the datareader to use (e.g. ``'PLUMED_OUTPUT'``).
-    dataset_type : str
-        Type string for the dataset to use (e.g. ``'COLVAR'``).
-    sequential : bool, optional
-        Whether the data is sequential/time-series (default: ``True``).
+    args : dict, optional
+        Configuration dictionary for ``ColvarsDataModule``.
     kwargs : dict
         Additional arguments forwarded to ``CoordinatesDataModule``.
     """
@@ -30,19 +28,25 @@ class ColvarsDataModule(CoordinatesDataModule):
     _IDENTIFIER = "COLVAR"
     _COMPATIBLE_DATAREADERS = ["PLUMED_OUTPUT"]
     _COMPATIBLE_DATASETS = ["COLVAR"]
-    _COMPATIBLE_LABELERS = ["COLUMN_SELECTOR", "DUMMY"]
+    _COMPATIBLE_LABELERS = ["COLUMN_SELECTOR", "DUMMY", "CONCAT"]
+    _REQUIRED_ARGS = CoordinatesDataModule._REQUIRED_ARGS.copy()
+    _OPTIONAL_ARGS = CoordinatesDataModule._OPTIONAL_ARGS.copy()
+    _OPTIONAL_ARGS.update({
+        "sequential": True,
+    })
 
     def __init__(
         self,
-        datareader_type: str,
-        dataset_type: str,
-        sequential: bool = True,
+        args: Dict[str, Any] = None,
         **kwargs,
     ):
+        merged_args = dict(args) if args is not None else {}
+        known_keys = set(self._REQUIRED_ARGS) | set(self._OPTIONAL_ARGS.keys())
+        for k in list(kwargs.keys()):
+            if k in known_keys:
+                merged_args.setdefault(k, kwargs.pop(k))
         super().__init__(
-            datareader_type=datareader_type,
-            dataset_type=dataset_type,
-            sequential=sequential,
+            args=merged_args,
             **kwargs,
         )
 
@@ -54,8 +58,8 @@ class ColvarsDataModule(CoordinatesDataModule):
         """
         Initialise the PLUMED datareader without reading atomic metadata.
         """
-        datareader_cls = get_module("datareaders", self.hparams.datareader_type)
-        self.datareader = datareader_cls(**self.hparams.datareader_args)
+        datareader_cls = get_module("datareaders", self.datareader_type)
+        self.datareader = datareader_cls(args=self.datareader_args, **self.run_args)
         # COLVAR files have no atomic numbers, bonds, or element symbols.
         # These attributes are intentionally left unset; methods that access
         # them raise AttributeError as expected (see overrides below).

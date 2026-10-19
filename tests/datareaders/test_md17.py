@@ -54,9 +54,10 @@ def test_md17_target_filepath_resolution(tmp_path):
     assert reader._get_target_filepath() == str(direct_file)
 
 
-def test_md17_offline_archive_extraction(tmp_path):
+def test_md17_offline_archive_extraction(tmp_path, monkeypatch):
     """Test that archive extraction and loading work with a simulated rMD17 tarball."""
-    data_dir = tmp_path / "data" / "md17"
+    monkeypatch.setattr("collective_encoder.common.module.EXECUTION_DIR", str(tmp_path))
+    data_dir = tmp_path / "md17_data"
     data_dir.mkdir(parents=True)
 
     # Create dummy .npz
@@ -66,7 +67,7 @@ def test_md17_offline_archive_extraction(tmp_path):
 
     n_frames, n_atoms = 5, 12
     coords = np.zeros((n_frames, n_atoms, 3), dtype=np.float64)
-    nuclear_charges = np.array([6]*6 + [1]*6, dtype=np.uint8)
+    nuclear_charges = np.array([6] * 6 + [1] * 6, dtype=np.uint8)
     energies = np.linspace(-100.0, -90.0, n_frames)
     forces = np.ones((n_frames, n_atoms, 3), dtype=np.float64)
 
@@ -83,9 +84,8 @@ def test_md17_offline_archive_extraction(tmp_path):
     with tarfile.open(tar_path, "w:bz2") as tar:
         tar.add(tmp_path / "pack" / "rmd17", arcname="rmd17")
 
-    # Instantiate MD17Reader pointing to data_dir
     reader = MD17Reader(
-        args={"molecule_name": "benzene", "data_dir": str(data_dir)},
+        args={"molecule_name": "benzene"},
         run_dir=str(tmp_path),
     )
 
@@ -95,15 +95,33 @@ def test_md17_offline_archive_extraction(tmp_path):
     assert np.allclose(reader.raw_data["energies"], energies)
 
 
+def test_md17_custom_data_dir_arg_respected(tmp_path, monkeypatch):
+    monkeypatch.setattr("collective_encoder.common.module.EXECUTION_DIR", str(tmp_path / "exec_root"))
+    custom_dir = tmp_path / "custom_md17"
+    npz_dir = custom_dir / "rmd17" / "npz_data"
+    npz_dir.mkdir(parents=True)
+    np.savez(
+        npz_dir / "rmd17_benzene.npz",
+        coords=np.zeros((3, 12, 3), dtype=np.float64),
+        nuclear_charges=np.array([6] * 6 + [1] * 6, dtype=np.uint8),
+        energies=np.zeros(3),
+        forces=np.zeros((3, 12, 3)),
+    )
+    reader = MD17Reader(
+        args={"molecule_name": "benzene", "data_dir": str(custom_dir)},
+        exec_dir=str(tmp_path / "other_exec_dir"),
+    )
+    assert reader.get_total_frames() == 3
+
+
 @pytest.mark.skipif(
-    not os.path.exists("data/md17/rmd17/npz_data/rmd17_benzene.npz"),
-    reason="Cached rMD17 benzene dataset not present locally",
+    not os.path.exists("md17_data/rmd17/npz_data/rmd17_benzene.npz"),
+    reason="Cached rMD17 benzene dataset not present locally in md17_data/",
 )
 def test_md17_integration_with_cached_dataset(tmp_path):
     """Integration test using the locally cached rMD17 benzene dataset."""
     reader = MD17Reader(
-        args={"molecule_name": "benzene", "data_dir": "data/md17"},
-        run_dir=str(tmp_path),
+        args={"molecule_name": "benzene"},
     )
 
     assert reader.get_total_frames() == 100000

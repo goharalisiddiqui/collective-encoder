@@ -93,9 +93,9 @@ def test_from_external_single_column_2d():
 
 def test_resolver_lookup():
     cls1 = get_module("datalabelers", "FROM_EXTERNAL")
-    cls2 = get_module("datalabelers", "from_external")
     assert cls1 is FromExternalLabeler
-    assert cls2 is FromExternalLabeler
+    with pytest.raises(KeyError):
+        get_module("datalabelers", "from_external")
 
 
 def test_error_handling():

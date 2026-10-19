@@ -78,10 +78,17 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
         Set up the local directory for caching dataset files.
         Uses a stable directory without generating numbered run dirs.
         """
-        self._create_dir("md17_data", 
-                         var_name="data_dir", 
-                         use_existing=True, 
-                         in_exec_dir=True)
+        if self.data_dir is None:
+            self._create_dir("md17_data", 
+                             var_name="data_dir", 
+                             use_existing=True, 
+                             in_exec_dir=True)
+        else:
+            self._create_dir(self.data_dir, 
+                             var_name="data_dir", 
+                             use_existing=True, 
+                             base_type="absolute")
+            
 
     def _download_file(self, url: str, destination: str):
         """

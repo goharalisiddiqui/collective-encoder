@@ -1,13 +1,13 @@
 from typing import Optional, Dict, List, Union, Optional
 
-import MDAnalysis as mda
-import numpy as np
+import numpy as sp
 from ase.data import atomic_numbers
+import MDAnalysis as mda
 
-from .base import BaseLabeler
+from .mda import MDALabeler
 
 
-class DebyeStructureFactorLabeler(BaseLabeler):
+class DebyeStructureFactorLabeler(MDALabeler):
     """
     Compute the multi-component element-weighted Debye structure factor S(q) or intensity I(q).
 

@@ -2,10 +2,10 @@ import numpy as np
 import MDAnalysis as mda
 from typing import Optional, Dict, List, Union
 
-from .base import BaseLabeler
+from .mda import MDALabeler
 
 
-class CoordinationCountLabeler(BaseLabeler):
+class CoordinationCountLabeler(MDALabeler):
     """
     Count atoms within a cutoff distance for the current trajectory frame.
 

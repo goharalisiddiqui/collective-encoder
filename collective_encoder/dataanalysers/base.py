@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 import os
 
-from collective_encoder.common.module import CEModule
+from collective_encoder.common.plotter import BasePlotter
 
-class BaseDataAnalyser(CEModule, ABC):
+class BaseDataAnalyser(BasePlotter, ABC):
     """
     Base class for data analysers.
     Used to perform data analysis on datasets and write plots or other analysis results to disk.
@@ -23,24 +23,25 @@ class BaseDataAnalyser(CEModule, ABC):
         Forwarded to :class:`~collective_encoder.common.module.CEModule`.
     """
     _IDENTIFIER = "BASE_DATA_ANALYSER"
-    _REQUIRED_ARGS = [
+    _REQUIRED_ARGS = BasePlotter._REQUIRED_ARGS + [
       'datamodule_args',
       'datamodule_labels_list'
     ]
+    _OPTIONAL_ARGS = BasePlotter._OPTIONAL_ARGS | {
+        'data_selection': None,  
+        'labels_selection': None,
+    }
+    _PLOTTER_TYPE = "data_analyser"
+    
     
     def __init__(self,
                  args: dict = None,
                  **kwargs):
         super().__init__(args=args, **kwargs)
-        output_dir = self.safe_create_dir(
-          os.path.join(self.run_dir, 
-                       f"data_analysis_{self._IDENTIFIER.lower()}")
-        )
-        self.output_dir = output_dir
         
         ds_type = self.datamodule_args.get('dataset_type', None)
         if ds_type not in self._COMPATIBLE_DATASET_TYPES:
-            self.raise_error(f"Dataset type '{ds_type}' is not compatible."
+            self.raise_error(f"Dataset type '{ds_type}' is not compatible. "
                 f"Expected one of: "
                 f"{self._COMPATIBLE_DATASET_TYPES}")
         self.ds_type = ds_type

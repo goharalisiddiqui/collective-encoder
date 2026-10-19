@@ -126,7 +126,7 @@ class CELossKLDUniformGaussian(CELossBase):
         loss_reg = torch.mean(loss_kld, dim=0)
         
         meta = {"kld" : loss_reg}
-        kld_max = self.kld_scheduler.get_kld_max(self)
+        kld_max = self.kld_scheduler.get_kld_max()
         if loss_reg <= kld_max:
             loss_reg *= 0.0
         
