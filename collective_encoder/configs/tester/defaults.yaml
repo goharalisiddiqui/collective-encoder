@@ -1,6 +1,12 @@
 debug: False
+outpath: test_runs
 outfolder: test
 overwrite: False
 nexp: 1
 output_to_file: False
 verbose: True
+
+lrate: 0.001
+weight_decay: 0.0
+normIn: False
+scheduler: False

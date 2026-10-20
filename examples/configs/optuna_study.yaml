@@ -1,0 +1,129 @@
+# ==============================================================================
+# Optuna Hyperparameter Optimization & Sweep Configuration Template
+# ==============================================================================
+# This configuration file defines a complete hyperparameter optimization study
+# for training surrogate neural network models using `collective-encoder-optuna`.
+#
+# Command to run:
+#   collective-encoder-optuna --config collective-encoder/examples/configs/optuna_study.yaml
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Output & Directory Management
+# ------------------------------------------------------------------------------
+outpath: "./ala2/train_runs/AE"               # Root output folder where study directory is created
+outfolder: "latent_dim_and_beta_sweep"        # Study folder name stem
+nexp: 1                                       # Experiment index; creates directory '{outpath}/{outfolder}_{nexp}'
+overwrite: True                               # If True, cleanly wipes previous run folder and resets study database
+output_to_file: True                          # If True, redirects main study stdout/stderr to 'out.txt' and 'run.log'
+trials_subfolder: "trials"                    # Subfolder name inside study directory where trial models are saved
+trial_output_to_file: True                    # If True, saves individual trial stdout logs to file
+
+# ------------------------------------------------------------------------------
+# 2. Base Training Configuration & Test Plotters
+# ------------------------------------------------------------------------------
+base_train_config: "ala2/10_train_ae.yaml"   # Path to the base model training YAML configuration
+
+# Optional: Attach test plotters to every trial to evaluate disentanglement scores
+test_plotters:
+  - tester_type: DisentanglementBetaMetric
+    tester_args:
+      labels_selection:                       # Maps dataset label names to generative factor variables
+        phi: 'phi_2'
+        psi: 'psi_2'
+      generative_factors: phi:psi             # Ground-truth generative factors (colon-separated or list)
+      factor_tolerances: 0.1                  # Tolerance to treat a factor as constant (|v1 - v2| <= tol)
+      variation_threshold: 0.2                # Minimum variation required across other factors
+      num_models: 5                           # Number of linear classifier seeds to compute average & CI
+      confidence_interval: 0.95               # Confidence interval level (95%)
+      classifier_type: logistic_regression    # Linear classifier ('logistic_regression', 'linear_svc', 'ridge')
+      plot_confusion_matrix: True             # Save confusion matrix plot in trial folder
+      plot_training_points: False             # Save pair scatter plot in trial folder
+
+# ------------------------------------------------------------------------------
+# 3. Execution Backend & Cluster Settings
+# ------------------------------------------------------------------------------
+executor: "slurm"                             # Execution mode: 'local' (same machine) or 'slurm' (HPC compute nodes)
+slurm_header_file: "sbatch_header_cpu.sh"     # Path to script with #SBATCH directives, modules, and venv activation
+slurm_poll_interval: 10                       # Polling interval in seconds to check cluster job state
+n_jobs: 2                                     # Number of parallel workers/jobs evaluating trials concurrently
+
+# ------------------------------------------------------------------------------
+# 4. Optimization Mode, Metrics, & Target Objectives
+# ------------------------------------------------------------------------------
+mode: "grid"                                  # Study mode: 'grid' (exhaustive sweep) or 'optimize' (Bayesian/TPE)
+study_name: "latent_dim_and_beta_sweep"       # Optuna study name stored in the SQLite database (defaults to outfolder)
+storage: null                                 # Database URI (null defaults to 'sqlite:///{study_run_dir}/study.db')
+
+# Optimization targets: single string or list of metrics
+# Supported metrics:
+#   - Model losses: 'val_loss', 'train_loss', 'test_mae', 'test_loss'
+#   - Disentanglement scores: 'beta_score', 'mig_score', 'factor_score',
+#                            'dci_disentanglement', 'dci_completeness', 'dci_informativeness',
+#                            'modularity_score', 'explicitness_score', 'sap_score'
+metrics:
+  - "val_loss"                                # Reconstruction validation loss
+  - "beta_score"                              # Disentanglement classification score
+
+# Optimization directions per metric: 'minimize' or 'maximize'
+# If omitted, directions are automatically inferred:
+#   - losses/errors ('val_loss', 'mae', 'mse') -> 'minimize'
+#   - scores/metrics ('beta_score', 'mig_score', 'dci_*', 'sap_score', 'r2') -> 'maximize'
+directions:
+  - "minimize"
+  - "maximize"
+
+n_trials: 10                                  # Maximum number of trials to evaluate (used in 'optimize' mode)
+timeout: null                                 # Maximum overall study runtime in seconds (optional)
+
+# ------------------------------------------------------------------------------
+# 5. Sampler & Pruner Algorithms (Used when mode is 'optimize')
+# ------------------------------------------------------------------------------
+sampler: "tpe"                                # Sampler algorithm: 'tpe', 'cmaes', 'random', 'grid', 'nsgaii'
+sampler_args:
+  seed: 42                                    # Random seed for reproducibility
+  n_startup_trials: 5                         # Number of random exploration trials before Bayesian modeling
+
+pruner: "median"                              # Early stopping pruner: 'median', 'percentile', 'hyperband', 'none'
+pruner_args:
+  n_startup_trials: 5                         # Pruning disabled for the first N trials
+  n_warmup_steps: 10                          # Minimum training epochs before a trial can be pruned
+pruning_monitor: "val_loss"                   # Metric reported each epoch to evaluate pruning
+
+# ------------------------------------------------------------------------------
+# 6. Hyperparameter Search Space Definition
+# ------------------------------------------------------------------------------
+search_space:
+  # A. Categorical / Grid List shorthand:
+  #    Evaluates exact listed values.
+  latent_dim: [2, 3, 4]
+
+  # B. Continuous Float Parameter (Linear or Logarithmic):
+  #    Maps to deep nested config keys via dot-notation.
+  network_args.kld_args.kld_max_scheduler_args.value:
+    type: "float"
+    low: 0.001
+    high: 10.0
+    log: true                                 # Sample in logarithmic scale (for learning rates, penalties)
+
+  # C. Discrete Integer Parameter:
+  #    Samples integers between low and high with an optional step size.
+  # datamodule_args.batch_size:
+  #   type: "int"
+  #   low: 512
+  #   high: 4096
+  #   step: 512
+
+  # D. Explicit Categorical Parameter:
+  # network_args.activation:
+  #   type: "categorical"
+  #   choices: ["relu", "elu", "gelu", "tanh"]
+
+  # E. Specialized Autoencoder Hidden Layer Generators:
+  #    Modifies intermediate layers while preserving input/output dimensions.
+  # encoder_hidden_layers:
+  #   type: "categorical"
+  #   choices:
+  #     - [128, 64]
+  #     - [256, 128, 64]
+  #     - [512, 256, 128, 64]

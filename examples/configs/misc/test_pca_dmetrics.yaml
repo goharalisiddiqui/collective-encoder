@@ -1,0 +1,93 @@
+debug: False
+outfolder: test_dmetric_PCA
+nexp: 1
+overwrite: True
+output_to_file: True
+verbose: True
+
+load_datamodule: ./ala2/dmod/ver_2
+
+network_type: PCAEncoder
+load_network: ./ala2/train_runs/PCA_1
+
+test_plotters:
+  - tester_type: DisentanglementBetaMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      generative_factors: phi:psi
+      latent_dimensions: LD_1:LD_2
+      factor_tolerances: 0.1
+      variation_threshold: 0.2
+      num_models: 10
+      plot_confusion_matrix: True
+
+  - tester_type: DisentanglementFactorMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      generative_factors: phi:psi
+      latent_dimensions: LD_1:LD_2
+      factor_tolerances: 0.1
+      variation_threshold: 0.2
+      batch_size_L: 50
+      num_models: 10
+      plot_confusion_matrix: True
+
+  - tester_type: DisentanglementDCIMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      generative_factors: phi:psi
+      latent_dimensions: LD_1:LD_2
+      num_models: 10
+
+  - tester_type: DisentanglementMIGMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      generative_factors: phi:psi
+      latent_dimensions: LD_1:LD_2
+      num_bins: 20
+      num_models: 10
+
+  - tester_type: DisentanglementModularityMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      generative_factors: phi:psi
+      latent_dimensions: LD_1:LD_2
+      num_bins: 20
+      num_models: 10
+
+  - tester_type: DisentanglementSAPMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      generative_factors: phi:psi
+      latent_dimensions: LD_1:LD_2
+      num_models: 10

@@ -4,8 +4,9 @@ from typing import List, Dict, Any
 import numpy as np
 import torch
 
+from collective_encoder import TENSOR_PRECISION
 from collective_encoder.datamodules.base import BaseDataModule
-from collective_encoder.datareaders.resolver import get_datareader
+from collective_encoder.common.registry import get_module
 from collective_encoder.datasets.resolver import get_dataset_cls_dl
 
 class CoordinatesDataModule(BaseDataModule):
@@ -36,14 +37,21 @@ class CoordinatesDataModule(BaseDataModule):
 
     # Compatible datareaders and datasets
     _IDENTIFIER = "COORDINATES"
-    _COMPATIBLE_DATAREADERS = ["XTC"]
-    _COMPATIBLE_DATASETS = ["DISTANCES", "POSITIONS", "GRAPH", "GRAPH_LATENT", "SOAP", "SOAP_PS"]
-    _COMPATIBLE_LABELERS = ["COORDINATION", "DIHEDRAL", "DISTANCE"]  # Add other coordinate-based labelers
+    _COMPATIBLE_DATAREADERS = ["COMPRESSED_TRAJECTORY", "XTC", "MD17"]
+    _COMPATIBLE_DATASETS = [
+        "DISTANCES", 
+        "POSITIONS", 
+        "BONDGRAPH",
+        "BONDGRAPH_LATENT",
+        "SOAP", 
+        "SOAP_PS"
+    ]
     
     _REQUIRED_ARGS = BaseDataModule._REQUIRED_ARGS + [
         "datareader_type",
         "dataset_type",
     ]
+    
     _OPTIONAL_ARGS = BaseDataModule._OPTIONAL_ARGS.copy()
     _OPTIONAL_ARGS.update({
         "labeler_type": None,
@@ -54,6 +62,7 @@ class CoordinatesDataModule(BaseDataModule):
         "sequential": False,
         "max_frames": None,
         "non_readability_tolerance": 0.02,  # Allow up to 2% of frames to be unreadable before raising an error
+        "data_analysers": None,
     })
 
     def __init__(self,
@@ -89,12 +98,14 @@ class CoordinatesDataModule(BaseDataModule):
             self.test_size = self.max_frames
 
         self._create_datasets()
+        self._analyze_data()
     
     def _initialize_datareader(self):
         # Initialize the trajectory reader
-        datareader_cls = get_datareader(self.datareader_type)
+        datareader_cls = get_module("datareaders", self.datareader_type)
         self.datareader = datareader_cls(args=self.datareader_args,
                                          **self.run_args)
+        self.log_info(f"Total frames in trajectory: {self.datareader.get_total_frames()}")
 
         # Store coordinate-specific information
         self.atomic_numbers = self.datareader.get_atomic_numbers()
@@ -123,6 +134,9 @@ class CoordinatesDataModule(BaseDataModule):
 
     def _calculate_indices(self):
         """Calculate train, validation, and test indices based on split configuration."""
+        if self.max_frames > self.datareader.get_total_frames():
+            raise ValueError(f"max_frames ({self.max_frames}) exceeds total frames in trajectory "
+                             f"({self.datareader.get_total_frames()})")
         if self.sequential:
             self.log_debug("Calculating sequential split indices...")
             self._calculate_sequential_indices()
@@ -152,7 +166,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.test_indices = np.arange(self.max_frames)
         else:
             self.test_indices  = np.arange(start + self.train_size + self.validation_size,
-                                            start + required_size)
+                                            start + self.train_size + self.validation_size + self.test_size)
         if len(self.test_indices) > 0:
             self.log_info(f"Test indices: {self.test_indices[0]} - {self.test_indices[-1]}")
         
@@ -242,7 +256,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.train_data = dataset_class(
                 structures=trajs[0],
                 labels=labels[0],
-                dataset_args=dataset_args,
+                args=dataset_args,
                 **{**self.run_args, "tag": 'train'},
             )
         else:
@@ -253,7 +267,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.val_data = dataset_class(
                 structures=trajs[1],
                 labels=labels[1],
-                dataset_args=dataset_args,
+                args=dataset_args,
                 **{**self.run_args, "verbose": False, "tag": 'val'},  # Disable verbose logging for validation dataset creation
             )
         else:
@@ -264,7 +278,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.test_data = dataset_class(
                 structures=trajs[2],
                 labels=labels[2],
-                dataset_args=dataset_args,
+                args=dataset_args,
                 **{**self.run_args, "verbose": False, "tag": 'test'},  # Disable verbose logging for test dataset creation
             )
         else:
@@ -275,7 +289,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.predict_data = dataset_class(
                 structures=trajs[3],
                 labels=labels[3],
-                dataset_args=dataset_args,
+                args=dataset_args,
                 **{**self.run_args, "verbose": False, "tag": 'predict'},  # Disable verbose logging for predict dataset creation
             )
         else:
@@ -286,7 +300,7 @@ class CoordinatesDataModule(BaseDataModule):
         self.datapoint_shape = self.train_data.get_datapoint_shape() if \
             len(self.train_data) > 0 else \
                 self.predict_data.get_datapoint_shape()
-        self.label_list = self.datareader.label_list
+        self.label_list = self.datareader.get_label_names()
 
         self.log_msg(f"Loaded dataset with {self.num_frames} frames -> "
                      f"Train: {len(self.train_data)}, "
@@ -300,33 +314,62 @@ class CoordinatesDataModule(BaseDataModule):
 
     # Coordinate-specific methods
     def get_atns(self):
-        """Get atomic numbers."""
+        """
+        Get atomic numbers.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of atomic numbers for the structure.
+        """
         return self.atomic_numbers
 
     def get_bond_indices(self):
-        """Get bond indices."""
+        """
+        Get bond indices.
+
+        Returns
+        -------
+        list of tuple
+            List of tuples representing bond pairs.
+        """
         return self.bonds
 
     def get_element_symbols(self):
-        """Get element symbols."""
+        """
+        Get element symbols.
+
+        Returns
+        -------
+        list of str
+            List of chemical element symbols for the structure.
+        """
         return self.element_symbols
 
     def get_fake_systems(self):
-        """Get fake systems for testing purposes."""
+        """
+        Get fake metatomic systems for testing purposes.
+
+        Returns
+        -------
+        list
+            A list of `metatomic.torch.System` objects initialized
+            with the first two frames of the loaded trajectory.
+        """
         at_types = self.atomic_numbers
         mol_traj = self.datareader.mol_traj
         from metatomic.torch import System
         fake_systems = [
             System(
                 types=torch.tensor(at_types, dtype=torch.long),
-                positions=torch.tensor(mol_traj[0].positions, dtype=torch.float64),
-                cell=torch.tensor(mol_traj[0].get_cell(), dtype=torch.float64),
+                positions=torch.tensor(mol_traj[0].positions, dtype=TENSOR_PRECISION),
+                cell=torch.tensor(mol_traj[0].get_cell(), dtype=TENSOR_PRECISION),
                 pbc=torch.tensor([True, True, True]),
             ),
             System(
                 types=torch.tensor(at_types, dtype=torch.long),
-                positions=torch.tensor(mol_traj[1].positions, dtype=torch.float64),
-                cell=torch.tensor(mol_traj[1].get_cell(), dtype=torch.float64),
+                positions=torch.tensor(mol_traj[1].positions, dtype=TENSOR_PRECISION),
+                cell=torch.tensor(mol_traj[1].get_cell(), dtype=TENSOR_PRECISION),
                 pbc=torch.tensor([True, True, True]),
             )
         ]

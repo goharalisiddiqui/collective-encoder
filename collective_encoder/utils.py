@@ -1,19 +1,63 @@
 import numpy as np
 from tqdm import tqdm
+from torch.nn import Module
+from typing import Callable
+from torch.nn.modules import activation
+
+Activation = Callable[..., Module]
+
+def get_activation_fn(act: str) -> Activation:
+    """
+    Get the PyTorch activation function class based on a string name.
+
+    Parameters
+    ----------
+    act : str
+        Name of the activation function (e.g., 'relu', 'tanh').
+
+    Returns
+    -------
+    Callable
+        The PyTorch activation function class.
+
+    Raises
+    ------
+    ValueError
+        If the activation name is not recognized.
+    """
+    # get list from activation submodule as lower-case
+    activations_lc = [str(a).lower() for a in activation.__all__]
+    if (act := str(act).lower()) in activations_lc:
+        # match actual name from lower-case list, return function/factory
+        idx = activations_lc.index(act)
+        act_name = activation.__all__[idx]
+        act_func = getattr(activation, act_name)
+        return act_func
+    else:
+        raise ValueError(f"Cannot find activation function for string <{act}>")
 
 def compute_mfpt_matrix(vals : np.ndarray, minima : np.ndarray, lag: int = 1):
-    '''
-    Compute and save Mean First Passage Time (MFPT) matrix between the given 
-    minima.
-    Step 1: Construct an MSM from the trajectory data (phi, psi) on state values 
-    defined by the given minima using PyEMMA.
+    """
+    Compute Mean First Passage Time (MFPT) matrix between the given minima.
+
+    Step 1: Construct an MSM from the trajectory data on state values
+    defined by the given minima.
     Step 2: Compute the MFPT matrix between the states defined by the minima.
 
-    Parameters:
-    vals (np.ndarray): Trajectory data of shape (n_samples, n_features).
-    minima (np.ndarray): Array of minima of shape (n_states, n_features).
-    lag (int): Lag time for the MSM.
-    '''
+    Parameters
+    ----------
+    vals : numpy.ndarray
+        Trajectory data of shape (n_samples, n_features).
+    minima : numpy.ndarray
+        Array of minima of shape (n_states, n_features).
+    lag : int, optional
+        Lag time for the MSM (default: 1).
+
+    Returns
+    -------
+    tuple
+        Tuple containing transition counts, transition matrix, and the MFPT matrix.
+    """
     assert vals.shape[1] == minima.shape[1], "Dimensionality of vals and minima must match."
     assert minima.shape[0] >= 2, "At least two minima are required to compute MFPT."
     # Step 1: Assign trajectory points to states based on nearest minima
@@ -75,10 +119,49 @@ def compute_mfpt_matrix(vals : np.ndarray, minima : np.ndarray, lag: int = 1):
 def check_dict_contains_keys(d: dict, 
                              required_keys: list, 
                              no_error: bool = False):
-    """Checks if the provided dictionary contains the required keys."""
+    """
+    Check if the provided dictionary contains the required keys.
+
+    Parameters
+    ----------
+    d : dict
+        Dictionary to check.
+    required_keys : list
+        List of required keys.
+    no_error : bool, optional
+        If True, returns False instead of raising a KeyError when keys are missing.
+
+    Returns
+    -------
+    bool
+        True if all keys are present, False otherwise (if `no_error` is True).
+
+    Raises
+    ------
+    KeyError
+        If required keys are missing and `no_error` is False.
+    """
     missing_keys = [key for key in required_keys if key not in d]
     if missing_keys:
         if not no_error:
             raise KeyError(f"Dictionary is missing required keys: {missing_keys}")
         return False
     return True
+
+def get_missing_keys(d: dict, required_keys: list):
+    """
+    Return a list of missing keys from the dictionary.
+
+    Parameters
+    ----------
+    d : dict
+        The dictionary to inspect.
+    required_keys : list
+        The list of keys to check for.
+
+    Returns
+    -------
+    list
+        List of keys from `required_keys` that are missing in `d`.
+    """
+    return [key for key in required_keys if key not in d]

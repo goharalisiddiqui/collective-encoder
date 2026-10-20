@@ -1,18 +1,41 @@
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Tuple, Union
 import warnings
 
 import ase
 
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 
 from .base import BaseDataset
+from collective_encoder.datareaders.base import BaseDataReader
+from .utils.soap import soap_modifications
 
 
 class SoapPowerSpectrumDataset(Dataset, BaseDataset):
-    '''
-    Docstring for SoapPowerSpectrumDataset
-    '''
+    """
+    Dataset for computing SOAP Power Spectrum descriptors.
+
+    Uses `featomic` to compute rotationally invariant SOAP power spectrum
+    features for the specified atomic centers.
+
+    Parameters
+    ----------
+    structures : list of ase.Atoms
+        List of molecular structures.
+    labels : list of float
+        Target labels for each structure.
+    dataset_args : dict, optional
+        Configuration dictionary with required and optional keys:
+        - ``selected_atoms`` (required): List of atom indices to center descriptors on.
+        - ``cutoff`` (required): SOAP cutoff radius in Å.
+        - ``max_angular`` (int, default 6): Maximum spherical harmonics degree.
+        - ``smoothing_width`` (float, default 1.5): Smoothing width for cutoff.
+        - ``gaussian_width`` (float, default 1.0): Gaussian width for density.
+        - ``n_radial`` (int, default 4): Number of radial basis functions.
+        - ``excluded_types`` (list of int, default [1]): Atomic numbers to exclude (e.g. H=1).
+    kwargs : dict
+        Additional keyword arguments.
+    """
     
     _IDENTIFIER = "SOAP_POWER_SPECTRUM"
     _REQUIRED_ARGS = ['selected_atoms', 'cutoff']
@@ -23,6 +46,23 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
         'n_radial': 4,
         'excluded_types': [1],  # Exclude hydrogen by default
     }
+    
+    @classmethod
+    def _prepare_dataset(cls, 
+                         dataset_args: Dict[str, Union[float, int, str]], 
+                         datareader: BaseDataReader) \
+        -> Tuple[type, Dict[str, Union[float, int, str]], type]:
+        """
+        Prepare the dataset. This method is a placeholder for any preprocessing steps.
+
+        Parameters
+        ----------
+        dataset_args : dict
+            Configuration dictionary (not used in this dataset).
+        datareader : BaseDataReader
+            Data reader instance (to inject information into dataset args).
+        """
+        return cls, soap_modifications({**dataset_args}, datareader), DataLoader
 
     def __init__(
         self,
@@ -60,7 +100,7 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
         # Precompute all the systems
         systems = featomic.torch.systems_to_torch(structures)
         selected_atoms_label = mts.Labels(
-            "atom", torch.tensor(self.selected_atoms).reshape(-1, 1)
+            "atom", torch.tensor(self.selected_atoms, dtype=torch.long).reshape(-1, 1)
         )
         descriptors = self.spex(
             systems, selected_samples=selected_atoms_label
@@ -79,7 +119,7 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
                             descriptors,
                             axis="samples",
                             selection=mts.Labels(
-                                "atom", torch.tensor([atom]).reshape(-1, 1)
+                                "atom", torch.tensor([atom], dtype=torch.long).reshape(-1, 1)
                             ),
                         )
             sel_map = mts.slice(
@@ -88,8 +128,8 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
                             selection=mts.Labels(
                                 ["neighbor_1_type", "neighbor_2_type"], 
                                 torch.stack([
-                                    torch.tensor(self.included_types),
-                                    torch.tensor(self.included_types)
+                                    torch.tensor(self.included_types, dtype=torch.long),
+                                    torch.tensor(self.included_types, dtype=torch.long)
                                 ], dim=-1)
                             ),
                         )
@@ -101,8 +141,8 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
 
         # descriptors shape: (n_structures, n_selected_atoms, sum of (2l+1) over l in angular_list), radial components * no of species
         self.descriptors = descriptors
-        self.labels = [torch.tensor(d) for d in labels]
-        print(f"[{type(self).__name__}]: Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
+        self.labels = [torch.tensor(d, dtype=self.dtype) for d in labels]
+        self.log_info(f"Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
 
         # flatten the last two dimensions
         # self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1)
@@ -111,25 +151,77 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
         self.descriptors = self.descriptors.sum(dim=1)
         
         self.num_inputs = self.descriptors.shape[-1]
-        print(f"[{type(self).__name__}]: Each data point has input dimension {self.num_inputs}.")
-        print("="*80)
+        self.log_info(f"Each data point has input dimension {self.num_inputs}.")
         
     def __len__(self):
+        """
+        Return the number of samples in the dataset.
+
+        Returns
+        -------
+        int
+            Total number of samples.
+        """
         return self.descriptors.shape[0]
 
     def __getitem__(self, index):
+        """
+        Get the sample at the specified index.
+
+        Parameters
+        ----------
+        index : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        tuple
+            Tuple of `(descriptors, labels)` as PyTorch tensors.
+        """
         return self.descriptors[index], self.labels[index]
     
     def get_data(self):
+        """
+        Get all descriptors and labels.
+
+        Returns
+        -------
+        tuple
+            Tuple of (descriptors, labels).
+        """
         return self.descriptors, self.labels
     
     def get_norm_data(self):
+        """
+        Return array of data used to fit normalizers (scalers).
+
+        Returns
+        -------
+        torch.Tensor
+            Data to be normalized.
+        """
         return self.descriptors
     
     def get_datapoint_shape(self):
+        """
+        Return the shape of a single data point's features.
+
+        Returns
+        -------
+        tuple
+            The shape of the extracted features.
+        """
         return self.descriptors.shape[1:]
 
     def get_metatomic_dataprocessor(self):
+        """
+        Get the Metatomic data processor for SOAP power spectrum datasets.
+
+        Returns
+        -------
+        MetatomicSoapPowerSpectrumDataset
+            A dataset wrapper compatible with Metatomic pipelines.
+        """
         return MetatomicSoapPowerSpectrumDataset(self.spex, 
                                                  self.selected_atoms,
                                                  included_types=self.included_types)

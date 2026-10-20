@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Union
+from typing import Optional, List
 
 import numpy as np
 
@@ -7,60 +7,63 @@ from collective_encoder.common.module import CEModule
 
 
 class BaseLabeler(CEModule, ABC):
-    """Abstract base class for all labelers.
+    """
+    Abstract base class for all labelers.
 
     Concrete labelers must subclass either :class:`FrameLabeler` (for
     MDAnalysis universe-based, per-frame computation) or
     :class:`BatchLabeler` (for DataFrame index-based batch computation).
-    """
 
-    def __init__(self,
-                 args: Dict[str, Union[float, int, str]] = None,
-                 **kwargs):
-        if args is None:
-            args = {}
-        super().__init__(args=args, **kwargs)
+    Parameters
+    ----------
+    args : dict, optional
+        Dictionary of configuration options.
+    kwargs : dict
+        Additional keyword arguments forwarded to the parent `CEModule`.
+    """
+    def reinitialize(self, **args) -> None:
+        """
+        Reinitialize the labeler with new arguments.
+
+        This method is intended to be overridden by subclasses that need to
+        reinitialize their state when the underlying data (e.g., MDAnalysis
+        Universe or DataFrame) changes. The default implementation simply
+        calls the constructor with the new arguments.
+
+        Parameters
+        ----------
+        *args : tuple
+            Positional arguments for reinitialization.
+        """
+        pass
+        
+        
 
     @abstractmethod
     def get_label_names(self) -> List[str]:
-        """Return the names of the label columns produced by this labeler."""
-        raise NotImplementedError
+        """
+        Return the names of the label columns produced by this labeler.
 
-
-class FrameLabeler(BaseLabeler):
-    """Abstract base for universe-based labelers (XTC / MDAnalysis).
-
-    The labeler is initialised with a positioned MDAnalysis ``Universe``
-    and ``compute()`` is called once per trajectory frame.  The current
-    frame is implicit in the universe; no index argument is needed.
-    """
-
-    @abstractmethod
-    def compute(self) -> List[float]:
-        """Compute labels for the current trajectory frame.
-
-        Returns:
-            List of scalar label values, one per label column.
+        Returns
+        -------
+        list of str
+            Names of the generated label columns.
         """
         raise NotImplementedError
-
-
-class BatchLabeler(BaseLabeler):
-    """Abstract base for DataFrame index-based labelers (PLUMED / tabular).
-
-    The labeler is initialised with a ``pd.DataFrame`` and ``compute()``
-    is called with a list of integer row indices to label in batch.
-    """
-
+    
     @abstractmethod
-    def compute(self, indices: List[int]) -> np.ndarray:
-        """Compute labels for the given DataFrame row indices.
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Compute labels for the given DataFrame row indices.
 
-        Args:
-            indices: Integer row indices into the DataFrame supplied at
-                construction time.
+        Parameters
+        ----------
+        indices : list of int
+            Integer row indices into the DataFrame supplied at construction time.
 
-        Returns:
+        Returns
+        -------
+        numpy.ndarray
             NumPy array of shape ``(len(indices), n_labels)``.
         """
         raise NotImplementedError
