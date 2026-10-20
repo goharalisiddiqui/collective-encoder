@@ -6,6 +6,7 @@ import torch.nn as nn
 
 _log = logging.getLogger(__name__)
 
+from collective_encoder import TENSOR_PRECISION
 
 class FastICAModule(nn.Module):
     r"""PyTorch module implementing the FastICA algorithm.
@@ -37,6 +38,7 @@ class FastICAModule(nn.Module):
         tol: float = 1e-4,
         whiten: bool = True,
         random_state: Optional[int] = 42,
+        dtype: torch.dtype = TENSOR_PRECISION,
     ) -> None:
         super().__init__()
         self.input_dim = int(input_dim)
@@ -46,6 +48,7 @@ class FastICAModule(nn.Module):
         self.tol = float(tol)
         self.whiten = bool(whiten)
         self.random_state = random_state
+        self.dtype = dtype
 
         if self.latent_dim > self.input_dim:
             raise ValueError(
@@ -59,14 +62,14 @@ class FastICAModule(nn.Module):
 
         # Persistent buffers saved in PyTorch checkpoints
         self.register_buffer("is_fitted", torch.tensor(False, dtype=torch.bool))
-        self.register_buffer("mean", torch.zeros(self.input_dim, dtype=torch.float32))
+        self.register_buffer("mean", torch.zeros(self.input_dim, dtype=self.dtype))
         self.register_buffer(
             "unmixing_matrix",
-            torch.zeros((self.input_dim, self.latent_dim), dtype=torch.float32),
+            torch.zeros((self.input_dim, self.latent_dim), dtype=self.dtype),
         )
         self.register_buffer(
             "mixing_matrix",
-            torch.zeros((self.latent_dim, self.input_dim), dtype=torch.float32),
+            torch.zeros((self.latent_dim, self.input_dim), dtype=self.dtype),
         )
 
     def _g(self, u: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -104,7 +107,7 @@ class FastICAModule(nn.Module):
                 f"Number of samples ({N}) must be at least latent_dim ({self.latent_dim})"
             )
 
-        X_float = X.to(dtype=torch.float32, device=self.unmixing_matrix.device)
+        X_float = X.to(dtype=self.dtype, device=self.unmixing_matrix.device)
 
         # 1. Centering
         mean_vec = torch.mean(X_float, dim=0)
@@ -116,7 +119,7 @@ class FastICAModule(nn.Module):
             _, S, Vh = torch.linalg.svd(X_c, full_matrices=False)
             V = Vh.mH
             # Standard deviation scaling per component
-            scale = S[: self.latent_dim] / torch.sqrt(torch.tensor(max(1, N - 1), dtype=torch.float32, device=X_float.device))
+            scale = S[: self.latent_dim] / torch.sqrt(torch.tensor(max(1, N - 1), dtype=self.dtype, device=X_float.device))
             scale = torch.clamp(scale, min=1e-12)
             # Whitening matrix K: (input_dim, latent_dim)
             K = V[:, : self.latent_dim] / scale.unsqueeze(0)
@@ -132,7 +135,7 @@ class FastICAModule(nn.Module):
             gen.manual_seed(int(self.random_state))
 
         # Initial random orthogonal unmixing matrix W in whitened space (k, k)
-        W_init = torch.randn(k, k, generator=gen, device=X_float.device, dtype=torch.float32)
+        W_init = torch.randn(k, k, generator=gen, device=X_float.device, dtype=self.dtype)
         q, _ = torch.linalg.qr(W_init)
         W = q
 
@@ -201,7 +204,7 @@ class FastICAModule(nn.Module):
             raise RuntimeError(
                 "FastICAModule is not fitted yet. Fit the module on training data before calling forward."
             )
-        x_float = x.to(dtype=torch.float32, device=self.unmixing_matrix.device)
+        x_float = x.to(dtype=self.dtype, device=self.unmixing_matrix.device)
         x_c = x_float - self.mean
         return torch.matmul(x_c, self.unmixing_matrix)
 
@@ -218,6 +221,6 @@ class FastICAModule(nn.Module):
             raise RuntimeError(
                 "FastICAModule is not fitted yet. Fit the module before calling inverse."
             )
-        z_float = z.to(dtype=torch.float32, device=self.mixing_matrix.device)
+        z_float = z.to(dtype=self.dtype, device=self.mixing_matrix.device)
         x_rec = torch.matmul(z_float, self.mixing_matrix)
         return x_rec + self.mean

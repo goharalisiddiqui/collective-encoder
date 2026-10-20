@@ -48,13 +48,13 @@ class ColvarDataset(Dataset, BaseDataset):
         # structures: 2-D array (n_frames, n_features) or list of 1-D arrays
         if isinstance(structures, np.ndarray) and structures.ndim == 2:
             self.data = [
-                torch.tensor(structures[i], dtype=torch.float32)
+                torch.tensor(structures[i], dtype=self.dtype)
                 for i in range(len(structures))
             ]
         else:
-            self.data = [torch.tensor(s, dtype=torch.float32) for s in structures]
+            self.data = [torch.tensor(s, dtype=self.dtype) for s in structures]
 
-        self.labels = [torch.tensor(l, dtype=torch.float32).flatten() for l in labels]
+        self.labels = [torch.tensor(l, dtype=self.dtype).flatten() for l in labels]
 
     def __len__(self) -> int:
         """

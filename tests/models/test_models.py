@@ -2,6 +2,7 @@ import pytest
 import torch
 import pytorch_lightning as pl
 
+from collective_encoder import TENSOR_PRECISION
 from collective_encoder.datamodules.coordinates import CoordinatesDataModule
 from collective_encoder.models import (
     PCAModel,
@@ -133,6 +134,7 @@ def test_flat_neural_net_models_ae_vae_dvae(distances_datamodule, metargs, model
         enable_progress_bar=False,
         enable_model_summary=False,
     )
+    
     trainer.fit(model, datamodule=distances_datamodule)
     trainer.validate(model, datamodule=distances_datamodule)
     trainer.test(model, datamodule=distances_datamodule)
@@ -172,7 +174,7 @@ def test_edvae_on_3d_positions_shape(metargs):
         },
         **metargs,
     )
-    x = torch.randn(4, 6, 3)
+    x = torch.randn(4, 6, 3, dtype=TENSOR_PRECISION)
     out, z, meta = model(x)
     assert out.shape == (4, 6, 3)
 
@@ -200,6 +202,6 @@ def test_bge_on_bondgraph(bondgraph_datamodule, metargs):
     # Not attached to a Trainer, so pass the datamodule explicitly for normalization stats
     model.set_norm(datamodule=bondgraph_datamodule)
     batch = next(iter(bondgraph_datamodule.train_dataloader()))
-    out, z, meta = model(batch[0])
+    out, z, meta = model(batch)
     assert z.shape == (4, 2)
     assert isinstance(out, dict)

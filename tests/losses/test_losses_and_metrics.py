@@ -104,7 +104,7 @@ def test_kld_losses_and_schedulers(metargs):
     )
     assert pytest.approx(lin_sched.get_kld_max()) == 0.1
     for _ in range(4):
-        lin_sched.on_validation_epoch_end()
+        lin_sched.on_validation_epoch_end(pl_stub)
     assert pytest.approx(lin_sched.get_kld_max()) == 0.5
 
     auto_sched = KLDResolver(
@@ -205,8 +205,8 @@ def test_metrics_mae_maedict_and_kld(metargs):
         {},
     )
     assert torch.isclose(total_mae, torch.tensor(1.5))
-    assert torch.isclose(res_dict["k1"], torch.tensor(1.5))
-    assert torch.isclose(res_dict["k2"], torch.tensor(0.0))
+    assert torch.isclose(res_dict["k1_mae"], torch.tensor(1.5))
+    assert torch.isclose(res_dict["k2_mae"], torch.tensor(0.0))
 
     kld_metric = CEMetricKLD(args={}, **metargs)
     meta = {

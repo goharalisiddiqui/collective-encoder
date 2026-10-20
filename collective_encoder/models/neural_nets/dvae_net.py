@@ -1,7 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple
-
-import torch
-import torch.nn.functional as F
+from typing import Any, Dict
 
 from collective_encoder.models.neural_nets.modules.variational_nn import VariationalNN
 from collective_encoder.models.neural_nets.modules.simple_nn import SimpleNN

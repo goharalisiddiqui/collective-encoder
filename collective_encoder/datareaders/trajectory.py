@@ -191,7 +191,7 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
                 # Sequential read
                 args = (0, self.u, self.selection, self.atns, 
                         self.at_elements, index_list, labeler)
-                print(len(index_list))
+                self.ce_log_list(f"Reading sequence {seq_idx} sequentially with {len(index_list)} frames.", index_list)
                 traj, label, failed = _read_and_label(args)
             else:
                 # Parallel read

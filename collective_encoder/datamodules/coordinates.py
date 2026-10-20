@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 import numpy as np
 import torch
 
+from collective_encoder import TENSOR_PRECISION
 from collective_encoder.datamodules.base import BaseDataModule
 from collective_encoder.common.registry import get_module
 from collective_encoder.datasets.resolver import get_dataset_cls_dl
@@ -361,14 +362,14 @@ class CoordinatesDataModule(BaseDataModule):
         fake_systems = [
             System(
                 types=torch.tensor(at_types, dtype=torch.long),
-                positions=torch.tensor(mol_traj[0].positions, dtype=torch.float64),
-                cell=torch.tensor(mol_traj[0].get_cell(), dtype=torch.float64),
+                positions=torch.tensor(mol_traj[0].positions, dtype=TENSOR_PRECISION),
+                cell=torch.tensor(mol_traj[0].get_cell(), dtype=TENSOR_PRECISION),
                 pbc=torch.tensor([True, True, True]),
             ),
             System(
                 types=torch.tensor(at_types, dtype=torch.long),
-                positions=torch.tensor(mol_traj[1].positions, dtype=torch.float64),
-                cell=torch.tensor(mol_traj[1].get_cell(), dtype=torch.float64),
+                positions=torch.tensor(mol_traj[1].positions, dtype=TENSOR_PRECISION),
+                cell=torch.tensor(mol_traj[1].get_cell(), dtype=TENSOR_PRECISION),
                 pbc=torch.tensor([True, True, True]),
             )
         ]

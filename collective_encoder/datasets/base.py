@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 from typing import Any, Union, Dict, Tuple
 
 import numpy as np
-import torch
 
+from collective_encoder import TENSOR_PRECISION
 from collective_encoder.common.module import CEModule
 from collective_encoder.datareaders.base import BaseDataReader
 from torch.utils.data import DataLoader
@@ -46,6 +46,7 @@ class BaseDataset(CEModule, ABC):
                  **kwargs,
                  ):
         super().__init__(args, **kwargs)
+        self.dtype = TENSOR_PRECISION
     
     @abstractmethod
     def __len__(self):

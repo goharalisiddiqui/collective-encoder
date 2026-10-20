@@ -72,23 +72,20 @@ class AEBase(CENetBase, ABC):
     
     def get_norm_len(self) -> int:
         return self.datapoint_shape[0]
-
-    def _normalize(self, x: torch.Tensor) -> torch.Tensor:
-        if self.Mean.numel() != np.prod(x.shape[1:]):
+    
+    def _validate_norm_sizes(self, Mean, Range):
+        if Mean.numel() != np.prod(self.encoder_network[1:]):
             self.raise_error(f"Mean and Range buffers must have the same number" 
                              f" of elements as the input features. Got Mean shape:"
-                             f" {self.Mean.shape}, Range shape: {self.Range.shape},"
-                             f" input shape: {x.shape}")
+                             f" {Mean.shape}, Range shape: {Range.shape},"
+                             f" input shape: {self.encoder_network[1:].shape}")
+
+    def _normalize(self, x: torch.Tensor) -> torch.Tensor:
         mean_expanded = self.Mean.view(1, *(x.shape[1:])).expand(x.shape)
         range_expanded = self.Range.view(1, *(x.shape[1:])).expand(x.shape)
         return (x - mean_expanded) / range_expanded
 
     def _denormalize(self, x: torch.Tensor) -> torch.Tensor:
-        if self.Mean.numel() != np.prod(x.shape[1:]):
-            self.raise_error(f"Mean and Range buffers must have the same number" 
-                             f" of elements as the input features. Got Mean shape:"
-                             f" {self.Mean.shape}, Range shape: {self.Range.shape},"
-                             f" input shape: {x.shape}")
         mean_expanded = self.Mean.view(1, *(x.shape[1:])).expand(x.shape)
         range_expanded = self.Range.view(1, *(x.shape[1:])).expand(x.shape)
         return x * range_expanded + mean_expanded
@@ -104,7 +101,10 @@ class AEBase(CENetBase, ABC):
 
     def reparametrize_multivariate(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         std = torch.exp(0.5 * logvar)
-        dist = torch.distributions.MultivariateNormal(torch.zeros(mu.shape[1]), torch.eye(mu.shape[1]))
+        dist = torch.distributions.MultivariateNormal(
+            torch.zeros(mu.shape[1], dtype=mu.dtype, device=mu.device), 
+            torch.eye(mu.shape[1], dtype=mu.dtype, device=mu.device)
+            )
         samples = dist.rsample(mu.shape[:-1]).to(mu.device)
         return mu + samples * std
 

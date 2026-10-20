@@ -6,6 +6,7 @@ import torch.nn as nn
 
 _log = logging.getLogger(__name__)
 
+from collective_encoder import TENSOR_PRECISION
 
 class PCAModule(nn.Module):
     """PyTorch module implementing Principal Component Analysis (PCA).
@@ -26,11 +27,14 @@ class PCAModule(nn.Module):
         input_dim: int,
         latent_dim: int,
         center: bool = True,
+        dtype: torch.dtype = TENSOR_PRECISION,
+        
     ) -> None:
         super().__init__()
         self.input_dim = int(input_dim)
         self.latent_dim = int(latent_dim)
         self.center = bool(center)
+        self.dtype = dtype
 
         if self.latent_dim > self.input_dim:
             raise ValueError(
@@ -39,15 +43,15 @@ class PCAModule(nn.Module):
 
         # Persistent buffers saved in PyTorch checkpoints
         self.register_buffer("is_fitted", torch.tensor(False, dtype=torch.bool))
-        self.register_buffer("mean", torch.zeros(self.input_dim, dtype=torch.float32))
+        self.register_buffer("mean", torch.zeros(self.input_dim, dtype=self.dtype))
         self.register_buffer(
-            "components", torch.zeros((self.input_dim, self.latent_dim), dtype=torch.float32)
+            "components", torch.zeros((self.input_dim, self.latent_dim), dtype=self.dtype)
         )
         self.register_buffer(
-            "explained_variance", torch.zeros(self.latent_dim, dtype=torch.float32)
+            "explained_variance", torch.zeros(self.latent_dim, dtype=self.dtype)
         )
         self.register_buffer(
-            "explained_variance_ratio", torch.zeros(self.latent_dim, dtype=torch.float32)
+            "explained_variance_ratio", torch.zeros(self.latent_dim, dtype=self.dtype)
         )
 
     def fit(self, X: torch.Tensor) -> "PCAModule":
@@ -69,7 +73,7 @@ class PCAModule(nn.Module):
                 f"Number of samples ({N}) must be at least latent_dim ({self.latent_dim})"
             )
 
-        X_float = X.to(dtype=torch.float32, device=self.components.device)
+        X_float = X.to(dtype=self.dtype, device=self.components.device)
 
         if self.center:
             mean_vec = torch.mean(X_float, dim=0)
@@ -116,7 +120,7 @@ class PCAModule(nn.Module):
             raise RuntimeError(
                 "PCAModule is not fitted yet. Fit the module on training data before calling forward."
             )
-        x_float = x.to(dtype=torch.float32, device=self.components.device)
+        x_float = x.to(dtype=self.dtype, device=self.components.device)
         if self.center:
             x_float = x_float - self.mean
         return torch.matmul(x_float, self.components)
@@ -134,7 +138,7 @@ class PCAModule(nn.Module):
             raise RuntimeError(
                 "PCAModule is not fitted yet. Fit the module before calling inverse."
             )
-        z_float = z.to(dtype=torch.float32, device=self.components.device)
+        z_float = z.to(dtype=self.dtype, device=self.components.device)
         x_rec = torch.matmul(z_float, self.components.t())
         if self.center:
             x_rec = x_rec + self.mean

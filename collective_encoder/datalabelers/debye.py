@@ -1,6 +1,6 @@
 from typing import Optional, Dict, List, Union, Optional
 
-import numpy as sp
+import numpy as np
 from ase.data import atomic_numbers
 import MDAnalysis as mda
 

@@ -1,14 +1,12 @@
 from abc import ABC
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict
 
-import pytorch_lightning as pl
 import torch
-from torch_geometric.data import Data
+import pytorch_lightning as pl
 
 from collective_encoder.models.base import CEModelBase
 from collective_encoder.losses.mse import CELossMSE
 from collective_encoder.metrics.mae import CEMetricMAE
-from collective_encoder.metrics.kld import CEMetricKLD
 
 
 class CENetBase(CEModelBase, pl.LightningModule, ABC):
@@ -152,7 +150,7 @@ class CENetBase(CEModelBase, pl.LightningModule, ABC):
         if stage == "test":
             if len(self.test_plotters) > 0:
                 self._plot_test_batch(data, latent, output, labels, meta)
-            return metrics.get("mae", torch.tensor(0.0, device=self.device))
+            return metrics.get("mae", torch.tensor(0.0, device=self.device, dtype=self.dtype))
 
         losses = self._multiple_calculate(data, latent, output, labels, meta, 
                                         self.losses, stage, batch_size)

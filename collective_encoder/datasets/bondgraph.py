@@ -12,6 +12,7 @@ from torch_geometric.loader import DataLoader as GeoDataLoader
 from tqdm import tqdm
 
 from .base import BaseDataset
+from collective_encoder import TENSOR_PRECISION
 from collective_encoder.datareaders.base import BaseDataReader
 from collective_encoder.datareaders.base import BaseDataReader
 
@@ -29,19 +30,19 @@ def _compute_graph(structure: ase.Atoms, bond_indices: List[Tuple[int, int]]) ->
     bonds = assemble_bonds(structure, bond_indices)
     x = bond_node_features(structure, bonds)
     edge_index, edge_attr, _, angle_atoms, torsion_atoms = angle_and_torsion_edges(structure, bonds)
-    positions = torch.tensor(structure.get_positions())
+    positions = torch.tensor(structure.get_positions(), dtype=TENSOR_PRECISION)
     return Data(
         x=x,
         edge_index=edge_index,
         edge_attr=edge_attr,
         pos=positions,
-        y_bonds=torch.tensor([b[2] for b in bonds]),
+        y_bonds=torch.tensor([b[2] for b in bonds], dtype=TENSOR_PRECISION),
         y_angles=torch.tensor([edge_attr[i, 2]
-                               for i in range(edge_attr.size(0)) if edge_attr[i, 0] == 1.0]),
+                               for i in range(edge_attr.size(0)) if edge_attr[i, 0] == 1.0], dtype=TENSOR_PRECISION),
         y_torsions_sin=torch.tensor([math.sin(edge_attr[i, 2])
-                                     for i in range(edge_attr.size(0)) if edge_attr[i, 1] == 1.0]),
+                                     for i in range(edge_attr.size(0)) if edge_attr[i, 1] == 1.0], dtype=TENSOR_PRECISION),
         y_torsions_cos=torch.tensor([math.cos(edge_attr[i, 2])
-                                     for i in range(edge_attr.size(0)) if edge_attr[i, 1] == 1.0]),
+                                     for i in range(edge_attr.size(0)) if edge_attr[i, 1] == 1.0], dtype=TENSOR_PRECISION),
     )
 
 
@@ -59,7 +60,7 @@ def _compute_graph_worker(args):
                                              dynamic_ncols=True):
         graph = _compute_graph(structure, bond_indices)
         if label is not None:
-            graph.y = torch.tensor(label)
+            graph.y = torch.tensor(label, dtype=TENSOR_PRECISION)
         torch.save(graph, os.path.join(graphs_dir, f"graph_{global_idx}.pt"))
 
 
@@ -164,7 +165,7 @@ class BondGraphDataset(BaseDataset, Dataset):
     def _compute_graph(self, idx: int) -> Data:
         graph = _compute_graph(self.structures[idx], self.bond_indices)
         if self.labels is not None:
-            graph.y = torch.tensor(self.labels[idx])
+            graph.y = torch.tensor(self.labels[idx], dtype=self.dtype)
         return graph
 
     def _calculate_label_indices(self):
@@ -192,7 +193,7 @@ class BondGraphDataset(BaseDataset, Dataset):
                                               disable=not self.verbose, dynamic_ncols=True):
                 graph = _compute_graph(structure, self.bond_indices)
                 if label is not None:
-                    graph.y = torch.tensor(label)
+                    graph.y = torch.tensor(label, dtype=self.dtype)
                 torch.save(graph, os.path.join(precomputed_graphs_dir, f"graph_{idx}.pt"))
         else:
             n_workers = min(16, os.cpu_count() or 1, max(1, len(items)))
@@ -337,4 +338,5 @@ class BondGraphDataset(BaseDataset, Dataset):
                                     self.bond_indices, 
                                     k=k, 
                                     residue_names=residue_names, 
-                                    atom_names=atom_names)
+                                    atom_names=atom_names,
+                                    dtype=self.dtype)

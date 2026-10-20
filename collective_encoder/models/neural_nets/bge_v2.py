@@ -68,8 +68,8 @@ class BondGraphEncoderDecoderV2(BondGraphEncoderDecoder):
         self.register_buffer('normIn', torch.tensor(normIn, dtype=torch.bool))
         self.register_buffer('normSet', torch.tensor(False, dtype=torch.bool))
         num_norm = encoder_args['node_feat'] + encoder_args['edge_feat']
-        self.register_buffer('Mean', torch.zeros(num_norm))
-        self.register_buffer('Range', torch.ones(num_norm))
+        self.register_buffer('Mean', torch.zeros(num_norm, dtype=self.dtype, device=self.device))
+        self.register_buffer('Range', torch.ones(num_norm, dtype=self.dtype, device=self.device))
 
 
 __all__ = ["BondGraphEncoderDecoderV2"]

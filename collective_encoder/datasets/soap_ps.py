@@ -100,7 +100,7 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
         # Precompute all the systems
         systems = featomic.torch.systems_to_torch(structures)
         selected_atoms_label = mts.Labels(
-            "atom", torch.tensor(self.selected_atoms).reshape(-1, 1)
+            "atom", torch.tensor(self.selected_atoms, dtype=torch.long).reshape(-1, 1)
         )
         descriptors = self.spex(
             systems, selected_samples=selected_atoms_label
@@ -119,7 +119,7 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
                             descriptors,
                             axis="samples",
                             selection=mts.Labels(
-                                "atom", torch.tensor([atom]).reshape(-1, 1)
+                                "atom", torch.tensor([atom], dtype=torch.long).reshape(-1, 1)
                             ),
                         )
             sel_map = mts.slice(
@@ -128,8 +128,8 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
                             selection=mts.Labels(
                                 ["neighbor_1_type", "neighbor_2_type"], 
                                 torch.stack([
-                                    torch.tensor(self.included_types),
-                                    torch.tensor(self.included_types)
+                                    torch.tensor(self.included_types, dtype=torch.long),
+                                    torch.tensor(self.included_types, dtype=torch.long)
                                 ], dim=-1)
                             ),
                         )
@@ -141,8 +141,8 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
 
         # descriptors shape: (n_structures, n_selected_atoms, sum of (2l+1) over l in angular_list), radial components * no of species
         self.descriptors = descriptors
-        self.labels = [torch.tensor(d) for d in labels]
-        print(f"[{type(self).__name__}]: Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
+        self.labels = [torch.tensor(d, dtype=self.dtype) for d in labels]
+        self.log_info(f"Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
 
         # flatten the last two dimensions
         # self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1)
@@ -151,8 +151,7 @@ class SoapPowerSpectrumDataset(Dataset, BaseDataset):
         self.descriptors = self.descriptors.sum(dim=1)
         
         self.num_inputs = self.descriptors.shape[-1]
-        print(f"[{type(self).__name__}]: Each data point has input dimension {self.num_inputs}.")
-        print("="*80)
+        self.log_info(f"Each data point has input dimension {self.num_inputs}.")
         
     def __len__(self):
         """

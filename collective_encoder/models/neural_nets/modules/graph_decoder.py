@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from torch import nn, Tensor
 
+from collective_encoder import TENSOR_PRECISION
 from .mp_modules import ScalarFeatureEmbedding, AttentionMP
 
 class BondGraphDecoder(nn.Module):
@@ -62,6 +63,7 @@ class BondGraphDecoder(nn.Module):
         rbf_gamma: float = 10.0,
         precompute: bool = True,
         out_labels: List[str] = ['bond_dist', 'angle', 'dihedral_cos', 'dihedral_sin'],
+        dtype=TENSOR_PRECISION
     ):
         super().__init__()
         self.latent_dim = latent_dim
@@ -81,6 +83,7 @@ class BondGraphDecoder(nn.Module):
         self.rbf_gamma = rbf_gamma
         self.precompute = precompute
         self.out_labels = out_labels
+        self.dtype = dtype
 
         # ---------- Template graph processing ----------
         # Expect edge_attr: [bond_type_one_hot(5), bond_length]
@@ -88,16 +91,19 @@ class BondGraphDecoder(nn.Module):
         edge_attr_raw: Tensor = template_data.edge_attr.clone().detach()
         assert edge_attr_raw.size(1) >= 6, "edge_attr must contain 5 bond-type one-hot + length"
         # Ensure consistent dtype (float32 default) for features
-        desired_dtype = torch.get_default_dtype()
-        bond_types = edge_attr_raw[:, :5].to(desired_dtype)
-        bond_len = edge_attr_raw[:, 5].to(desired_dtype)
+        bond_types = edge_attr_raw[:, :5].to(dtype)
+        bond_len = edge_attr_raw[:, 5].to(dtype)
         # RBF embedding of bond lengths
         bond_rbf = self._rbf_embed(bond_len)
         edge_features = torch.cat([bond_types, bond_rbf], dim=-1)  # (E, 5+rbf_dim)
 
         # Per-feature MLP embedding for nodes and edges
-        self.node_embed = ScalarFeatureEmbedding(in_dim=template_data.x.size(1), out_dim=node_embed_dim)
-        self.edge_embed = ScalarFeatureEmbedding(in_dim=edge_features.size(1), out_dim=edge_embed_dim)
+        self.node_embed = ScalarFeatureEmbedding(in_dim=template_data.x.size(1), 
+                                                 out_dim=node_embed_dim, 
+                                                 dtype=dtype)
+        self.edge_embed = ScalarFeatureEmbedding(in_dim=edge_features.size(1), 
+                                                 out_dim=edge_embed_dim, 
+                                                 dtype=dtype)
 
         self.node_dim = node_embed_dim #* template_data.x.size(1)
         self.edge_dim = edge_embed_dim #* edge_features.size(1)
@@ -107,10 +113,12 @@ class BondGraphDecoder(nn.Module):
                         edge_feat_dim=self.edge_dim, 
                         hidden_dim=hidden_dim, 
                         heads=heads, 
-                        dropout=dropout_mp)
+                        dropout=dropout_mp,
+                        dtype=dtype
+                        )
             for i in range(num_layers)
         ])
-        self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers)])
+        self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim, dtype=dtype) for _ in range(num_layers)])
         self.elu = nn.ELU()
 
         # Precompute structural embedding (optional)
@@ -137,11 +145,11 @@ class BondGraphDecoder(nn.Module):
         def head(in_dim, n_layers=2):
             layers = []
             for _ in range(n_layers):
-                layers.append(nn.Linear(in_dim, hidden_dim))
+                layers.append(nn.Linear(in_dim, hidden_dim, dtype=dtype))
                 layers.append(nn.ELU())
                 layers.append(nn.Dropout(dropout_mlp))
                 in_dim = hidden_dim
-            layers.append(nn.Linear(hidden_dim, 1))
+            layers.append(nn.Linear(hidden_dim, 1, dtype=dtype))
             return nn.Sequential(*layers)
 
         self.bond_head = head(bond_in, final_mlp_layers)

@@ -1,11 +1,12 @@
 import math
-from typing import Optional, Union
-
+from typing import Optional
 
 import torch
 from torch import nn, Tensor
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import softmax
+
+from collective_encoder import TENSOR_PRECISION
 
 
 class ScalarFeatureEmbedding(nn.Module):
@@ -14,16 +15,22 @@ class ScalarFeatureEmbedding(nn.Module):
     Given input x of shape (N, F), we create F small MLPs each processing x[:, f:f+1].
     Each MLP outputs (N, hidden_dim); final embedding h is the (optionally scaled) sum.
     """
-    def __init__(self, in_dim: int, out_dim: int, hidden_dim: int = 128, activation=nn.ELU()):
+    def __init__(self, 
+                 in_dim: int, 
+                 out_dim: int, 
+                 hidden_dim: int = 128, 
+                 activation=nn.ELU(), 
+                 dtype=TENSOR_PRECISION):
         super().__init__()
         self.in_dim = in_dim
         self.hidden_dim = hidden_dim
         self.out_dim = out_dim
+        self.dtype = dtype
         self.mlps = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(1, hidden_dim),
+                nn.Linear(1, hidden_dim, dtype=dtype),
                 activation,
-                nn.Linear(hidden_dim, out_dim),
+                nn.Linear(hidden_dim, out_dim, dtype=dtype),
             )
             for _ in range(in_dim)
         ])
@@ -47,7 +54,13 @@ class AttentionMP(MessagePassing):
     Aggregation: sum over j -> i
     Output: residual + linear projection + optional norm & activation handled externally.
     """
-    def __init__(self, node_feat_dim: int, edge_feat_dim: int, hidden_dim: int = 128, heads: int = 4, dropout: float = 0.0):
+    def __init__(self, 
+                 node_feat_dim: int, 
+                 edge_feat_dim: int, 
+                 hidden_dim: int = 128, 
+                 heads: int = 4, 
+                 dropout: float = 0.0, 
+                 dtype=TENSOR_PRECISION):
         super().__init__(aggr='add', node_dim=0)
         assert hidden_dim % heads == 0, "hidden_dim must be divisible by heads"
         self.node_feat_dim = node_feat_dim
@@ -57,15 +70,15 @@ class AttentionMP(MessagePassing):
         self.d_head = hidden_dim // heads
         self.dropout = dropout
 
-        self.q_proj = nn.Linear(node_feat_dim, hidden_dim, bias=False)
-        self.k_proj = nn.Linear(node_feat_dim, hidden_dim, bias=False)
-        self.v_proj = nn.Linear(node_feat_dim, hidden_dim, bias=False)
+        self.q_proj = nn.Linear(node_feat_dim, hidden_dim, bias=False, dtype=dtype)
+        self.k_proj = nn.Linear(node_feat_dim, hidden_dim, bias=False, dtype=dtype)
+        self.v_proj = nn.Linear(node_feat_dim, hidden_dim, bias=False, dtype=dtype)
 
-        self.node_msg = nn.Linear(node_feat_dim, hidden_dim, bias=False)
-        self.edge_msg = nn.Linear(edge_feat_dim, hidden_dim, bias=False)
+        self.node_msg = nn.Linear(node_feat_dim, hidden_dim, bias=False, dtype=dtype)
+        self.edge_msg = nn.Linear(edge_feat_dim, hidden_dim, bias=False, dtype=dtype)
 
         self.beta = nn.Sequential(
-            nn.Linear(hidden_dim*3, 1, bias=False), 
+            nn.Linear(hidden_dim*3, 1, bias=False, dtype=dtype), 
             nn.Sigmoid()
         )
 
@@ -111,13 +124,13 @@ class AttentionMP(MessagePassing):
         return out
 
 class EdgeModel(nn.Module):
-    def __init__(self, node_in_dim, edge_in_dim):
+    def __init__(self, node_in_dim, edge_in_dim, dtype=TENSOR_PRECISION):
         super(EdgeModel, self).__init__()
         # Define MLP for edge feature updates
         self.edge_mlp = nn.Sequential(
-            nn.Linear(2 * node_in_dim + edge_in_dim, edge_in_dim),
+            nn.Linear(2 * node_in_dim + edge_in_dim, edge_in_dim, dtype=dtype),
             nn.Tanh(),
-            nn.Linear(edge_in_dim, edge_in_dim),
+            nn.Linear(edge_in_dim, edge_in_dim, dtype=dtype),
         )
 
     def forward(self, src, dest, edge_attr, u, batch):

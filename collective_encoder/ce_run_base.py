@@ -19,13 +19,14 @@ from collective_encoder.common.config_check import (
 )
 from gslibs.utils.filesystem import create_rundir, output_to_file
 
+from collective_encoder import TENSOR_PRECISION
 from collective_encoder.utils import check_dict_contains_keys
 from collective_encoder.common.registry import get_module
 from collective_encoder import CONFIG_PATH
 
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
-torch.set_default_dtype(torch.float64)
+torch.set_default_dtype(TENSOR_PRECISION)
 _COMMON_REQUIRED_KEYS = ['outpath', 'outfolder', 'nexp', 'overwrite', 'output_to_file']
 _OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 
                          'num_workers', 'test_batch_size']

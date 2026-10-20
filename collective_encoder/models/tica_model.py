@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 import torch
 
+from collective_encoder import TENSOR_PRECISION
 from collective_encoder.models.base import CEModelBase
 from collective_encoder.models.modules.tica import TICAModule
 
@@ -70,6 +71,7 @@ class TICAModel(CEModelBase):
             f"Dataset type '{self.dataset_type}' is not compatible with TICAModel. "
             f"Compatible types: {self._COMPATIBLE_DATASETS}"
         )
+        self.dtype = TENSOR_PRECISION
 
         self.input_dim = int(self.datapoint_shape[0])
         self.latent_dim = int(self.latent_dim)
@@ -168,9 +170,9 @@ class TICAModel(CEModelBase):
             X = torch.cat(batches, dim=0)
 
         if not isinstance(X, torch.Tensor):
-            X = torch.tensor(X, dtype=torch.float32)
+            X = torch.tensor(X, dtype=self.dtype)
         else:
-            X = X.to(dtype=torch.float32)
+            X = X.to(dtype=self.dtype)
 
         if self.normIn:
             if not self.normSet:

@@ -95,9 +95,9 @@ class DistancesDataset(Dataset, BaseDataset):
             for i, j in pairs:
                 dist = np.linalg.norm(positions[i] - positions[j])
                 distances.append(dist)
-            self.distances.append(torch.tensor(distances))
+            self.distances.append(torch.tensor(distances, dtype=self.dtype))
 
-        self.labels = [torch.tensor(d) for d in labels]
+        self.labels = [torch.tensor(d, dtype=self.dtype) for d in labels]
         self.num_inputs = len(pairs)
         
         if self.atm_ids is not None:

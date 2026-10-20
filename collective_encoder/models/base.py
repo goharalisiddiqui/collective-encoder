@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-import numpy as np
 import torch
 import torch.nn as nn
 from torch_geometric.data import Data
@@ -90,23 +89,22 @@ class CEModelBase(nn.Module, CEModule, ABC):
                 dm = self.trainer.datamodule
             elif hasattr(self, "datamodule") and self.datamodule:
                 dm = self.datamodule
-
-        if dm is None:
-            self.raise_error(
-                "Datamodule not available; cannot compute normalization. "
-                "Ensure datamodule is passed to set_norm() or attached to trainer.",
-                RuntimeError,
-            )
+            else:
+                self.raise_error(
+                    "Datamodule not available; cannot compute normalization. "
+                    "Ensure datamodule is passed to set_norm() or attached to trainer.",
+                    RuntimeError,
+                )
 
         with torch.no_grad():
             Mean = dm.get_scaler_mean()
             Range = dm.get_scaler_scale()
-            self._validate_norm_sizes(Mean, Range)
             device = next(self.parameters()).device if list(self.parameters()) else self.Mean.device
-            Mean = torch.tensor(Mean, device=device, dtype=torch.float32)
-            Range = torch.tensor(Range, device=device, dtype=torch.float32)
+            Mean = torch.tensor(Mean, device=device, dtype=self.dtype)
+            Range = torch.tensor(Range, device=device, dtype=self.dtype)
             Range = Range.clone()
             Range[Range == 0.0] = 1.0
+            self._validate_norm_sizes(Mean, Range)
             self.Mean = Mean
             self.Range = Range
             self.normSet = torch.tensor(True, dtype=torch.bool)

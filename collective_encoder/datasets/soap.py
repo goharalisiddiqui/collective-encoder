@@ -138,7 +138,7 @@ class SOAPDataset(Dataset, BaseDataset):
         # descriptors shape: (n_structures, n_selected_atoms, sum of (2l+1) over l in angular_list, radial components * no of species
         self.descriptors = descriptors
         self.labels = [torch.tensor(d) for d in labels]
-        print(f"[{type(self).__name__}]: Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
+        self.log_msg(f"Loaded {self.descriptors.shape[0]} data points with {self.descriptors.shape[1]} selected atoms.")
         
         # sum the atoms dimension
         self.descriptors = self.descriptors.sum(dim=1)
@@ -147,8 +147,7 @@ class SOAPDataset(Dataset, BaseDataset):
         self.descriptors = self.descriptors.reshape(self.descriptors.shape[0], -1)
 
         self.num_inputs = self.descriptors.shape[-1]
-        print(f"[{type(self).__name__}]: Each data point has input dimension {self.num_inputs}.")
-        print("="*80)
+        self.log_msg(f"Each data point has input dimension {self.num_inputs}.")
         
     def __len__(self):
         """

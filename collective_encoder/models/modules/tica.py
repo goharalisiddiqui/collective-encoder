@@ -6,6 +6,8 @@ import torch.nn as nn
 
 _log = logging.getLogger(__name__)
 
+from collective_encoder import TENSOR_PRECISION
+
 
 class TICAModule(nn.Module):
     """Time-lagged Independent Component Analysis (TICA) Module.
@@ -22,6 +24,7 @@ class TICAModule(nn.Module):
         lag: int = 1,
         epsilon: float = 1e-6,
         center: bool = True,
+        dtype: torch.dtype = TENSOR_PRECISION
     ) -> None:
         super().__init__()
 
@@ -30,14 +33,15 @@ class TICAModule(nn.Module):
         self.lag = int(lag)
         self.epsilon = float(epsilon)
         self.center = bool(center)
+        self.dtype = dtype
 
         # Register persistent buffers
         self.register_buffer("is_fitted", torch.tensor(False, dtype=torch.bool))
-        self.register_buffer("mean", torch.zeros(self.input_dim, dtype=torch.float32))
-        self.register_buffer("components", torch.zeros((self.input_dim, self.latent_dim), dtype=torch.float32))
-        self.register_buffer("eigenvalues", torch.zeros(self.latent_dim, dtype=torch.float32))
-        self.register_buffer("timescales", torch.zeros(self.latent_dim, dtype=torch.float32))
-        self.register_buffer("cov_0", torch.zeros((self.input_dim, self.input_dim), dtype=torch.float32))
+        self.register_buffer("mean", torch.zeros(self.input_dim, dtype=self.dtype))
+        self.register_buffer("components", torch.zeros((self.input_dim, self.latent_dim), dtype=self.dtype))
+        self.register_buffer("eigenvalues", torch.zeros(self.latent_dim, dtype=self.dtype))
+        self.register_buffer("timescales", torch.zeros(self.latent_dim, dtype=self.dtype))
+        self.register_buffer("cov_0", torch.zeros((self.input_dim, self.input_dim), dtype=self.dtype))
 
     def fit(self, X: torch.Tensor) -> "TICAModule":
         """Fits TICA parameters on sequential trajectory data X.
@@ -46,9 +50,9 @@ class TICAModule(nn.Module):
             X: 2D Tensor of shape (N, D) representing sequential frames.
         """
         if not isinstance(X, torch.Tensor):
-            X = torch.tensor(X, dtype=torch.float32)
+            X = torch.tensor(X, dtype=self.dtype)
         else:
-            X = X.to(dtype=torch.float32)
+            X = X.to(dtype=self.dtype)
 
         N, D = X.shape
         if D != self.input_dim:
@@ -65,7 +69,7 @@ class TICAModule(nn.Module):
         if self.center:
             mean = torch.mean(X, dim=0)
         else:
-            mean = torch.zeros(D, dtype=torch.float32, device=X.device)
+            mean = torch.zeros(D, dtype=self.dtype, device=X.device)
 
         X0_centered = X0 - mean
         Xtau_centered = Xtau - mean
@@ -101,11 +105,11 @@ class TICAModule(nn.Module):
 
         # Pad with zeros if latent_dim > D
         if k < self.latent_dim:
-            W_padded = torch.zeros((D, self.latent_dim), dtype=torch.float32, device=X.device)
+            W_padded = torch.zeros((D, self.latent_dim), dtype=self.dtype, device=X.device)
             W_padded[:, :k] = W
             W = W_padded
 
-            eigvals_padded = torch.zeros(self.latent_dim, dtype=torch.float32, device=X.device)
+            eigvals_padded = torch.zeros(self.latent_dim, dtype=self.dtype, device=X.device)
             eigvals_padded[:k] = top_eigvals
             top_eigvals = eigvals_padded
 
