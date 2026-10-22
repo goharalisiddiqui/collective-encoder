@@ -9,6 +9,7 @@ into memory in a format that datamodules and datalabelers can process.
 
 from collective_encoder.common.registry import define_kind, register, lazy_exports
 from .base import BaseDataReader
+import collective_encoder.datareaders.processors
 
 define_kind("datareaders", BaseDataReader)
 

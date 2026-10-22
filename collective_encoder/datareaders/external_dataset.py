@@ -230,16 +230,6 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
         
         self.u = u
 
-    def get_total_frames(self) -> int:
-        """
-        Get the total number of frames considering processor adjustments.
-        """
-        total = len(self.u.trajectory)
-        if hasattr(self, 'processors'):
-            for processor in self.processors:
-                total = processor.adjust_total_frames(total)
-        return total
-
     def _initialize_labeler(self,
                           labeler_type: str,
                           labeler_args: dict) -> BaseLabeler:

@@ -13,7 +13,6 @@ from MDAnalysis.exceptions import NoDataError
 from collective_encoder.datalabelers.base import BaseLabeler
 from collective_encoder.datareaders.base import BaseDataReader
 from collective_encoder.common.registry import get_module
-from collective_encoder.datareaders.processors.resolver import get_processor
 from MDAnalysis.exceptions import NoDataError
 
 
@@ -101,22 +100,14 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         "STEINHARDT_ORDER_PARAMETER",
     ]
 
-    _OPTIONAL_ARGS = {
+    _OPTIONAL_ARGS = BaseDataReader._OPTIONAL_ARGS | {
         'selection': "all",
         'type_to_elements': None,
         'parallel': True,
-        'processors': None,
     }
 
     def __init__(self, args: Dict[str, Any] = None, **kwargs):
         super().__init__(args=args, **kwargs)
-        self.processors = []
-        processor_configs = self.args.get('processors') or []
-        for config in processor_configs:
-            processor_cls = get_processor(config['type'])
-            processor_args = config.get('args', {})
-            self.processors.append(processor_cls(**processor_args))
-            self.log_msg(f"Initialized processor: {config['type']} with args {processor_args}")
 
     def read(self,
             labeler_type: str,
@@ -218,6 +209,13 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
                         original_idx = worker_idx + local_idx * n_workers
                         traj[original_idx]  = read_traj
                         label[original_idx] = read_label
+            
+            self._validate_traj_length(
+                indices=index_list, 
+                read_indices=traj, 
+                failed_indices=failed, 
+                idx = seq_idx,
+            )
 
             # Apply post-processors
             for processor in self.processors:
@@ -225,11 +223,16 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
 
             trajs      += (traj,)
             labels     += (label,)
-            all_failed += (failed,)
 
         self.log_msg(f"Finished reading trajectories.")
-        return trajs, labels, all_failed
+        return trajs, labels
 
+    def get_total_frames(self) -> int:
+        """
+        Get the total number of frames considering processor adjustments.
+        """
+        total = len(self.u.trajectory)
+        return total
 
     def get_atomic_numbers(self) -> List[int]:
         """

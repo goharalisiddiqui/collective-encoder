@@ -1,31 +1,47 @@
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Dict, Union
+import numpy as np
 import ase
-from collective_encoder.datareaders.processors.base import BaseProcessor
+import torch
+from collective_encoder.datareaders.processors.base import BaseDataProcessor
 
-class FilterProcessor(BaseProcessor):
+class FilterProcessor(BaseDataProcessor):
     """
     Filters frames based on label values.
     """
-    def __init__(self, label_index: int = 0, min_val: float = None, max_val: float = None, **kwargs):
-        super().__init__(**kwargs)
-        self.label_index = label_index
-        self.min_val = min_val
-        self.max_val = max_val
+    
+    _IDENTIFIER = "FILTER"
+    _REQUIRED_ARGS = [
+        'label_index',
+        'min_val',
+        'max_val'
+    ]
+    
+    def _filter_targets(self, 
+        targets: Union[List[Any], np.ndarray, torch.Tensor], 
+        mask: Union[np.ndarray, List[bool]]
+        ) -> Union[List[Any], np.ndarray, torch.Tensor]:
 
-    def postprocess_seq(self, mol_traj: List[ase.Atoms], labels: List[Any]) -> Tuple[List[ase.Atoms], List[Any]]:
-        idx_to_remove = []
-        for i in range(len(labels)):
-            val = labels[i][self.label_index]
-            remove = False
-            if self.min_val is not None and val <= self.min_val:
-                remove = True
-            if self.max_val is not None and val >= self.max_val:
-                remove = True
+        if isinstance(targets, (np.ndarray, torch.Tensor)):
+            return targets[mask]
+        elif isinstance(targets, list):
+            return [target for i, target in enumerate(targets) if mask[i]]
+        else:
+            self.raise_error(f"Unsupported target type for filtering: {type(targets)}")
+    
+    def postprocess_seq(self, 
+        targets: Union[List[Any], np.ndarray, torch.Tensor], 
+        labels: Union[List[Any], np.ndarray, torch.Tensor]
+        ) -> Tuple[Union[List[Any], np.ndarray, torch.Tensor], 
+                   Union[List[Any], np.ndarray, torch.Tensor]]:
+    
 
-            if remove:
-                idx_to_remove.append(i)
-
-        traj = [frame for i, frame in enumerate(mol_traj) if i not in idx_to_remove]
-        filtered_labels = [label for i, label in enumerate(labels) if i not in idx_to_remove]
-
-        return traj, filtered_labels
+        if isinstance(labels, (np.ndarray, torch.Tensor)) and labels.ndim == 1:
+            mask = labels[:, self.label_index] > self.min_val and labels[:, self.label_index] < self.max_val
+            labels = labels[mask]
+            target = self._filter_targets(targets, mask)
+        elif isinstance(labels, list) and isinstance(labels[0], float):
+            mask = [self.min_val < label[self.label_index] < self.max_val for label in labels]
+            labels = [label for i, label in enumerate(labels) if mask[i]]
+            target = self._filter_targets(targets, mask)
+        else:
+            self.raise_error(f"Unsupported label type for filtering: {type(labels)}")

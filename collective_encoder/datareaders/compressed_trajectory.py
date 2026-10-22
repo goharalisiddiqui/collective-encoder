@@ -104,10 +104,3 @@ class CompressedTrajectoryReader(TrajectoryReaderBase):
         self.u = u
         self.select_atoms()
         self._extract_topology_info()
-
-    def get_total_frames(self) -> int:
-        total = len(self.u.trajectory)
-        if hasattr(self, 'processors'):
-            for processor in self.processors:
-                total = processor.adjust_total_frames(total)
-        return total

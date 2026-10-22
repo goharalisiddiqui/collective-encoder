@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Dict, Any
 
 from collective_encoder.common.module import CEModule
 from collective_encoder.datalabelers.base import BaseLabeler
+from collective_encoder.common.registry import get_module
 
 class BaseDataReader(CEModule, ABC):
     """
@@ -10,7 +11,69 @@ class BaseDataReader(CEModule, ABC):
     """
     _COMPATIBLE_LABELERS = ["CONCAT", "DUMMY"]
 
+    _OPTIONAL_ARGS = {
+        'processors': [],
+        "non_readability_tolerance": 0.02,  # Allow up to 2% of frames to be unreadable before raising an error
+    }
     
+    def __init__(self, args: Dict[str, Any] = None, **kwargs):
+        super().__init__(args=args, **kwargs)
+        self._add_processors()
+    
+    def get_processors(self) -> List[Any]:
+        """
+        Get the list of initialized data processors.
+
+        Returns
+        -------
+        list
+            List of initialized data processor instances.
+        """
+        return self.processors
+    
+    def _add_processors(self):
+        processors = []
+        for config in self.processors:
+            processor_cls = get_module("dataprocessors", config['type'])
+            processor_args = config.get('args', {})
+            processors.append(
+                processor_cls(
+                    args=processor_args, 
+                    **self.get_run_args()
+                    )
+                )
+            self.log_msg(f"Initialized processor: {config['type']} with args {processor_args}")
+        self.processors = processors
+    
+    def _validate_traj_length(self, 
+        indices: List[int], 
+        read_indices: List[Any],
+        failed_indices: List[int],
+        idx: int = None,
+        ):
+        
+        """Validate that trajectory has expected number of frames.
+
+        Logs a WARNING with the exact failed frame indices when frames are dropped,
+        so downstream analysis tools can correlate the shortened trajectory.
+        """
+        split = ['train', 'val', 'test', 'predict'][idx] if idx <= 4 else \
+                    f'Sequence {idx}' if idx is not None \
+                        else "Unknown"
+        if failed_indices:
+            self.warn(
+                f"[{split}] {len(failed_indices)} frame(s) could not be read "
+                f"(OSError) and were skipped. Failed frame indices: {failed_indices}"
+            )
+        threshold = len(indices) * (1 - self.non_readability_tolerance)
+        if len(read_indices) < threshold:
+            self.raise_error(
+                f"[{split}] Trajectory length {len(read_indices)} is less than the minimum expected "
+                f"{threshold:.0f} frames (tolerance={self.non_readability_tolerance:.1%}). "
+                f"Failed indices: {failed_indices}",
+                ValueError
+            )
+
     @abstractmethod
     def read(self,
             labeler_type: str,
@@ -29,6 +92,21 @@ class BaseDataReader(CEModule, ABC):
             Additional keyword arguments for reading the trajectory.
         """
         raise NotImplementedError("Subclasses must implement read method")
+
+    
+    def get_total_datapoints(self) -> int:
+        """
+        Get the total number of datapoints the datareader can generate.
+
+        Returns
+        -------
+        int
+            The total number of datapoints or records available.
+        """
+        total = self.get_total_frames()
+        for processor in self.get_processors():
+            total = processor.adjust_total_frames(total)
+        return total
 
     @abstractmethod
     def get_total_frames(self):

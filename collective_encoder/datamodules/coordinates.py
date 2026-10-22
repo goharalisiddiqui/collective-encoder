@@ -61,7 +61,6 @@ class CoordinatesDataModule(BaseDataModule):
         "test_full_dataset": False,
         "sequential": False,
         "max_frames": None,
-        "non_readability_tolerance": 0.02,  # Allow up to 2% of frames to be unreadable before raising an error
         "data_analysers": None,
     })
 
@@ -111,26 +110,6 @@ class CoordinatesDataModule(BaseDataModule):
         self.atomic_numbers = self.datareader.get_atomic_numbers()
         self.element_symbols = self.datareader.get_element_symbols()
         self.bonds = self.datareader.get_bonds()
-
-    def _validate_traj_length(self, traj: List[Any], expected_length: int,
-                              failed_indices: List[int] = None, split_name: str = ""):
-        """Validate that trajectory has expected number of frames.
-
-        Logs a WARNING with the exact failed frame indices when frames are dropped,
-        so downstream analysis tools can correlate the shortened trajectory.
-        """
-        if failed_indices:
-            self.warn(
-                f"[{split_name}] {len(failed_indices)} frame(s) could not be read "
-                f"(OSError) and were skipped. Failed frame indices: {failed_indices}"
-            )
-        threshold = expected_length * (1 - self.non_readability_tolerance)
-        if len(traj) < threshold:
-            raise ValueError(
-                f"[{split_name}] Trajectory length {len(traj)} is less than the minimum expected "
-                f"{threshold:.0f} frames (tolerance={self.non_readability_tolerance:.1%}). "
-                f"Failed indices: {failed_indices}"
-            )
 
     def _calculate_indices(self):
         """Calculate train, validation, and test indices based on split configuration."""
@@ -219,38 +198,27 @@ class CoordinatesDataModule(BaseDataModule):
 
         # Read trajectory data
         self.log_info("Reading trajectory data and labels...")
-        read_result = self.datareader.read_trajectory(
+        trajs, labels = self.datareader.read_trajectory(
             indices=[self.train_indices, self.val_indices, self.test_indices, self.predict_indices],
             labeler_type=self.labeler_type,
             labeler_args=self.labeler_args,
         )
         self.log_info("Finished reading trajectory data and labels.")
-        # Readers that track failed frames return a 3-tuple; older/other readers return 2-tuple
-        if len(read_result) == 3:
-            trajs, labels, failed_per_split = read_result
-        else:
-            trajs, labels = read_result
-            failed_per_split = ([], [], [])
-
-        # Validate trajectory lengths and report any dropped frames
-        self._validate_traj_length(trajs[0], len(self.train_indices),
-                                   failed_per_split[0], split_name="train")
-        self._validate_traj_length(trajs[1], len(self.val_indices),
-                                   failed_per_split[1], split_name="val")
-        self._validate_traj_length(trajs[2], len(self.test_indices),
-                                   failed_per_split[2], split_name="test")
-        self._validate_traj_length(trajs[3], len(self.predict_indices),
-                                   failed_per_split[3], split_name="predict")
-
+        
         # Create datasets
         (dataset_class, 
          dataset_args, 
          self.dl_cls) = get_dataset_cls_dl(
-                                        self.dataset_type, 
-                                        self.dataset_args, 
-                                        self.datareader
-                                        )
-        
+                            self.dataset_type, 
+                            self.dataset_args, 
+                            self.datareader
+                        )
+
+        dps = self.datareader.get("processors", [])
+        for dp in dps:
+            dataset_class = dp.get_dataset_wrapper(dataset_class, dataset_args)
+            self.log_info(f"Applied processor {dp.__class__.__name__} to dataset class.")
+            
         if self.train_size > 0:
             self.log_info(f"Creating training dataset with {len(trajs[0])} frames...")
             self.train_data = dataset_class(
@@ -258,7 +226,7 @@ class CoordinatesDataModule(BaseDataModule):
                 labels=labels[0],
                 args=dataset_args,
                 **{**self.run_args, "tag": 'train'},
-            )
+                )
         else:
             self.train_data = []
         
