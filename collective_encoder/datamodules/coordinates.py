@@ -27,7 +27,7 @@ class CoordinatesDataModule(BaseDataModule):
         test_batch_size (int, optional): Batch size for testing. Default is 0.
         test_full_dataset (bool, optional): Whether to use the full dataset for testing. Default is False.
         sequential (bool, optional): Whether to split the dataset sequentially or randomly. Default is False.
-        max_frames (int, optional): Maximum number of frames to read from the trajectory. Default is None (read all frames).
+        max_datapoints (int, optional): Maximum number of frames to read from the trajectory. Default is None (read all frames).
         labeler_type (str, optional): Type of labeler to use. Default is None.
         labeler_args (Dict[str, Any], optional): Arguments for the labeler. Default is {}.
         norm_type (str, optional): Type of normalization to apply ('standard' or 'minmax'). Default is 'standard'.
@@ -60,7 +60,7 @@ class CoordinatesDataModule(BaseDataModule):
         "labeler_args": None,
         "test_full_dataset": False,
         "sequential": False,
-        "max_frames": None,
+        "max_datapoints": None,
         "data_analysers": None,
     })
 
@@ -80,21 +80,21 @@ class CoordinatesDataModule(BaseDataModule):
         
         self._initialize_datareader()
 
-        if self.max_frames is None:
-            self.max_frames = self.datareader.get_total_frames()
+        if self.max_datapoints is None:
+            self.max_datapoints = self.datareader.get_total_frames()
 
         # Add test_full_dataset validation
         if self.test_size > 0 and self.test_full_dataset:
             self.raise_error("test_size and test_full_dataset are mutually exclusive")
         
-        if self.max_frames < (self.train_size + self.validation_size + self.predict_size +
+        if self.max_datapoints < (self.train_size + self.validation_size + self.predict_size +
                          (0 if self.test_full_dataset else self.test_size)):
-            raise ValueError(f"Not enough frames ({self.max_frames}) in trajectory " 
+            raise ValueError(f"Not enough frames ({self.max_datapoints}) in trajectory " 
                 f"for the requested dataset sizes (train: {self.train_size}, "
                 f"val: {self.validation_size}, test: {self.test_size})")
     
         if self.test_full_dataset:
-            self.test_size = self.max_frames
+            self.test_size = self.max_datapoints
 
         self._create_datasets()
         self._analyze_data()
@@ -113,8 +113,8 @@ class CoordinatesDataModule(BaseDataModule):
 
     def _calculate_indices(self):
         """Calculate train, validation, and test indices based on split configuration."""
-        if self.max_frames > self.datareader.get_total_frames():
-            raise ValueError(f"max_frames ({self.max_frames}) exceeds total frames in trajectory "
+        if self.max_datapoints > self.datareader.get_total_frames():
+            raise ValueError(f"max_datapoints ({self.max_datapoints}) exceeds total frames in trajectory "
                              f"({self.datareader.get_total_frames()})")
         if self.sequential:
             self.log_debug("Calculating sequential split indices...")
@@ -131,7 +131,7 @@ class CoordinatesDataModule(BaseDataModule):
             required_size += self.test_size
         self.log_debug(f"Total required size (including test): {required_size}")
 
-        start = random.randint(0, self.max_frames - required_size)
+        start = random.randint(0, self.max_datapoints - required_size)
         self.train_indices = np.arange(start, start + self.train_size)
         if len(self.train_indices) > 0:
             self.log_info(f"Train indices: {self.train_indices[0]} - {self.train_indices[-1]}")
@@ -142,7 +142,7 @@ class CoordinatesDataModule(BaseDataModule):
             self.log_info(f"Validation indices: {self.val_indices[0]} - {self.val_indices[-1]}")
         
         if self.test_full_dataset:
-            self.test_indices = np.arange(self.max_frames)
+            self.test_indices = np.arange(self.max_datapoints)
         else:
             self.test_indices  = np.arange(start + self.train_size + self.validation_size,
                                             start + self.train_size + self.validation_size + self.test_size)
@@ -156,7 +156,7 @@ class CoordinatesDataModule(BaseDataModule):
 
     def _calculate_random_indices(self):
         """Calculate indices for random data splitting."""
-        all_indices = list(range(self.max_frames))
+        all_indices = list(range(self.max_datapoints))
         self.train_indices = random.sample(all_indices, self.train_size)
         self.log_info(f"Selected {len(self.train_indices)} random train indices.")
         self.log_debug(f"Train indices: {self.train_indices[:10]}{'...' if len(self.train_indices) > 10 else ''}")
@@ -214,7 +214,7 @@ class CoordinatesDataModule(BaseDataModule):
                             self.datareader
                         )
 
-        dps = self.datareader.get("processors", [])
+        dps = self.datareader.get_processors()
         for dp in dps:
             dataset_class = dp.get_dataset_wrapper(dataset_class, dataset_args)
             self.log_info(f"Applied processor {dp.__class__.__name__} to dataset class.")

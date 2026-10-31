@@ -14,7 +14,7 @@ class ChunkProcessor(BaseDataProcessor):
     _REQUIRED_ARGS = [
         'chunk_length',
     ]
-    _COMPATIBLE_DATASETS = ["TIMESERIES"]
+    _COMPATIBLE_DATASETS = ["TIMESERIES", "ATOMISTIC_DARTS"]
     
     def get_dataset_wrapper(self, 
         dataset_cls: BaseDataset, 
