@@ -1,0 +1,14 @@
+stages:
+  - test
+
+test:
+  image: python:3.10
+  stage: test
+  script:
+    - pip install --upgrade pip
+    - pip install -e .[dev]
+    - pip install git+https://github.com/goharalisiddiqui/gslibs.git
+    - pytest tests/ --cov=collective_encoder --cov-report=xml
+  only:
+    - merge_requests
+    - main

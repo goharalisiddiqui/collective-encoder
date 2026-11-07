@@ -1,27 +1,68 @@
 from abc import ABC, abstractmethod
 import os
-import numpy as np
-from matplotlib import pyplot as plt
-from tqdm import tqdm
 
-from collective_encoder.common.module import CEModule
+from collective_encoder.common.plotter import BasePlotter
 
-class BaseDataAnalyser(CEModule, ABC):
-    '''
-    Docstring for BaseDataAnalyser
-    '''
-    _REQUIRED_ARGS = ['output_dir', 'datamodule_args']
+class BaseDataAnalyser(BasePlotter, ABC):
+    """
+    Base class for data analysers.
+    Used to perform data analysis on datasets and write plots or other analysis results to disk.
+    
+    Subclasses should implement the `write_data` method to handle specific data analysis tasks.
+    
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary containing options like:
+        - ``input_chunk_length`` (int): Length of the input window in
+          sequence models; used to colour-code time-series by split.
+        - ``output_chunk_length`` (int): Length of the prediction window.
+        - ``n_seq_per_sample`` (int): Number of output sequences per
+          input sample (default: ``1``).
+    kwargs : dict
+        Forwarded to :class:`~collective_encoder.common.module.CEModule`.
+    """
+    _IDENTIFIER = "BASE_DATA_ANALYSER"
+    _REQUIRED_ARGS = BasePlotter._REQUIRED_ARGS + [
+      'datamodule_args',
+      'datamodule_labels_list'
+    ]
+    _OPTIONAL_ARGS = BasePlotter._OPTIONAL_ARGS | {
+        'data_selection': None,  
+        'labels_selection': None,
+    }
+    _PLOTTER_TYPE = "data_analyser"
+    
     
     def __init__(self,
                  args: dict = None,
                  **kwargs):
         super().__init__(args=args, **kwargs)
-        os.makedirs(self.output_dir, exist_ok=True)
+        
+        ds_type = self.datamodule_args.get('dataset_type', None)
+        if ds_type not in self._COMPATIBLE_DATASET_TYPES:
+            self.raise_error(f"Dataset type '{ds_type}' is not compatible. "
+                f"Expected one of: "
+                f"{self._COMPATIBLE_DATASET_TYPES}")
+        self.ds_type = ds_type
 
     @abstractmethod
-    def write_data(self, data, label = ""):
-        '''
+    def write_data(self, data, label=""):
+        """
         Abstract method to write data analysis results.
-        '''
+
+        Parameters
+        ----------
+        data : list or array-like
+            The data collection to analyse.
+        label : str, optional
+            Optional label to distinguish the analysis subset (e.g. 'train', 'val').
+            Default is empty string.
+
+        Raises
+        ------
+        NotImplementedError
+            If not implemented by a subclass.
+        """
         raise NotImplementedError("Subclasses must implement write_data method")
         

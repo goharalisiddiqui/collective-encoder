@@ -1,24 +1,31 @@
+import numpy as np
 import MDAnalysis as mda
-from typing import Dict, List, Union
+from typing import Optional, Dict, List, Union
 
-from .base import FrameLabeler
+from .mda import MDALabeler
 
 
-class DihedralValueLabeler(FrameLabeler):
-    """Compute backbone dihedral angles (phi/psi) for the current trajectory frame.
+class DihedralValueLabeler(MDALabeler):
+    """
+    Compute backbone dihedral angles (phi/psi) for the current trajectory frame.
 
     Expects an MDAnalysis ``Universe`` already positioned at the desired frame.
     For each entry in ``label_dihedrals``, the dihedral is computed from the
     four atoms selected by MDAnalysis's built-in ``phi_selection()`` /
     ``psi_selection()`` helpers.
 
-    Args:
-        universe: MDAnalysis Universe loaded with the full topology and
-            trajectory.  The trajectory must be positioned at the target
-            frame before calling :meth:`compute`.
-        args: Configuration dict with key ``label_dihedrals`` (required) — a
-            list of strings of the form ``'phi_<resnum>'`` or ``'psi_<resnum>'``
-            (e.g. ``['phi_2', 'psi_2']``).
+    Parameters
+    ----------
+    universe : MDAnalysis.Universe
+        MDAnalysis Universe loaded with the full topology and
+        trajectory.  The trajectory must be positioned at the target
+        frame before calling :meth:`compute`.
+    args : dict
+        Configuration dict with key ``label_dihedrals`` (required) — a
+        list of strings of the form ``'phi_<resnum>'`` or ``'psi_<resnum>'``
+        (e.g. ``['phi_2', 'psi_2']``).
+    kwargs : dict
+        Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "DIHEDRAL"
@@ -54,9 +61,25 @@ class DihedralValueLabeler(FrameLabeler):
                 self.label_list.append(f"psi_{resnum}")
 
     def get_label_names(self) -> List[str]:
+        """
+        Return the names of the requested dihedral labels.
+
+        Returns
+        -------
+        list of str
+            Names of the dihedrals (e.g., ``phi_2``).
+        """
         return self.label_list
 
-    def compute(self) -> List[float]:
+    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+        """
+        Compute the dihedral angles for the current frame.
+
+        Returns
+        -------
+        list of float
+            The computed dihedral angles in radians (or MDAnalysis default units).
+        """
 
         dihedrals = []
         for atoms in self.label_atoms:
@@ -68,5 +91,5 @@ class DihedralValueLabeler(FrameLabeler):
             )
             dihedrals.append(dihedral)
 
-        return dihedrals
+        return np.array(dihedrals, dtype=float)
 

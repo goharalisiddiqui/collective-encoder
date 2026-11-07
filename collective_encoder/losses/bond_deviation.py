@@ -10,6 +10,21 @@ from .base import CELossBase
 EPSILON = 1e-7
 
 class CELossBondDeviation(CELossBase):
+    """
+    Physics-informed loss to penalize non-physical bond lengths.
+
+    Computes the Mean Squared Error between predicted bond lengths and
+    the sum of the covalent radii of the bonded atoms.
+
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary. Required keys:
+        - ``atomic_numbers`` (list of int): Atomic numbers for the atoms in the structure.
+        - ``bond_indices`` (list of tuple): Index pairs defining the bonds.
+    kwargs : dict
+        Additional keyword arguments forwarded to the parent module.
+    """
     _IDENTIFIER = "CELossBondDeviation"
     _REQUIRED_ARGS = ['atomic_numbers', 'bond_indices']
     
@@ -32,6 +47,28 @@ class CELossBondDeviation(CELossBase):
                 labels: torch.Tensor, 
                 meta: Dict[str, torch.Tensor],
                 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Compute the bond deviation loss.
+
+        Parameters
+        ----------
+        inp : torch.Tensor
+            The input atomic coordinates, expected shape ``(batch, n_atoms * 3)``
+            or ``(batch, n_atoms, 3)``.
+        latent : torch.Tensor
+            Latent representation (unused).
+        output : torch.Tensor
+            Reconstructed coordinates (unused).
+        labels : torch.Tensor
+            Ground truth labels (unused).
+        meta : dict
+            Metadata (unused).
+
+        Returns
+        -------
+        tuple
+            (bond_deviation_loss, empty_dict).
+        """
         
         bonded_indices = self.bond_indices
         coordinates = inp.view(inp.shape[0], -1, 3)

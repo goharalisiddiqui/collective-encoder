@@ -1,3 +1,4 @@
+from email.mime import message
 import logging
 from abc import ABC
 import os
@@ -6,6 +7,8 @@ from typing import List, Any, Dict, Union
 import numpy as np
 
 from collective_encoder.common.config_check import validate_required_fields
+from gslibs.utils.filesystem import create_rundir
+from collective_encoder import EXECUTION_DIR
 
 class CEModule(ABC):
     """
@@ -34,11 +37,7 @@ class CEModule(ABC):
         # Use _ce_log to avoid shadowing pl.LightningModule's self.logger property
         # when CEModule is mixed into Lightning classes.
         self._ce_log = logging.getLogger(root_logger_name + "." + self.__class__.__name__)
-        if self.verbose:
-            self._ce_log.info("=" * 80)
-            self._ce_log.info("[Initializing module: %s]", self.__class__.__name__)
-            self._ce_log.info("=" * 80)
-            self.ce_log_dict("Initialization args", args, indent=2)
+        self._print_init_banner()
 
         if self._REQUIRED_ARGS is not None:
             res = validate_required_fields(args, fields=self._REQUIRED_ARGS)
@@ -49,16 +48,80 @@ class CEModule(ABC):
             if key not in args:
                 args[key] = default_value
         for key in args:
-            self.__setattr__(key, args[key])
+            if key in self._OPTIONAL_ARGS or key in self._REQUIRED_ARGS:
+                self.__setattr__(key, args[key])
+            else:
+                self.log_warn(f"Unrecognized argument '{key}' passed to {self.__class__.__name__} initialization.")
     
-    def creater_results_dir(self):
-        results_dir = os.path.join(self.run_dir, f"{self.__class__.__name__}_results")
-        os.makedirs(results_dir, exist_ok=True) 
-        self.results_dir = results_dir
+    def _print_init_banner(self):
+        if self.verbose:
+            self._ce_log.info("=" * 80)
+            self._ce_log.info("[Initializing module: %s]", self.__class__.__name__)
+            self._ce_log.info("=" * 80)
+            self.ce_log_dict("Initialization args", self.args, indent=2)
+
+    def _create_dir(self, 
+                    name: str, 
+                    var_name: str = None, 
+                    use_existing: bool = False,
+                    in_exec_dir: bool = False,
+                    base_type: str = "run"
+                    ) -> None:
+        """
+        Create a directory under the run directory and assign its path to an attribute.
+        
+        Args:
+            name (str): Name of the directory to create.
+            var_name (str, optional): Name of the attribute to assign the directory path to.
+                If None, defaults to the same as `name`.
+        
+        """
+        _BASE_PATH_MODEL = {
+            "run": self.run_dir,
+            "exec": EXECUTION_DIR,
+            "execution": EXECUTION_DIR,
+            "abs": "",
+            "absolute": "",
+        }
+        if var_name is None:
+            var_name = name
+
+        if in_exec_dir: # backward compatibility
+            base_type = "exec"
+        dir_path = os.path.join(_BASE_PATH_MODEL.get(base_type, ""), name)
+
+        if not os.path.exists(dir_path) or use_existing:
+            os.makedirs(dir_path, exist_ok=True)
+        else:
+            stem = os.path.basename(dir_path)
+            dir_path = create_rundir(path=os.path.dirname(dir_path),
+                        stem=stem,
+                        nexp=1,
+                        overwrite=False)
+        self.log_info(f"Created directory: {dir_path}")
+        if hasattr(self, var_name):
+            self.log_warn(f"Overwriting existing attribute '{var_name}' with new directory path.")
+        self.__setattr__(var_name, dir_path)
+
+    def safe_create_dir(self, dir_path: str) -> None:
+        """Create a directory if it doesn't exist, and log the action."""
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
+        else:
+            stem = os.path.basename(dir_path)
+            dir_path = create_rundir(path=os.path.dirname(dir_path), 
+                        stem=stem,
+                        nexp=1,
+                        overwrite=False)
+        self.log_info(f"Created directory: {dir_path}")
+        return dir_path
+    
+    def create_results_dir(self):
+        self._create_dir("results", var_name="results_dir")
     
     def create_results_file(self):
         if not hasattr(self, "results_dir"):
-            self.creater_results_dir()
+            self.create_results_dir()
         self.results_file = os.path.join(self.results_dir, f"results.txt")
     
     def log_result_msg(self, res: str) -> None:
@@ -70,13 +133,13 @@ class CEModule(ABC):
     
     def save_npy(self, arr: np.ndarray, label: str) -> None:
         if not hasattr(self, "results_dir"):
-            self.creater_results_dir()
+            self.create_results_dir()
         npy_path = os.path.join(self.results_dir, f"{label.lower().replace(' ', '_')}.npy")
         np.save(npy_path, arr)
         self.log_result_msg(f"@@ Saved {label} to {npy_path}")
     
     def log_result(self, res: Union[str, float, int, list, np.ndarray, Dict], 
-                   label: str = None, save_bin: bool = True) -> None:
+                label: str = None, save_bin: bool = True) -> None:
         if isinstance(res, str):
             self.log_result_msg(f"{label}: {res}" if label else res)
         elif isinstance(res, (float, int)):
@@ -91,10 +154,10 @@ class CEModule(ABC):
         elif isinstance(res, np.ndarray):
             self.log_result_msg("-"*40)
             res_str = np.array2string(res,
-                                      max_line_width=1000,
-                                      precision=4,
-                                      threshold=1000,
-                                      suppress_small=True)
+                                    max_line_width=1000,
+                                    precision=4,
+                                    threshold=1000,
+                                    suppress_small=True)
             if not label:
                 label = "Unnamed Array"
             self.log_result_msg(f"{label} (shape: {res.shape}):\n{res_str}")
@@ -135,13 +198,20 @@ class CEModule(ABC):
     def log_debug(self, message: str) -> None:
         self._ce_log.debug(message)
     
-    def log_exception(self, message: str, exc: Exception) -> None:
+    def log_exception(self, message: str, exc: Exception = ValueError) -> None:
         """Emit an ERROR-level log message with exception info."""
         self._ce_log.error(message, exc_info=exc)
     
-    def log_warn(self, message: str) -> None:
+    def log_warn(self, message: str, once=False) -> None:
         """Emit a WARNING-level log message."""
-        self._ce_log.warning(message)
+        if once:
+            if not hasattr(self, "_warned_messages"):
+                self._warned_messages = set()
+            if message not in self._warned_messages:
+                self._warned_messages.add(message)
+                self._ce_log.warning(message)
+        else:
+            self._ce_log.warning(message)
 
     def log_msg(self, message: str) -> None:
         """Emit an INFO-level log message (no-op when ``verbose=False``)."""
@@ -185,3 +255,8 @@ class CEModule(ABC):
 
         self._ce_log.info(message)
         _emit(data, level=1)
+
+
+    def get_identifier(self) -> str:
+        """Return the identifier string for this module."""
+        return self._IDENTIFIER

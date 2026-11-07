@@ -1,0 +1,27 @@
+debug: False
+nepochs: 1
+lrate: 0.001
+weight_decay: 0.0
+nogpu: False
+early_stopping: False
+scheduler: False
+
+outpath: ./ala2/train_runs
+outfolder: ICA
+nexp: 1
+overwrite: True
+output_to_file: True
+save_checkpoint: True
+wandb: False
+
+network_type: ICAEncoder
+network_args:
+    latent_dim: 2
+    normIn: False
+    fun: "logcosh"
+
+load_datamodule: ./ala2/dmod/ver_2
+datamodule_args:
+    batch_size: 4096
+    val_batch_size: 4096
+    num_workers: 4

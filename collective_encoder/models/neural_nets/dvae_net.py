@@ -1,0 +1,52 @@
+from typing import Any, Dict
+
+from collective_encoder.models.neural_nets.modules.variational_nn import VariationalNN
+from collective_encoder.models.neural_nets.modules.simple_nn import SimpleNN
+from collective_encoder.losses.mse import CELossMSE
+from collective_encoder.models.neural_nets.vae_net import VAE
+
+
+class DVAE(VAE):
+    _IDENTIFIER = "DVAE"
+
+    def __init__(self, args = None, **kwargs):
+        super().__init__(args, **kwargs)
+        self.losses['rec_loss'] = CELossMSE({}, **kwargs)
+
+    def init_network(self):
+        self.encoder_net = VariationalNN(layers=self.encoder_network, 
+                                         batch_norm=self.batch_norm,
+                                         activation=self.activation,
+                                         activation_args=self.activation_args)
+        self.decoder_net = SimpleNN(layers=self.decoder_network, 
+                                    batch_norm=self.batch_norm, 
+                                    activation=self.activation,
+                                    activation_args=self.activation_args)
+
+    def decoder(self, z):
+        z = self.decoder_net(z)
+        return z, {}
+
+# ------------------------------------------------------------------
+# Symmetric Deterministic Variational Autoencoder (sDVAE) subclass with symmetric encoder and decoder architectures
+# ------------------------------------------------------------------
+
+class sDVAE(DVAE):
+    _IDENTIFIER = "sDVAE"
+    
+    """
+    Symmetric Deterministic Variational Autoencoder (sDVAE) with symmetric encoder and decoder architectures.
+    The encoder and decoder architectures are determined by the provided network
+    """
+
+    def __init__(self,
+                 args: Dict[str, Any] = None,
+                 **kwargs
+                 ):
+        network = args.pop('network', None)
+        if network is not None:
+            args['encoder_network'] = network
+            args['decoder_network'] = network[:-1][::-1]
+        elif 'encoder_network' not in args or 'decoder_network' not in args:
+            raise ValueError("Argument 'network' is required for sDVAE")
+        super().__init__(args=args, **kwargs)

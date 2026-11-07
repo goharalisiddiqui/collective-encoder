@@ -1,8 +1,6 @@
 __pycache__/
 *checkpoint*
 core
-run*/
-*train_*/
 ce_training*/
 run_slurm.sh
 run_multi.sh
@@ -12,6 +10,9 @@ wandb/
 .env
 lightning_logs/
 *.log
-tests/
 md17_data/
 **.egg-info/
+DEVELOPER_GUIDE.md
+.coverage
+htmlcov/
+.pytest_cache/

@@ -10,6 +10,20 @@ from .base import CELossBase
 EPSILON = 1e-7
 
 class CELossSteric(CELossBase):
+    """
+    Physics-informed loss to penalize steric clashes (atoms too close).
+
+    Computes a penalty if the distance between any two non-bonded atoms
+    falls below 50% of the sum of their covalent radii.
+
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary. Required keys:
+        - ``atomic_numbers`` (list of int): Atomic numbers for the atoms.
+    kwargs : dict
+        Additional keyword arguments.
+    """
     _IDENTIFIER = "CELossSteric"
     _REQUIRED_ARGS = ['atomic_numbers']
     
@@ -32,6 +46,28 @@ class CELossSteric(CELossBase):
                 labels: torch.Tensor, 
                 meta: Dict[str, torch.Tensor],
                 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Compute the steric clash penalty.
+
+        Parameters
+        ----------
+        inp : torch.Tensor
+            The input atomic coordinates.
+        latent : torch.Tensor
+            Latent representation (unused).
+        output : torch.Tensor
+            Reconstructed coordinates (unused).
+        labels : torch.Tensor
+            Ground truth labels (unused).
+        meta : dict
+            Metadata (unused).
+
+        Returns
+        -------
+        tuple
+            (steric_loss, empty_dict).
+        """
+        import torch.nn.functional as F
         
         coordinates = inp.view(inp.shape[0], -1, 3)
         n_atoms = coordinates.shape[-2]

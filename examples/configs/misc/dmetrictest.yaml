@@ -1,0 +1,164 @@
+debug: False                   # Set to True for quick testing (2 epochs, small dataset)
+
+outfolder: test_dmetric_bVAE       # Subdirectory name for this experiment
+nexp: 1                          # Experiment number (for multiple runs)
+overwrite: True                  # Overwrite existing results
+output_to_file: True             # Save test logs to file
+verbose: True
+
+load_datamodule: ./ala2/dmod/ver_2
+
+network_type: sDVAE
+load_network: ./ala2/train_runs/bVAE_1
+
+test_plotters:
+  - tester_type: DisentanglementBetaMetric
+    tester_args:
+      # Selection mappings from test outputs into named variables
+      labels_selection:                   # Maps dataset labels to named variables (generative factors)
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:                  # Maps latent vector dimensions to named variables
+        LD_1: 0
+        LD_2: 1
+      meta_selection:                     # Maps network metadata/tensors (e.g. mu_latent, logvar_latent) to named variables
+        LD_1_mean: [mu_latent, 0]
+        LD_2_mean: [mu_latent, 1]
+
+      # Disentanglement evaluation configuration
+      generative_factors: phi:psi         # Ground-truth generative factors (classes) to evaluate (colon-separated or list)
+      latent_dimensions: LD_1_mean:LD_2_mean # Latent dimensions used as input features to the linear classifier (colon-separated or list)
+
+      # Sample pairing thresholds (Higgins et al. metric)
+      factor_tolerances: 0.1              # Max tolerance to consider a factor constant (|v1 - v2| <= tol), float or dict per factor
+      variation_threshold: 0.2            # Min variation required across other factors (|v1 - v2| >= thresh), float or dict per factor
+      batch_size_L: 1                     # Number of difference vectors |z1 - z2| averaged per training sample (L >= 1)
+      min_samples_warning: 200            # Log warning if any factor category has fewer than this number of paired samples
+
+      # Classifier training & evaluation
+      test_split: 0.3                     # Fraction of difference dataset held out for classifier test evaluation
+      num_models: 10                      # Number of linear models trained with random seeds to compute average & CI
+      confidence_interval: 0.95           # Confidence interval level (e.g. 0.95 for 95% confidence interval)
+      classifier_type: logistic_regression # Linear classifier model ('logistic_regression', 'linear_svc', 'ridge')
+      classifier_kwargs: null             # Optional dict of keyword arguments passed to classifier constructor
+
+      # Plotting & visualization options
+      plot_confusion_matrix: True         # Plot and save confusion matrix (saved in main tester folder)
+      plot_training_points: True          # Plot and save sampled factor points & latent difference features (saved in data/ folder)
+
+  - tester_type: DisentanglementFactorMetric
+    tester_args:
+      # Selection mappings from test outputs into named variables
+      labels_selection:                   # Maps dataset labels to named variables (generative factors)
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:                  # Maps latent vector dimensions to named variables
+        LD_1: 0
+        LD_2: 1
+      meta_selection:                     # Maps network metadata/tensors (e.g. mu_latent, logvar_latent) to named variables
+        LD_1_mean: [mu_latent, 0]
+        LD_2_mean: [mu_latent, 1]
+
+      # Disentanglement evaluation configuration
+      generative_factors: phi:psi         # Ground-truth generative factors (classes) to evaluate (colon-separated or list)
+      latent_dimensions: LD_1_mean:LD_2_mean # Latent dimensions used as input features (colon-separated or list)
+
+      # Sample batching thresholds (Kim & Mnih metric)
+      factor_tolerances: 0.1              # Max tolerance to consider a factor constant (|v1 - v2| <= tol), float or dict per factor
+      variation_threshold: 0.2            # Min variation required across other factors (|v1 - v2| >= thresh), float or dict per factor
+      batch_size_L: 50                    # Number of samples per batch to compute empirical variance (L >= 2)
+      max_batches_per_factor: 1000        # Maximum variance batches generated per factor category
+      min_samples_warning: 200            # Log warning if any factor category has fewer than this number of batches
+
+      # Classifier training & evaluation
+      test_split: 0.3                     # Fraction of variance dataset held out for test evaluation
+      num_models: 10                      # Number of models/splits evaluated to compute average & CI
+      confidence_interval: 0.95           # Confidence interval level (e.g. 0.95 for 95% confidence interval)
+
+      # Plotting & visualization options
+      plot_confusion_matrix: True         # Plot and save confusion matrix (saved in main tester folder)
+      plot_training_points: True          # Plot and save variance profiles & factor clusters (saved in data/ folder)
+
+  - tester_type: DisentanglementDCIMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      meta_selection:
+        LD_1_mean: [mu_latent, 0]
+        LD_2_mean: [mu_latent, 1]
+
+      generative_factors: phi:psi
+      latent_dimensions: LD_1_mean:LD_2_mean
+
+      regressor_type: gradient_boosting   # 'gradient_boosting', 'random_forest', 'ridge', 'lasso'
+      test_split: 0.3
+      num_models: 10
+      confidence_interval: 0.95
+      plot_importance_matrix: True
+
+  - tester_type: DisentanglementMIGMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      meta_selection:
+        LD_1_mean: [mu_latent, 0]
+        LD_2_mean: [mu_latent, 1]
+
+      generative_factors: phi:psi
+      latent_dimensions: LD_1_mean:LD_2_mean
+
+      num_bins: 20                        # Number of bins for discrete mutual information estimation
+      subsample_ratio: 0.8
+      num_models: 10
+      confidence_interval: 0.95
+      plot_mi_matrix: True
+
+  - tester_type: DisentanglementModularityMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      meta_selection:
+        LD_1_mean: [mu_latent, 0]
+        LD_2_mean: [mu_latent, 1]
+
+      generative_factors: phi:psi
+      latent_dimensions: LD_1_mean:LD_2_mean
+
+      num_bins: 20
+      subsample_ratio: 0.8
+      num_models: 10
+      confidence_interval: 0.95
+      compute_explicitness: True
+      plot_mi_matrix: True
+
+  - tester_type: DisentanglementSAPMetric
+    tester_args:
+      labels_selection:
+        phi: 'phi_2'
+        psi: 'psi_2'
+      latents_selection:
+        LD_1: 0
+        LD_2: 1
+      meta_selection:
+        LD_1_mean: [mu_latent, 0]
+        LD_2_mean: [mu_latent, 1]
+
+      generative_factors: phi:psi
+      latent_dimensions: LD_1_mean:LD_2_mean
+
+      test_split: 0.3
+      num_models: 10
+      confidence_interval: 0.95
+      plot_sap_matrix: True

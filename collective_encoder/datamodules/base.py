@@ -34,7 +34,6 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
     _IDENTIFIER: str = None
     _COMPATIBLE_DATAREADERS: List[str] = []
     _COMPATIBLE_DATASETS: List[str] = []
-    _COMPATIBLE_LABELERS: List[str] = []
     _REQUIRED_ARGS = ['train_size', 'batch_size']
     _OPTIONAL_ARGS = {
         'validation_size': 0,
@@ -45,6 +44,7 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
         'predict_batch_size': 0,
         'norm_type': 'standard',
         'num_workers': 1,
+        "data_analysers": None,
     }
 
     def __init__(self,
@@ -84,6 +84,41 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
         # Dataloader class to be set by subclasses
         self.dl_cls = None
         self.check_module_compatibility()
+    
+    def ext_analyse_data(self, 
+                         data_analysers: List[Dict[str, Any]]):
+        """External method to trigger data analysis."""
+        self._call_analysers(data_analysers, metargs=self.get_run_args())
+
+    def _analyze_data(self):
+        """Run data analysis if data analysers are specified."""
+        if self.data_analysers is None:
+            return
+        self._call_analysers(self.data_analysers, metargs=self.get_run_args())
+    
+    def _call_analysers(self, 
+                        data_analysers: List[Dict[str, Any]], 
+                        metargs: Dict[str, Any]):
+        from collective_encoder.common.registry import get_module
+        for analyser_info in data_analysers:
+            analyser_type = analyser_info.get('analyser_type', None)
+            analyser_args = analyser_info.get('analyser_args', {})
+            if analyser_type is None:
+                self.log_warn("Data analyser type not specified; skipping this analyser.")
+                continue
+            analyser_cls = get_module("dataanalysers", analyser_type)
+            analyser_args['datamodule_args'] = self.get_args()
+            analyser_args['datamodule_labels_list'] = self.get_label_names()
+            analyser = analyser_cls(args=analyser_args, 
+                                    **metargs)
+            if self.train_data is not None and len(self.train_data) > 0:
+                analyser.write_data(self.train_data, label="train")
+            if self.val_data is not None and len(self.val_data) > 0:
+                analyser.write_data(self.val_data, label="val")
+            if self.test_data is not None and len(self.test_data) > 0:
+                analyser.write_data(self.test_data, label="test")
+            if self.predict_data is not None and len(self.predict_data) > 0:
+                analyser.write_data(self.predict_data, label="predict")
 
     def _check_batch_sizes(self):
         """Validate batch sizes against dataset sizes."""
@@ -298,19 +333,12 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
         """Get list of compatible dataset types."""
         return cls._COMPATIBLE_DATASETS
 
-    @classmethod
-    def get_compatible_labelers(cls) -> List[str]:
-        """Get list of compatible labeler types."""
-        return cls._COMPATIBLE_LABELERS
-    
     def check_module_compatibility(self):
         """Check if the provided datareader, dataset, and labeler types are compatible with this DataModule."""
         if hasattr(self, 'datareader_type') and self.datareader_type is not None:
             self.check_datareader_compatibility(self.datareader_type)
         if hasattr(self, 'dataset_type') and self.dataset_type is not None:
             self.check_dataset_compatibility(self.dataset_type)
-        if hasattr(self, 'labeler_type') and self.labeler_type is not None:
-            self.check_labeler_compatibility(self.labeler_type)
 
     def check_datareader_compatibility(self, datareader_id : str):
         """Check if the provided datareader type is compatible with this DataModule."""
@@ -328,10 +356,3 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
                              f"with {type(self).__name__}, which supports "
                              f"{compatible_datasets}")
     
-    def check_labeler_compatibility(self, labeler_id : str):
-        """Check if the provided labeler type is compatible with this DataModule."""
-        compatible_labelers = self.get_compatible_labelers()
-        if labeler_id not in compatible_labelers:
-            raise ValueError(f"Labeler type {labeler_id} is not compatible "
-                             f"with {type(self).__name__}, which supports "
-                             f"{compatible_labelers}")
