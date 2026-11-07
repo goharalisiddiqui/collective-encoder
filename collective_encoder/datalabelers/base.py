@@ -21,6 +21,8 @@ class BaseLabeler(CEModule, ABC):
     kwargs : dict
         Additional keyword arguments forwarded to the parent `CEModule`.
     """
+
+
     def reinitialize(self, **args) -> None:
         """
         Reinitialize the labeler with new arguments.
@@ -36,8 +38,6 @@ class BaseLabeler(CEModule, ABC):
             Positional arguments for reinitialization.
         """
         pass
-        
-        
 
     @abstractmethod
     def get_label_names(self) -> List[str]:

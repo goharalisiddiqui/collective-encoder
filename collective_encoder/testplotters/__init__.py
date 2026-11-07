@@ -19,8 +19,8 @@ _BUILTINS = {
     "DisentanglementMIGMetric": ("collective_encoder.testplotters.disentanglement_metrics.mig", "DisentanglementMIGMetric"),
     "DisentanglementModularityMetric": ("collective_encoder.testplotters.disentanglement_metrics.modularity", "DisentanglementModularityMetric"),
     "DisentanglementSAPMetric": ("collective_encoder.testplotters.disentanglement_metrics.sap", "DisentanglementSAPMetric"),
-    "LatentCorrelationsPlotter": ("collective_encoder.testplotters.latent_correlations", "LatentCorrelationsPlotter"),
     "DisentanglementPlotter": ("collective_encoder.testplotters.disentanglement", "DisentanglementPlotter"),
+    "LatentCorrelationsPlotter": ("collective_encoder.testplotters.latent_correlations", "LatentCorrelationsPlotter"),
 }
 
 for _name, (_source, _attr) in _BUILTINS.items():

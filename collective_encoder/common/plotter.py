@@ -180,7 +180,8 @@ class BasePlotter(CEModule, ABC):
                                         f"(length {data.shape[1]}).")
         elif sel_type in [list, str]:
             if not isinstance(data, dict):
-                raise ValueError("Data must be a dictionary when selection values are tuples.")
+                raise ValueError("Data must be a dictionary when selection values are strings or lists."
+                                 f" Found type: {type(data)} for data '{dataname}'.")
             if sel_type is str:
                 for key in selection.values():
                     if key not in data:

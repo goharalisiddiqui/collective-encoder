@@ -5,6 +5,50 @@ import torch
 from collective_encoder.datareaders.processors.base import BaseDataProcessor
 from collective_encoder.datasets.base import BaseDataset
 
+
+def _chunk(x, chunk_length, name):
+    if isinstance(x, (np.ndarray, torch.Tensor)):
+        try:
+            return einops.rearrange(x, '... (a b) d -> ... a b d', b=chunk_length)
+        except einops.EinopsError as e:
+            raise ValueError(
+                f"Error rearranging {name} with shape {tuple(x.shape)} "
+                f"and chunk_length {chunk_length}: {e}"
+            ) from e
+    elif isinstance(x, list):   
+        return [x[i:i + chunk_length] for i in range(0, len(x), chunk_length)]
+    elif isinstance(x, dict):
+        return {k: _chunk(v, chunk_length, f"{name}[{k}]") for k, v in x.items()}
+    else:
+        raise TypeError(
+            f"Unsupported type for {name}: {type(x)}. "
+            f"Expected np.ndarray, torch.Tensor, or list."
+        )
+
+class ChunkMixin:
+    _base_cls = None
+    chunk_length = None
+
+    def __getitem__(self, index):
+        targets, labels = super().__getitem__(index)
+        targets = _chunk(targets, self.chunk_length, "targets")
+        return targets, labels
+
+    def __reduce__(self):
+        # (callable, args, state)
+        return (_rebuild, (self._base_cls, self.chunk_length), self.__dict__)
+
+def make_chunked_cls(base_cls, chunk_length):
+    return type(
+        f"Chunked{base_cls.__name__}",
+        (ChunkMixin, base_cls),
+        {"_base_cls": base_cls, "chunk_length": chunk_length},
+    )
+
+def _rebuild(base_cls, chunk_length):
+    cls = make_chunked_cls(base_cls, chunk_length)
+    return cls.__new__(cls)
+
 class ChunkProcessor(BaseDataProcessor):
     """
     Turn a sequence of start indices into consecutive frame ranges of length `chunk_length`.
@@ -29,44 +73,7 @@ class ChunkProcessor(BaseDataProcessor):
                 f"{self._IDENTIFIER} Processor is not compatible with dataset {dataset_cls._IDENTIFIER}. "
                 f"Compatible datasets: {self._COMPATIBLE_DATASETS}"
             )
-        chunk_length = self.chunk_length
-
-        class WrapperDataset(dataset_cls):
-            
-            def __getitem__(self, index: int) -> Any:
-                targets, labels = super().__getitem__(index)
-                if isinstance(targets, (np.ndarray, torch.Tensor)):
-                    try:
-                        targets = einops.rearrange(targets, 
-                                    '... (a b) d -> ... a b d', 
-                                    b=chunk_length
-                                )
-                    except Exception as e:
-                        self.raise_error(f"Error in rearranging targets with "
-                                        f"shape {targets.shape} and chunk_length "
-                                        f"{chunk_length}: {e}")
-                else:
-                    targets = [targets[i:i + chunk_length] \
-                        for i in range(0, len(targets), chunk_length)]
-
-                # if isinstance(labels, (np.ndarray, torch.Tensor)):
-                #     try:
-                #         labels = einops.rearrange(labels, 
-                #                     '... (a b) d -> ... a b d', 
-                #                     b=chunk_length
-                #                 )
-                #     except Exception as e:
-                #         self.raise_error(f"Error in rearranging labels with "
-                #                         f"shape {labels.shape} and chunk_length "
-                #                         f"{chunk_length}: {e}")
-                # else:
-                #     labels = [labels[i:i + chunk_length] \
-                #         for i in range(0, len(labels), chunk_length)]
-                
-
-                return targets, labels
-
-        return WrapperDataset
+        return make_chunked_cls(dataset_cls, self.chunk_length)
 
     def prepare_seq(self, seq: List[int]) -> List[int]:
         """

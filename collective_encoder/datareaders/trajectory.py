@@ -26,12 +26,11 @@ def _read_and_label(args):
     worker_id, u_copy, selection, atns, at_elements, seqs, labeler = args
 
     mol = u_copy.select_atoms(selection)
-        
-    labeler.reinitialize(universe = u_copy)  # Re-initialize labeler with the copied Universe
 
     verbose = worker_id == 0  # Only the main process shows progress bars and logs
     if not verbose:
         labeler.verbose = False 
+    labeler.reinitialize(universe = u_copy)  # Re-initialize labeler with the copied Universe
     # Cache residue/atom-name info once — constant across all frames
     try:
         residues = np.array([str(r.residue.resname) for r in mol.atoms])

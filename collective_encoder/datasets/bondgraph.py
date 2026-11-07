@@ -27,7 +27,9 @@ def _compute_graph(structure: ase.Atoms, bond_indices: List[Tuple[int, int]]) ->
     """Standalone graph computation from an ASE Atoms object and bond index list.
     Separated from the class so it can be called from worker processes without pickling self.
     """
-    bonds = assemble_bonds(structure, bond_indices)
+    struct_bonds = structure.info.get("bonds", bond_indices)
+    struct_bonds = [tuple(map(int, b)) for b in struct_bonds]
+    bonds = assemble_bonds(structure, struct_bonds)
     x = bond_node_features(structure, bonds)
     edge_index, edge_attr, _, angle_atoms, torsion_atoms = angle_and_torsion_edges(structure, bonds)
     positions = torch.tensor(structure.get_positions(), dtype=TENSOR_PRECISION)
@@ -137,11 +139,30 @@ class BondGraphDataset(BaseDataset, Dataset):
         
         if self.bond_indices is None or len(self.bond_indices) == 0:
             self.raise_error("bond_indices cannot be empty.")
-        self.bond_indices = [tuple(map(int, b)) for b in self.bond_indices]  # Ensure bond indices are tuples of ints
-        # Validate bond indices
-        n_atoms0 = len(structures[0])
-        for (i, j) in self.bond_indices:
-            assert 0 <= i < n_atoms0 and 0 <= j < n_atoms0, f"Bond index out of range: ({i},{j}) for n_atoms={n_atoms0}"
+
+        # Support per-structure bond indices (e.g. from multi-molecule datasets)
+        if structures[0].info.get("bonds") is not None:
+            for s in structures:
+                if s.info.get("bonds") is not None:
+                    s.info["bonds"] = [tuple(map(int, b)) for b in s.info["bonds"]]
+                    n_atoms_s = len(s)
+                    for (i, j) in s.info["bonds"]:
+                        assert 0 <= i < n_atoms_s and 0 <= j < n_atoms_s, (
+                            f"Bond index out of range: ({i},{j}) for n_atoms={n_atoms_s}"
+                        )
+            self.bond_indices = list(structures[0].info["bonds"])
+        else:
+            if (
+                isinstance(self.bond_indices[0], (list, tuple))
+                and len(self.bond_indices[0]) > 0
+                and isinstance(self.bond_indices[0][0], (list, tuple))
+            ):
+                self.bond_indices = self.bond_indices[0]
+            self.bond_indices = [tuple(map(int, b)) for b in self.bond_indices]  # Ensure bond indices are tuples of ints
+            # Validate bond indices
+            n_atoms0 = len(structures[0])
+            for (i, j) in self.bond_indices:
+                assert 0 <= i < n_atoms0 and 0 <= j < n_atoms0, f"Bond index out of range: ({i},{j}) for n_atoms={n_atoms0}"
 
         self._calculate_label_indices()
         self.ce_log_list("Bond set (atom index pairs)", self.bond_indices)
