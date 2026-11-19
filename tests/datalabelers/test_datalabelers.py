@@ -50,7 +50,16 @@ def test_distance_value_labeler(synthetic_universe, metargs):
 def test_dihedral_value_labeler(synthetic_peptide_universe, metargs):
     lbl = DihedralValueLabeler(
         universe=synthetic_peptide_universe,
-        args={"label_dihedrals": ["phi_2", "psi_2"]},
+        args={
+            "label_dihedrals": [
+                {
+                    "phi_2": "(resid 1 and name C) or (resid 2 and (name N or name CA or name C))"
+                },
+                {
+                    "psi_2": "(resid 2 and (name N or name CA or name C)) or (resid 3 and name N)"
+                },
+            ]
+        },
         **metargs,
     )
     synthetic_peptide_universe.trajectory[0]
@@ -59,11 +68,37 @@ def test_dihedral_value_labeler(synthetic_peptide_universe, metargs):
     assert lbl.get_label_names() == ["phi_2", "psi_2"]
     assert np.all(np.isfinite(out))
 
-    # Invalid dihedral prefix raises ValueError
-    with pytest.raises(ValueError, match="phi_"):
+    # Selection that does not match 4 atoms raises informative ValueError
+    with pytest.raises(ValueError, match="must select exactly 4 atoms"):
         DihedralValueLabeler(
             universe=synthetic_peptide_universe,
-            args={"label_dihedrals": ["omega_2"]},
+            args={
+                "label_dihedrals": [
+                    {"bad_count": "resid 2 and (name N or name CA or name C)"}
+                ]
+            },
+            **metargs,
+        )
+
+    # 4 atoms that are not bonded in a 3-bond dihedral chain raises informative ValueError
+    with pytest.raises(ValueError, match="do not form a valid 4-atom dihedral chain"):
+        DihedralValueLabeler(
+            universe=synthetic_peptide_universe,
+            args={
+                "label_dihedrals": [
+                    {
+                        "disconnected": "(resid 1 and (name N or name CA)) or (resid 3 and (name CA or name C))"
+                    }
+                ]
+            },
+            **metargs,
+        )
+
+    # Non-dict entry raises informative ValueError
+    with pytest.raises(ValueError, match="Expected a dictionary"):
+        DihedralValueLabeler(
+            universe=synthetic_peptide_universe,
+            args={"label_dihedrals": ["phi_2"]},
             **metargs,
         )
 

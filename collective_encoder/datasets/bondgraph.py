@@ -33,7 +33,7 @@ def _compute_graph(structure: ase.Atoms, bond_indices: List[Tuple[int, int]]) ->
     x = bond_node_features(structure, bonds)
     edge_index, edge_attr, _, angle_atoms, torsion_atoms = angle_and_torsion_edges(structure, bonds)
     positions = torch.tensor(structure.get_positions(), dtype=TENSOR_PRECISION)
-    return Data(
+    data = Data(
         x=x,
         edge_index=edge_index,
         edge_attr=edge_attr,
@@ -46,6 +46,9 @@ def _compute_graph(structure: ase.Atoms, bond_indices: List[Tuple[int, int]]) ->
         y_torsions_cos=torch.tensor([math.cos(edge_attr[i, 2])
                                      for i in range(edge_attr.size(0)) if edge_attr[i, 1] == 1.0], dtype=TENSOR_PRECISION),
     )
+    if "species_id" in structure.info:
+        data.species_id = torch.tensor([int(structure.info["species_id"])], dtype=torch.long)
+    return data
 
 
 def _compute_graph_worker(args):
@@ -141,7 +144,7 @@ class BondGraphDataset(BaseDataset, Dataset):
             self.raise_error("bond_indices cannot be empty.")
 
         # Support per-structure bond indices (e.g. from multi-molecule datasets)
-        if structures[0].info.get("bonds") is not None:
+        if any(s.info.get("bonds") is not None for s in structures):
             for s in structures:
                 if s.info.get("bonds") is not None:
                     s.info["bonds"] = [tuple(map(int, b)) for b in s.info["bonds"]]
@@ -150,7 +153,10 @@ class BondGraphDataset(BaseDataset, Dataset):
                         assert 0 <= i < n_atoms_s and 0 <= j < n_atoms_s, (
                             f"Bond index out of range: ({i},{j}) for n_atoms={n_atoms_s}"
                         )
-            self.bond_indices = list(structures[0].info["bonds"])
+            if structures[0].info.get("bonds") is not None:
+                self.bond_indices = list(structures[0].info["bonds"])
+            else:
+                self.bond_indices = [tuple(map(int, b)) for b in self.bond_indices]
         else:
             if (
                 isinstance(self.bond_indices[0], (list, tuple))
@@ -197,6 +203,26 @@ class BondGraphDataset(BaseDataset, Dataset):
         self.bond_index = [[i, j] for (i, j, _) in bonds]
         self.angle_index = angle_atoms
         self.torsion_index = torsion_atoms
+
+        # Track per-species representative structure, bonds, and label indices
+        self.species_structures: Dict[int, ase.Atoms] = {}
+        self.species_bond_indices: Dict[int, List[Tuple[int, int]]] = {}
+        self.species_label_indices: Dict[int, tuple] = {}
+        for s in self.structures:
+            sid = s.info.get("species_id")
+            if sid is not None:
+                sid = int(sid)
+                if sid not in self.species_structures:
+                    s_bonds = [tuple(map(int, b)) for b in s.info.get("bonds", self.bond_indices)]
+                    assembled = assemble_bonds(s, s_bonds)
+                    _, _, _, s_angles, s_torsions = angle_and_torsion_edges(s, assembled)
+                    self.species_structures[sid] = s
+                    self.species_bond_indices[sid] = s_bonds
+                    self.species_label_indices[sid] = (
+                        [[i, j] for (i, j, _) in assembled],
+                        s_angles,
+                        s_torsions,
+                    )
     
     def _precompute_graphs(self):
         precomputed_graphs_dir = os.path.join(self.run_dir, f"precomputed_graphs_{self.tag}")
@@ -320,25 +346,44 @@ class BondGraphDataset(BaseDataset, Dataset):
         data_to_normalize = np.vstack(data_to_normalize)
         return data_to_normalize
     
-    def get_label_indices(self) -> tuple:
+    def get_label_indices(self, species_id: Optional[int] = None) -> tuple:
         """
-        Return list of atom indices of labels.
+        Return list of atom indices of labels (optionally for a specific species).
+
+        Parameters
+        ----------
+        species_id : int, optional
+            Species identifier. If ``None``, returns label indices for the default
+            (first) structure.
 
         Returns
         -------
         tuple
             Tuple containing lists of bond, angle, and torsion indices.
         """
+        if species_id is not None and hasattr(self, "species_label_indices") and species_id in self.species_label_indices:
+            return self.species_label_indices[species_id]
         return self.bond_index, self.angle_index, self.torsion_index
+
+    def get_species_label_indices(self) -> Dict[int, tuple]:
+        """
+        Return mapping from ``species_id`` to ``(bond_index, angle_index, torsion_index)``.
+
+        Returns
+        -------
+        dict of int to tuple
+            Per-species label index tuples.
+        """
+        return dict(getattr(self, "species_label_indices", {}))
 
     def get_template_graph(self, 
                            k: int = 3,
                            residue_names: Optional[List[str]] = None,
-                           atom_names: Optional[List[str]] = None) -> Data:
+                           atom_names: Optional[List[str]] = None,
+                           species_id: Optional[int] = None) -> Data:
         """
-        Build a atom graph without coordinates information used to infer the topological information of the molecule
-        Ref: https://openreview.net/forum?id=m5xRuGtQEi
-}
+        Build an atom graph without coordinate information used to infer topological
+        structure of the molecule (optionally for a specific ``species_id``).
 
         Parameters
         ----------
@@ -348,16 +393,56 @@ class BondGraphDataset(BaseDataset, Dataset):
             List of residue names to include in the template.
         atom_names : list of str, optional
             List of atom names to include in the template.
+        species_id : int, optional
+            Species identifier when dataset contains multiple molecular species.
 
         Returns
         -------
         Data
             Template graph.
         """
-        atomic_numbers = self.structures[0].get_atomic_numbers()
+        if species_id is not None and hasattr(self, "species_structures") and species_id in self.species_structures:
+            atomic_numbers = self.species_structures[species_id].get_atomic_numbers()
+            bond_indices = self.species_bond_indices[species_id]
+        else:
+            atomic_numbers = self.structures[0].get_atomic_numbers()
+            bond_indices = self.bond_indices
         return build_template_graph(atomic_numbers,
-                                    self.bond_indices, 
+                                    bond_indices, 
                                     k=k, 
                                     residue_names=residue_names, 
                                     atom_names=atom_names,
                                     dtype=self.dtype)
+
+    def get_species_template_graphs(
+        self,
+        k: int = 3,
+        residue_names: Optional[List[str]] = None,
+        atom_names: Optional[List[str]] = None,
+    ) -> Dict[int, Data]:
+        """
+        Build template graphs for all distinct species in the dataset.
+
+        Parameters
+        ----------
+        k : int, optional
+            Maximum hop distance in the template graph.
+        residue_names : list of str, optional
+            Optional residue names.
+        atom_names : list of str, optional
+            Optional atom names.
+
+        Returns
+        -------
+        dict of int to Data
+            Mapping from ``species_id`` to its template graph.
+        """
+        templates: Dict[int, Data] = {}
+        for sid in getattr(self, "species_structures", {}):
+            templates[sid] = self.get_template_graph(
+                k=k,
+                residue_names=residue_names,
+                atom_names=atom_names,
+                species_id=sid,
+            )
+        return templates

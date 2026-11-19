@@ -74,7 +74,16 @@ class CELossMSEDict(CELossBase):
         """
         losses = {}
         for key, weight in zip(self.keys, self.weights):
-            losses[key] = self.loss_fn(output[key], labels[key]) * weight
+            out_t = output[key]
+            lbl_t = labels[key]
+            if torch.isnan(lbl_t).any() or torch.isnan(out_t).any():
+                valid = ~torch.isnan(lbl_t) & ~torch.isnan(out_t)
+                if valid.any():
+                    losses[key] = self.loss_fn(out_t[valid], lbl_t[valid]) * weight
+                else:
+                    losses[key] = out_t.sum() * 0.0
+            else:
+                losses[key] = self.loss_fn(out_t, lbl_t) * weight
 
         if self.accumulation == 'sum':
             loss = sum(losses.values())

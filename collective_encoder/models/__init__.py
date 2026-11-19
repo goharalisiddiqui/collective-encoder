@@ -22,7 +22,6 @@ _BUILTINS = {
     "sDVAE": ("collective_encoder.models.neural_nets.dvae_net", "sDVAE"),
     "EDVAE": ("collective_encoder.models.neural_nets.edvae_net", "EDVAE"),
     "BGE": ("collective_encoder.models.neural_nets.bge", "BondGraphEncoderDecoder"),
-    "BGE_V2": ("collective_encoder.models.neural_nets.bge_v2", "BondGraphEncoderDecoderV2"),
     "PCA": ("collective_encoder.models.pca_model", "PCAModel"),
     "PCAEncoder": ("collective_encoder.models.pca_model", "PCAModel"),
     "ICA": ("collective_encoder.models.ica_model", "ICAModel"),

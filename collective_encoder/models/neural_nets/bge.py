@@ -64,6 +64,26 @@ class BondGraphEncoderDecoder(CENetBase):
             'template_data': datasetobject.get_template_graph(k=khops),
             'label_indices': datasetobject.get_label_indices(),
         }
+
+        species_templates = {}
+        species_label_indices = {}
+        for split_attr in ("train_data", "val_data", "test_data", "predict_data"):
+            ds = getattr(datamodule, split_attr, None)
+            if ds is not None and hasattr(ds, "get_species_template_graphs"):
+                for sid, tmpl in ds.get_species_template_graphs(k=khops).items():
+                    if sid not in species_templates:
+                        species_templates[sid] = tmpl
+                for sid, lidx in ds.get_species_label_indices().items():
+                    if sid not in species_label_indices:
+                        species_label_indices[sid] = lidx
+        if not species_templates and hasattr(datasetobject, "get_species_template_graphs"):
+            species_templates = datasetobject.get_species_template_graphs(k=khops)
+            species_label_indices = datasetobject.get_species_label_indices()
+
+        if len(species_templates) > 1:
+            decoder_args["species_templates"] = species_templates
+            decoder_args["species_label_indices"] = species_label_indices
+
         args['encoder_args'].update(encoder_args)
         args['decoder_args'].update(decoder_args)
         return args
@@ -251,6 +271,40 @@ class BondGraphEncoderDecoder(CENetBase):
     # Forward pass
     # ------------------------------------------------------------------
 
+    def decoder(self, z: torch.Tensor, species_id: torch.Tensor = None):
+        """Invoke the bond-graph decoder network (optionally passing ``species_id``)."""
+        if hasattr(self, "decoder_net") and self.decoder_net is not None:
+            x_out = self.decoder_net(z, species_id=species_id)
+            return x_out, {}
+        return None, {}
+
+    def _decode(self, z: torch.Tensor, species_id: torch.Tensor = None):
+        """Run the decoder network and denormalize the output."""
+        out, meta = self.decoder(z, species_id=species_id)
+        if out is not None:
+            out = self.denormalize(out)
+        return out, meta
+
+    def get_decoded(self, latent: torch.Tensor, species_id: torch.Tensor = None):
+        """Decode a latent tensor back into reconstructed geometry."""
+        out = self.decoder(latent, species_id=species_id)[0]
+        return self.denormalize(out) if out is not None else None
+
+    def forward(self, data):
+        """Encode and decode a batch of molecular bond graphs."""
+        meta = {}
+        species_id = getattr(data, "species_id", None)
+        latent, meta_latent = self._encode(data)
+        latent, meta_sample = self.latent_to_decoder_input(latent)
+        output, meta_dec = self._decode(latent, species_id=species_id)
+
+        meta.update(meta_latent)
+        meta.update(meta_dec)
+        meta.update(meta_sample)
+        if species_id is not None:
+            meta["species_id"] = species_id
+        return output, latent, meta
+
     def _batch_split(self, batch):
         return batch, self.extract_labels(batch)
 
@@ -258,16 +312,81 @@ class BondGraphEncoderDecoder(CENetBase):
     # Loss
     # ------------------------------------------------------------------
 
+    def _slice_and_pad_attr(
+        self,
+        batch,
+        attr_name: str,
+        num_graphs: int,
+        max_dim: int,
+        species_counts: dict,
+    ) -> torch.Tensor:
+        """Slice a 1-D PyG batch target attribute per graph and pad to ``(num_graphs, max_dim)`` with ``NaN``."""
+        raw = getattr(batch, attr_name)
+        if not getattr(self.decoder_net, "is_multispecies", False) and raw.numel() == num_graphs * max_dim:
+            return raw.view(num_graphs, max_dim)
+
+        out = torch.full(
+            (num_graphs, max_dim),
+            float("nan"),
+            dtype=raw.dtype,
+            device=raw.device,
+        )
+
+        slice_dict = getattr(batch, "_slice_dict", None)
+        if isinstance(slice_dict, dict) and attr_name in slice_dict:
+            ptr = slice_dict[attr_name]
+            for g in range(num_graphs):
+                s_idx = int(ptr[g])
+                e_idx = int(ptr[g + 1])
+                length = min(e_idx - s_idx, max_dim)
+                if length > 0:
+                    out[g, :length] = raw[s_idx : s_idx + length]
+            return out
+
+        sids = getattr(batch, "species_id", None)
+        if sids is not None and species_counts:
+            offset = 0
+            for g, sid_t in enumerate(sids.view(-1)):
+                cnt = species_counts.get(int(sid_t.item()), 0)
+                length = min(cnt, max_dim)
+                if length > 0 and offset + cnt <= raw.numel():
+                    out[g, :length] = raw[offset : offset + length]
+                offset += cnt
+            return out
+
+        if num_graphs > 0 and raw.numel() % num_graphs == 0:
+            per_g = raw.numel() // num_graphs
+            out[:, : min(per_g, max_dim)] = raw.view(num_graphs, per_g)[:, :max_dim]
+        return out
+
     def extract_labels(self, batch) -> dict:
         """Extract per-graph target tensors from a PyG batch."""
-        num_graphs = batch.batch.max().item() + 1
+        batch_vec = getattr(batch, "batch", None)
+        num_graphs = (int(batch_vec.max().item()) + 1) if batch_vec is not None and batch_vec.numel() > 0 else 1
         out_labels = self.out_labels
-        return {
-            out_labels[0]: batch.y_bonds.view(num_graphs, -1),
-            out_labels[1]: batch.y_angles.view(num_graphs, -1),
-            out_labels[2]: batch.y_torsions_cos.view(num_graphs, -1),
-            out_labels[3]: batch.y_torsions_sin.view(num_graphs, -1),
+
+        if not getattr(self.decoder_net, "is_multispecies", False):
+            return {
+                out_labels[0]: batch.y_bonds.view(num_graphs, -1),
+                out_labels[1]: batch.y_angles.view(num_graphs, -1),
+                out_labels[2]: batch.y_torsions_cos.view(num_graphs, -1),
+                out_labels[3]: batch.y_torsions_sin.view(num_graphs, -1),
+            }
+
+        dec = self.decoder_net
+        bond_counts = {sid: len(v) for sid, v in dec.species_bond_index.items()}
+        angle_counts = {sid: len(v) for sid, v in dec.species_angle_index.items()}
+        torsion_counts = {sid: len(v) for sid, v in dec.species_torsion_index.items()}
+
+        res = {
+            out_labels[0]: self._slice_and_pad_attr(batch, "y_bonds", num_graphs, dec.max_bonds, bond_counts),
+            out_labels[1]: self._slice_and_pad_attr(batch, "y_angles", num_graphs, dec.max_angles, angle_counts),
+            out_labels[2]: self._slice_and_pad_attr(batch, "y_torsions_cos", num_graphs, dec.max_torsions, torsion_counts),
+            out_labels[3]: self._slice_and_pad_attr(batch, "y_torsions_sin", num_graphs, dec.max_torsions, torsion_counts),
         }
+        if hasattr(batch, "species_id") and batch.species_id is not None:
+            res["species_id"] = batch.species_id.view(num_graphs, -1)
+        return res
 
     def aggregate_losses(self, losses):
         loss = losses['encdec']

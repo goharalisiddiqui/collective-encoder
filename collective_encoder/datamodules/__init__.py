@@ -14,6 +14,9 @@ define_kind("datamodules", BaseDataModule)
 _BUILTINS = {
     "XTC":  ("collective_encoder.datamodules.coordinates", "CoordinatesDataModule"),
     "COORDINATES": ("collective_encoder.datamodules.coordinates", "CoordinatesDataModule"),
+    "HETEROGENEOUS_COORDINATES": ("collective_encoder.datamodules.coordinates_hetro", "HeterogeneousCoordinatesDataModule"),
+    "HETROGENOUS_COORDINATES": ("collective_encoder.datamodules.coordinates_hetro", "HeterogeneousCoordinatesDataModule"),
+    "HETRO_COORDINATES": ("collective_encoder.datamodules.coordinates_hetro", "HeterogeneousCoordinatesDataModule"),
     "COLVAR": ("collective_encoder.datamodules.colvars", "ColvarsDataModule"),
 }
 

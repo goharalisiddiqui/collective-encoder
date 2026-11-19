@@ -60,11 +60,18 @@ class CEMetricMAEDict(CEMetricBase):
         """
         mae = {}
         for key in self.keys:
-            mae[key + '_mae'] = (
-                F.l1_loss(output[key], labels[key], reduction=self.reduction)
-                if labels[key].numel() > 0
-                else torch.tensor(0.0, device=output[key].device)
-            )
+            out_t = output[key]
+            lbl_t = labels[key]
+            if lbl_t.numel() == 0:
+                mae[key + '_mae'] = torch.tensor(0.0, device=out_t.device)
+            elif torch.isnan(lbl_t).any() or torch.isnan(out_t).any():
+                valid = ~torch.isnan(lbl_t) & ~torch.isnan(out_t)
+                if valid.any():
+                    mae[key + '_mae'] = F.l1_loss(out_t[valid], lbl_t[valid], reduction=self.reduction)
+                else:
+                    mae[key + '_mae'] = torch.tensor(0.0, device=out_t.device)
+            else:
+                mae[key + '_mae'] = F.l1_loss(out_t, lbl_t, reduction=self.reduction)
         
         if self.accumulation == 'sum':
             mae_acc = sum(mae.values())

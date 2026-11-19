@@ -39,13 +39,35 @@ class GraphDataAnalyser(SimpleDataAnalyser):
         labels_dict = {}
         
         for key in all_keys:
-            tensors = [graph[key] for graph in data if key in graph and graph[key] is not None]
-            
-            if tensors:
+            tensors = [
+                graph[key]
+                for graph in data
+                if key in graph and isinstance(graph[key], torch.Tensor)
+            ]
+
+            if not tensors:
+                continue
+
+            first_shape = tensors[0].shape
+            same_shape = all(t.shape == first_shape for t in tensors)
+
+            if same_shape:
                 cat_tensor = torch.stack(tensors, dim=0)
-                if key.startswith('y_') or key == 'y':
-                    labels_dict[key] = cat_tensor
-                else:
-                    data_dict[key] = cat_tensor
+                if cat_tensor.ndim == 3 and cat_tensor.shape[1] == 1:
+                    cat_tensor = cat_tensor.squeeze(1)
+            elif all(t.ndim == 1 for t in tensors):
+                cat_tensor = torch.nn.utils.rnn.pad_sequence(
+                    [t.to(dtype=torch.float64) for t in tensors],
+                    batch_first=True,
+                    padding_value=float("nan"),
+                )
+            else:
+                # Variable-size 2-D graph topology tensors (x, edge_index, edge_attr, pos)
+                continue
+
+            if key.startswith("y_") or key in ("y", "species_id"):
+                labels_dict[key] = cat_tensor
+            else:
+                data_dict[key] = cat_tensor
 
         return data_dict, labels_dict
