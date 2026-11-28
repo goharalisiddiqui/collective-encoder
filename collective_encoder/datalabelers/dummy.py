@@ -25,7 +25,7 @@ class DummyLabeler(BaseLabeler):
 
     _IDENTIFIER = "DUMMY"
     _REQUIRED_ARGS = []
-    _OPTIONAL_ARGS = {}
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
 
     def __init__(self,
                  args: Dict[str, Union[str, List[str]]] = None,
@@ -44,24 +44,25 @@ class DummyLabeler(BaseLabeler):
         Returns
         -------
         list of str
-            List containing ``['dummy']``.
+            List containing the configured ``name`` or ``['dummylabeler']``.
         """
-        return ['dummy']
+        return [self.get_default_label_name()]
 
-    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
         """
-        Return zeros; works for both frame-based and batch-based call sites.
+        Return zeros as a dictionary; works for both frame-based and batch-based call sites.
 
         Parameters
         ----------
         indices : list of int, optional
-            If provided, returns an array of zeros corresponding to the batch size.
+            If provided, returns a 2-D zeros array of shape ``(len(indices), 1)``.
 
         Returns
         -------
-        list of float or numpy.ndarray
-            Zeros matching the requested computation mode.
+        dict of str to numpy.ndarray
+            Dictionary mapping the label name to a zeros array.
         """
+        key = self.get_default_label_name()
         if indices is None:
-            return [0.0]
-        return np.zeros((len(indices), 1))
+            return {key: np.array([0.0], dtype=float)}
+        return {key: np.zeros((len(indices), 1), dtype=float)}

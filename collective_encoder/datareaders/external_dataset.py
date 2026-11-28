@@ -11,7 +11,11 @@ import MDAnalysis as mda
 from tqdm import tqdm
 
 from collective_encoder.datalabelers.base import BaseLabeler
-from collective_encoder.datareaders.trajectory import TrajectoryReaderBase, _read_and_label
+from collective_encoder.datareaders.base_trajectory import (
+    TrajectoryReaderBase,
+    _read_and_label,
+    collate_frame_label_dicts,
+)
 from collective_encoder.common.registry import get_module
 
 class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
@@ -318,9 +322,12 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
         run_args.pop("universe", None)
         ds = raw_data if raw_data is not None else self.raw_data
         u = universe if universe is not None else self.u
+        resolved_args = self._inject_selection_into_labeler_args(
+            labeler_type, labeler_args
+        )
         return labeler_cls(dataset=ds,
                            universe=u,
-                           args=labeler_args,
+                           args=resolved_args,
                            **run_args)
 
     def _get_processor_sequence_span(self) -> int:
@@ -385,7 +392,7 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
             raw_seq_list = list(raw_seq)
             if len(raw_seq_list) == 0:
                 trajs += ([],)
-                labels += ([],)
+                labels += (collate_frame_label_dicts([], self.label_list),)
                 continue
 
             split_traj: List[ase.Atoms] = []
@@ -434,6 +441,11 @@ class ExternalDatasetReaderBase(TrajectoryReaderBase, ABC):
                 split_traj, split_label = processor.postprocess_seq(
                     split_traj, split_label
                 )
+
+            if isinstance(split_label, list) and (
+                len(split_label) == 0 or isinstance(split_label[0], dict)
+            ):
+                split_label = collate_frame_label_dicts(split_label, self.label_list)
 
             trajs += (split_traj,)
             labels += (split_label,)

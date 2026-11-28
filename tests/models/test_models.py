@@ -61,6 +61,7 @@ def bondgraph_datamodule(trajectory_files, metargs):
             },
             "dataset_type": "BONDGRAPH",
             "dataset_args": {"precompute_graphs": False, "parallel": False},
+            "labeler_type": "TOPOLOGY",
             "train_size": 8,
             "batch_size": 4,
             "validation_size": 4,

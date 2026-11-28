@@ -4,6 +4,7 @@ import numpy as np
 from ase.data import atomic_numbers
 import MDAnalysis as mda
 
+from .base import BaseLabeler
 from .mda import MDALabeler
 
 
@@ -32,13 +33,15 @@ class DebyeStructureFactorLabeler(MDALabeler):
         - ``scattering_lengths`` (dict, optional): Map of element/atom name to scattering length b_i.
         - ``output_mode`` (str, optional): ``'total'`` (normalized S(q)) or ``'intensity'`` (I(q)). Defaults to ``'total'``.
         - ``use_pbc`` (bool, optional): Whether to apply PBC (default: ``True``).
+        - ``name`` (str, optional): Custom label dictionary key.
     kwargs : dict
         Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "DEBYE_STRUCTURE_FACTOR"
     _REQUIRED_ARGS = []
-    _OPTIONAL_ARGS = {
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
+    _OPTIONAL_ARGS.update({
         "selection": "all",
         "q_values": None,
         "q_min": 0.5,
@@ -47,7 +50,7 @@ class DebyeStructureFactorLabeler(MDALabeler):
         "scattering_lengths": None,
         "output_mode": "total",
         "use_pbc": True,
-    }
+    })
 
     def __init__(
         self,
@@ -110,27 +113,33 @@ class DebyeStructureFactorLabeler(MDALabeler):
 
     def get_label_names(self) -> List[str]:
         """
-        Return the names of the label columns.
+        Return the dictionary key name for this labeler.
 
         Returns
         -------
         list of str
-            Label names for each wavenumber q.
+            Single-element list containing ``self.get_default_label_name()``.
         """
-        return self.label_names
+        return [self.get_default_label_name()]
 
-    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
         """
         Compute the Debye structure factor or intensity for the current frame.
 
+        Parameters
+        ----------
+        indices : list of int, optional
+            Unused frame indices argument for interface compatibility.
+
         Returns
         -------
-        list of float
-            Values of S(q) or I(q) evaluated at the specified wavenumbers.
+        dict of str to numpy.ndarray
+            Dictionary mapping the label name to a 1-D NumPy array of S(q) or I(q) values.
         """
+        key = self.get_default_label_name()
         n_atoms = len(self.atoms)
         if n_atoms < 2:
-            return [1.0] * len(self.q_arr)
+            return {key: np.ones(len(self.q_arr), dtype=float)}
 
         positions = self.atoms.positions
         box = (
@@ -154,4 +163,4 @@ class DebyeStructureFactorLabeler(MDALabeler):
             # Normalized structure factor S(q)
             res = (self.sum_b_sq + 2.0 * pair_sum) / self.sum_b_sq
 
-        return np.array(res, dtype=float)
+        return {key: np.array(res, dtype=float)}

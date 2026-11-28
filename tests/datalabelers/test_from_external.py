@@ -32,18 +32,20 @@ def test_from_external_1d_and_2d():
         args={"keys": ["E", "dipole"]},
     )
 
-    expected_names = ["E", "dipole_0", "dipole_1", "dipole_2"]
-    assert labeler.get_label_names() == expected_names
+    assert labeler.get_label_names() == ["fromexternallabeler"]
 
     # Test compute
     val = labeler.compute([2])
-    assert isinstance(val, np.ndarray)
-    assert val.shape == (1, 4)
-    assert val[0, 0] == 3.0
-    assert np.allclose(val[0, 1:], [6.0, 7.0, 8.0])
+    assert isinstance(val, dict)
+    assert "fromexternallabeler" in val
+    arr = val["fromexternallabeler"]
+    assert isinstance(arr, np.ndarray)
+    assert arr.shape == (1, 4)
+    assert arr[0, 0] == 3.0
+    assert np.allclose(arr[0, 1:], [6.0, 7.0, 8.0])
 
     # Test batch compute
-    batch_val = labeler.compute([0, 1, 2])
+    batch_val = labeler.compute([0, 1, 2])["fromexternallabeler"]
     assert isinstance(batch_val, np.ndarray)
     assert batch_val.shape == (3, 4)
     assert np.allclose(batch_val[2], [3.0, 6.0, 7.0, 8.0])
@@ -60,19 +62,13 @@ def test_from_external_3d_multi_index_naming():
     labeler = FromExternalLabeler(
         dataset=dataset,
         universe=u,
-        args={"keys": ["F"]},
+        args={"keys": ["F"], "name": "forces"},
     )
 
-    names = labeler.get_label_names()
-    expected_names = [
-        "F_0_0", "F_0_1", "F_0_2",
-        "F_1_0", "F_1_1", "F_1_2",
-        "F_2_0", "F_2_1", "F_2_2",
-    ]
-    assert names == expected_names
+    assert labeler.get_label_names() == ["forces"]
 
     val = labeler.compute([1])
-    assert np.allclose(val[0], dataset["F"][1].flatten())
+    assert np.allclose(val["forces"][0], dataset["F"][1].flatten())
 
 
 def test_from_external_single_column_2d():
@@ -87,8 +83,8 @@ def test_from_external_single_column_2d():
         universe=u,
         args={"keys": ["energy_2d"]},
     )
-    assert labeler.get_label_names() == ["energy_2d"]
-    assert np.allclose(labeler.compute([3]), [[3.0]])
+    assert labeler.get_label_names() == ["fromexternallabeler"]
+    assert np.allclose(labeler.compute([3])["fromexternallabeler"], [[3.0]])
 
 
 def test_resolver_lookup():
@@ -138,13 +134,24 @@ class MockExternalReader(ExternalDatasetReaderBase):
         self.dataset = self.raw_data
         self.run_args["dataset"] = self.dataset
         self._construct_universe()
+        self.raw_data_list = [self.raw_data]
+        self.universes = [self.u]
+        self.molecules_data = [
+            {
+                "name": "test_mol",
+                "filepath": "mock.npz",
+                "raw_data": self.raw_data,
+                "u": self.u,
+                "n_frames": n_frames,
+            }
+        ]
 
 
 def test_integration_with_external_dataset_reader(tmp_path):
     reader = MockExternalReader(args={"molecule_name": "test_mol"}, run_dir=str(tmp_path))
 
     # Read trajectory with FROM_EXTERNAL labeler
-    trajs, labels, failed = reader.read_trajectory(
+    trajs, labels = reader.read_trajectory(
         indices=[[0, 1, 2], [5, 6]],
         labeler_type="FROM_EXTERNAL",
         labeler_args={"keys": ["E", "F"]},
@@ -156,14 +163,14 @@ def test_integration_with_external_dataset_reader(tmp_path):
 
     # Check label names
     label_names = reader.get_label_names()
-    assert label_names[0] == "E"
-    assert "F_0_0" in label_names
-    assert len(label_names) == 1 + 3 * 3  # 1 for E, 9 for F
+    assert label_names == ["fromexternallabeler"]
 
     # Check values for split 0
-    assert len(labels[0]) == 3
-    for frame_idx, l in enumerate(labels[0]):
-        l_flat = np.asarray(l).flatten()
+    assert isinstance(labels[0], dict)
+    split0_arr = labels[0]["fromexternallabeler"]
+    assert split0_arr.shape == (3, 10)
+    for frame_idx in range(3):
+        l_flat = split0_arr[frame_idx].numpy().flatten()
         assert len(l_flat) == 10
         assert np.isclose(l_flat[0], reader.raw_data["E"][frame_idx])
         assert np.allclose(l_flat[1:], reader.raw_data["F"][frame_idx].flatten())

@@ -54,7 +54,7 @@ class ColvarDataset(Dataset, BaseDataset):
         else:
             self.data = [torch.tensor(s, dtype=self.dtype) for s in structures]
 
-        self.labels = [torch.tensor(l, dtype=self.dtype).flatten() for l in labels]
+        self.labels = self._normalize_labels_to_list(labels, len(self.data), flatten=True)
 
     def __len__(self) -> int:
         """

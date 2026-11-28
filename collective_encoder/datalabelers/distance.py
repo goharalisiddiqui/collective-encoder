@@ -2,6 +2,7 @@ import numpy as np
 import MDAnalysis as mda
 from typing import Optional, Dict, List, Union
 
+from .base import BaseLabeler
 from .mda import MDALabeler
 
 
@@ -10,7 +11,7 @@ class DistanceValueLabeler(MDALabeler):
     Compute inter-atomic distances for the current trajectory frame.
 
     Each entry in ``selections`` must select exactly two atoms; the Euclidean
-    distance between them is returned as a label column.
+    distance between them is returned in the label vector under the labeler's key.
 
     Parameters
     ----------
@@ -19,14 +20,15 @@ class DistanceValueLabeler(MDALabeler):
     args : dict
         Configuration dict with key ``selections`` (required) — a list
         of MDAnalysis selection strings, each selecting exactly 2 atoms
-        (e.g. ``['resid 1 and name CA', 'resid 5 and name CA']``).
+        (e.g. ``['resid 1 and name CA', 'resid 5 and name CA']``) — and
+        optional ``name`` (str).
     kwargs : dict
         Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "DISTANCE"
     _REQUIRED_ARGS = ["selections"]
-    _OPTIONAL_ARGS = {}
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
 
     def __init__(self,
                  universe: mda.Universe,
@@ -48,23 +50,29 @@ class DistanceValueLabeler(MDALabeler):
 
     def get_label_names(self) -> List[str]:
         """
-        Return the names of the label columns.
+        Return the dictionary key name for this labeler.
 
         Returns
         -------
         list of str
-            Label names for each computed distance.
+            Single-element list containing ``self.get_default_label_name()``.
         """
-        return [f'distance_value_{i+1}' for i in range(len(self.dist_atoms))]
+        return [self.get_default_label_name()]
 
-    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
         """
         Compute inter-atomic distances for the current frame.
 
+        Parameters
+        ----------
+        indices : list of int, optional
+            Unused frame indices argument for interface compatibility.
+
         Returns
         -------
-        list of float
-            The computed Euclidean distances in Ångstroms.
+        dict of str to numpy.ndarray
+            Dictionary mapping the label name to a 1-D NumPy array of Euclidean
+            distances in Ångstroms.
         """
         from MDAnalysis.lib.distances import distance_array
 
@@ -76,4 +84,4 @@ class DistanceValueLabeler(MDALabeler):
             ).flatten()[0]
             dists.append(dist)
 
-        return np.array(dists, dtype=float)
+        return {self.get_default_label_name(): np.array(dists, dtype=float)}

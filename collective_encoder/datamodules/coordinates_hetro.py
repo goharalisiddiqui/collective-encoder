@@ -355,67 +355,86 @@ class HeterogeneousCoordinatesDataModule(CoordinatesDataModule):
 
     def _align_labels(
         self,
-        raw_labels: Optional[List[Any]],
+        raw_labels: Optional[Union[Dict[str, torch.Tensor], List[Any]]],
         dr_idx: int,
         all_label_names: List[str],
         n_frames: int,
-    ) -> List[np.ndarray]:
+        key_max_dims: Optional[Dict[str, int]] = None,
+    ) -> Dict[str, torch.Tensor]:
         """
-        Align a datareader's raw computed labels to the unified multi-species schema.
-
-        Returns per-frame 2-D arrays of shape ``(1, n_unified_labels)`` matching
-        :meth:`TrajectoryReaderBase.read_trajectory` so PyTorch Geometric's
-        ``GeoDataLoader`` stacks ``graph.y`` into a 2-D tensor ``(batch_size, n_unified_labels)``.
+        Align a datareader's computed dictionary labels to the unified multi-species
+        schema using zero-padding across varying feature dimensions.
 
         Parameters
         ----------
-        raw_labels : list or None
-            Raw label outputs from the datareader.
+        raw_labels : dict of str to torch.Tensor or list or None
+            Raw label dictionary from the datareader for a split.
         dr_idx : int
             Index of the datareader.
         all_label_names : list of str
-            Unified list of non-dummy label column names across all datareaders.
+            Unified list of non-dummy label dictionary keys across all datareaders.
         n_frames : int
             Number of frames in the read split.
+        key_max_dims : dict of str to int, optional
+            Maximum feature dimension per label key across all species.
 
         Returns
         -------
-        list of numpy.ndarray
-            List of ``(1, n_unified_labels)`` label arrays with ``species_id`` as the last column.
+        dict of str to torch.Tensor
+            Dictionary mapping each unified label key (plus ``"species_id"``) to a
+            zero-padded 2-D tensor of shape ``(n_frames, max_dim_key)``.
         """
-        dr = self.datareaders[dr_idx]
         species_id = float(self.species_ids[dr_idx])
-        dr_lnames: List[str] = []
-        try:
-            dr_lnames = [n for n in dr.get_label_names() if n != "dummy"]
-        except (AttributeError, Exception):
-            pass
+        key_max_dims = key_max_dims or {k: 1 for k in all_label_names}
+        aligned: Dict[str, torch.Tensor] = {}
 
-        aligned: List[np.ndarray] = []
-        has_raw = raw_labels is not None and len(raw_labels) > 0
+        if isinstance(raw_labels, dict):
+            for k in all_label_names:
+                w = max(1, int(key_max_dims.get(k, 1)))
+                padded = torch.zeros((n_frames, w), dtype=TENSOR_PRECISION)
+                if k in raw_labels and n_frames > 0:
+                    src = torch.as_tensor(raw_labels[k], dtype=TENSOR_PRECISION).reshape(
+                        n_frames, -1
+                    )
+                    c = min(src.shape[1], w)
+                    if c > 0:
+                        padded[:, :c] = src[:, :c]
+                aligned[k] = padded
+        else:
+            dr = self.datareaders[dr_idx]
+            dr_lnames: List[str] = []
+            try:
+                dr_lnames = [
+                    n for n in dr.get_label_names() if n not in ("dummy", "dummylabeler")
+                ]
+            except (AttributeError, Exception):
+                pass
+            has_raw = raw_labels is not None and len(raw_labels) > 0
+            for k in all_label_names:
+                w = max(1, int(key_max_dims.get(k, 1)))
+                padded = torch.zeros((n_frames, w), dtype=TENSOR_PRECISION)
+                if has_raw and k in dr_lnames:
+                    col_idx = dr_lnames.index(k)
+                    for f_idx in range(min(n_frames, len(raw_labels))):
+                        val_arr = np.asarray(raw_labels[f_idx]).reshape(-1)
+                        if col_idx < len(val_arr):
+                            padded[f_idx, 0] = float(val_arr[col_idx])
+                aligned[k] = padded
 
-        for f_idx in range(n_frames):
-            row = [float("nan")] * len(all_label_names) + [species_id]
-            if has_raw and f_idx < len(raw_labels):
-                val_arr = np.asarray(raw_labels[f_idx]).reshape(-1)
-                val_list = [float(x) for x in val_arr]
-
-                for col_idx, col_name in enumerate(dr_lnames):
-                    if col_name in all_label_names and col_idx < len(val_list):
-                        target_idx = all_label_names.index(col_name)
-                        row[target_idx] = float(val_list[col_idx])
-            aligned.append(np.array([row], dtype=np.float64))
-
+        aligned["species_id"] = torch.full(
+            (n_frames, 1), species_id, dtype=TENSOR_PRECISION
+        )
         return aligned
 
     def _combine_split(
         self,
         structures_per_dr: List[List[Any]],
-        labels_per_dr: List[List[np.ndarray]],
+        labels_per_dr: List[List[Dict[str, torch.Tensor]]],
         split_idx: int,
-    ) -> Tuple[List[Any], List[np.ndarray]]:
+    ) -> Tuple[List[Any], Dict[str, torch.Tensor]]:
         """
-        Combine and interleave structures and labels from all datareaders for a single split.
+        Combine and interleave structures and zero-padded dictionary labels from all
+        datareaders for a single split.
 
         Subclasses (e.g. heterogeneous trajectory data modules) may override this method
         to preserve chunk contiguity per sequence while shuffling across species.
@@ -424,27 +443,52 @@ class HeterogeneousCoordinatesDataModule(CoordinatesDataModule):
         ----------
         structures_per_dr : list of list of ase.Atoms
             Per-datareader structures for each split.
-        labels_per_dr : list of list of numpy.ndarray
-            Per-datareader aligned labels for each split.
+        labels_per_dr : list of list of dict of str to torch.Tensor
+            Per-datareader aligned label dictionaries for each split.
         split_idx : int
             Split index (0=train, 1=val, 2=test, 3=predict).
 
         Returns
         -------
-        tuple of (list of ase.Atoms, list of numpy.ndarray)
-            Combined structures and aligned labels.
+        tuple of (list of ase.Atoms, dict of str to torch.Tensor)
+            Combined structures and aligned dictionary of label tensors.
         """
         combined_structs: List[Any] = []
-        combined_lbls: List[np.ndarray] = []
-
         for i in range(len(self.datareaders)):
             combined_structs.extend(structures_per_dr[i][split_idx])
-            combined_lbls.extend(labels_per_dr[i][split_idx])
+
+        all_keys: List[str] = []
+        for i in range(len(self.datareaders)):
+            for k in labels_per_dr[i][split_idx].keys():
+                if k not in all_keys:
+                    all_keys.append(k)
+
+        combined_lbls: Dict[str, torch.Tensor] = {}
+        for k in all_keys:
+            parts = [
+                labels_per_dr[i][split_idx][k]
+                for i in range(len(self.datareaders))
+                if k in labels_per_dr[i][split_idx]
+                and labels_per_dr[i][split_idx][k].shape[0] > 0
+            ]
+            if parts:
+                combined_lbls[k] = torch.cat(parts, dim=0)
+            else:
+                w = 1
+                for i in range(len(self.datareaders)):
+                    if (
+                        k in labels_per_dr[i][split_idx]
+                        and labels_per_dr[i][split_idx][k].ndim == 2
+                    ):
+                        w = labels_per_dr[i][split_idx][k].shape[1]
+                        break
+                combined_lbls[k] = torch.zeros((0, w), dtype=TENSOR_PRECISION)
 
         if not self.sequential and len(combined_structs) > 0:
             perm = np.random.permutation(len(combined_structs))
+            perm_t = torch.as_tensor(perm, dtype=torch.long)
             combined_structs = [combined_structs[p] for p in perm]
-            combined_lbls = [combined_lbls[p] for p in perm]
+            combined_lbls = {k: v[perm_t] for k, v in combined_lbls.items()}
 
         return combined_structs, combined_lbls
 
@@ -499,7 +543,10 @@ class HeterogeneousCoordinatesDataModule(CoordinatesDataModule):
             try:
                 lnames = dr.get_label_names()
                 for name in lnames:
-                    if name not in all_label_names and name not in ("dummy", "species_id"):
+                    if (
+                        name not in all_label_names
+                        and name not in ("dummy", "dummylabeler", "species_id")
+                    ):
                         all_label_names.append(name)
             except (AttributeError, Exception):
                 pass
@@ -511,8 +558,22 @@ class HeterogeneousCoordinatesDataModule(CoordinatesDataModule):
 
         self.log_info(f"Unified label columns: {self.label_list}")
 
+        # Determine maximum width per label key across all species and splits
+        key_max_dims: Dict[str, int] = {k: 1 for k in all_label_names}
+        for i in range(len(self.datareaders)):
+            if raw_labels_per_dr[i] is None:
+                continue
+            for split_idx in range(4):
+                split_lbls = raw_labels_per_dr[i][split_idx]
+                if isinstance(split_lbls, dict):
+                    for k in all_label_names:
+                        if k in split_lbls:
+                            t = torch.as_tensor(split_lbls[k])
+                            width = int(t.shape[1]) if t.ndim >= 2 else 1
+                            key_max_dims[k] = max(key_max_dims[k], width)
+
         # Align labels per datareader
-        aligned_labels_per_dr: List[List[List[np.ndarray]]] = []
+        aligned_labels_per_dr: List[List[Dict[str, torch.Tensor]]] = []
         for i in range(len(self.datareaders)):
             dr_aligned = []
             for split_idx in range(4):
@@ -523,7 +584,9 @@ class HeterogeneousCoordinatesDataModule(CoordinatesDataModule):
                     else None
                 )
                 dr_aligned.append(
-                    self._align_labels(raw_split_lbls, i, all_label_names, n_f)
+                    self._align_labels(
+                        raw_split_lbls, i, all_label_names, n_f, key_max_dims
+                    )
                 )
             aligned_labels_per_dr.append(dr_aligned)
 

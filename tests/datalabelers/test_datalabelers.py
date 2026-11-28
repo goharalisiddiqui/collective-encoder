@@ -5,6 +5,7 @@ from collective_encoder.datalabelers import (
     DummyLabeler,
     DistanceValueLabeler,
     DihedralValueLabeler,
+    TopologyLabeler,
     CoordinationCountLabeler,
     StaticStructureFactorLabeler,
     DebyeStructureFactorLabeler,
@@ -18,10 +19,19 @@ from collective_encoder.datalabelers import (
 def test_dummy_labeler(synthetic_universe, metargs):
     lbl = DummyLabeler(universe=synthetic_universe, args={}, **metargs)
     out_batch = lbl.compute([0, 1, 2])
-    assert out_batch.shape == (3, 1)
-    assert np.all(out_batch == 0.0)
-    assert lbl.compute() == [0.0]
-    assert lbl.get_label_names() == ["dummy"]
+    assert isinstance(out_batch, dict)
+    assert list(out_batch.keys()) == ["dummylabeler"]
+    assert out_batch["dummylabeler"].shape == (3, 1)
+    assert np.all(out_batch["dummylabeler"] == 0.0)
+    out_frame = lbl.compute()
+    assert isinstance(out_frame, dict)
+    np.testing.assert_allclose(out_frame["dummylabeler"], [0.0])
+    assert lbl.get_label_names() == ["dummylabeler"]
+
+    # Custom name parameter
+    lbl_named = DummyLabeler(universe=synthetic_universe, args={"name": "my_dummy"}, **metargs)
+    assert lbl_named.get_label_names() == ["my_dummy"]
+    assert "my_dummy" in lbl_named.compute()
 
 
 @pytest.mark.unit
@@ -33,9 +43,11 @@ def test_distance_value_labeler(synthetic_universe, metargs):
     )
     synthetic_universe.trajectory[0]
     out = lbl.compute()
-    assert out.shape == (2,)
-    assert np.all(out > 0.0)
-    assert lbl.get_label_names() == ["distance_value_1", "distance_value_2"]
+    assert isinstance(out, dict)
+    assert list(out.keys()) == ["distancevaluelabeler"]
+    assert out["distancevaluelabeler"].shape == (2,)
+    assert np.all(out["distancevaluelabeler"] > 0.0)
+    assert lbl.get_label_names() == ["distancevaluelabeler"]
 
     # Selection that does not match exactly 2 atoms raises ValueError
     with pytest.raises(ValueError, match="2 atoms"):
@@ -64,9 +76,12 @@ def test_dihedral_value_labeler(synthetic_peptide_universe, metargs):
     )
     synthetic_peptide_universe.trajectory[0]
     out = lbl.compute()
-    assert out.shape == (2,)
+    assert isinstance(out, dict)
+    assert list(out.keys()) == ["phi_2", "psi_2"]
+    assert out["phi_2"].shape == (1,)
+    assert out["psi_2"].shape == (1,)
     assert lbl.get_label_names() == ["phi_2", "psi_2"]
-    assert np.all(np.isfinite(out))
+    assert np.all(np.isfinite(out["phi_2"])) and np.all(np.isfinite(out["psi_2"]))
 
     # Selection that does not match 4 atoms raises informative ValueError
     with pytest.raises(ValueError, match="must select exactly 4 atoms"):
@@ -104,6 +119,30 @@ def test_dihedral_value_labeler(synthetic_peptide_universe, metargs):
 
 
 @pytest.mark.unit
+def test_topology_labeler(synthetic_peptide_universe, metargs):
+    lbl = TopologyLabeler(
+        universe=synthetic_peptide_universe,
+        args={"selection": "all"},
+        **metargs,
+    )
+    assert lbl.get_label_names() == ["bonds", "angles", "cos_torsions", "sin_torsions"]
+    synthetic_peptide_universe.trajectory[0]
+    out = lbl.compute()
+    assert isinstance(out, dict)
+    assert list(out.keys()) == ["bonds", "angles", "cos_torsions", "sin_torsions"]
+    # 9-atom linear peptide chain: 8 bonds, 7*2=14 directed angles, 6*2=12 directed torsions
+    assert out["bonds"].shape == (8,)
+    assert out["angles"].shape == (14,)
+    assert out["cos_torsions"].shape == (12,)
+    assert out["sin_torsions"].shape == (12,)
+    np.testing.assert_allclose(
+        out["cos_torsions"] ** 2 + out["sin_torsions"] ** 2,
+        np.ones(12),
+        atol=1e-6,
+    )
+
+
+@pytest.mark.unit
 def test_coordination_count_labeler(synthetic_universe, metargs):
     lbl = CoordinationCountLabeler(
         universe=synthetic_universe,
@@ -117,9 +156,11 @@ def test_coordination_count_labeler(synthetic_universe, metargs):
     )
     synthetic_universe.trajectory[0]
     out = lbl.compute()
-    assert out.shape == (2,)
-    assert np.all(np.isfinite(out))
-    assert lbl.get_label_names() == ["coordination_count_1", "coordination_count_2"]
+    assert isinstance(out, dict)
+    assert list(out.keys()) == ["coordinationcountlabeler"]
+    assert out["coordinationcountlabeler"].shape == (2,)
+    assert np.all(np.isfinite(out["coordinationcountlabeler"]))
+    assert lbl.get_label_names() == ["coordinationcountlabeler"]
 
 
 @pytest.mark.unit
@@ -131,9 +172,11 @@ def test_structure_factor_and_debye_labelers(synthetic_universe, metargs):
     )
     synthetic_universe.trajectory[0]
     out_sfac = sfac.compute()
-    assert out_sfac.shape == (3,)
-    assert len(sfac.get_label_names()) == 3
-    assert np.all(np.isfinite(out_sfac))
+    assert isinstance(out_sfac, dict)
+    assert list(out_sfac.keys()) == ["staticstructurefactorlabeler"]
+    assert out_sfac["staticstructurefactorlabeler"].shape == (3,)
+    assert sfac.get_label_names() == ["staticstructurefactorlabeler"]
+    assert np.all(np.isfinite(out_sfac["staticstructurefactorlabeler"]))
 
     debye = DebyeStructureFactorLabeler(
         universe=synthetic_universe,
@@ -147,10 +190,11 @@ def test_structure_factor_and_debye_labelers(synthetic_universe, metargs):
         **metargs,
     )
     out_debye = debye.compute()
-    assert out_debye.shape == (3,)
-    assert len(debye.get_label_names()) == 3
-    assert all(name.startswith("debye_iq") for name in debye.get_label_names())
-    assert np.all(np.isfinite(out_debye))
+    assert isinstance(out_debye, dict)
+    assert list(out_debye.keys()) == ["debyestructurefactorlabeler"]
+    assert out_debye["debyestructurefactorlabeler"].shape == (3,)
+    assert debye.get_label_names() == ["debyestructurefactorlabeler"]
+    assert np.all(np.isfinite(out_debye["debyestructurefactorlabeler"]))
 
 
 @pytest.mark.unit
@@ -168,14 +212,11 @@ def test_steinhardt_order_parameter_labeler(synthetic_universe, metargs):
     )
     synthetic_universe.trajectory[0]
     out = ql.compute()
-    assert out.shape == (4,)
-    assert ql.get_label_names() == [
-        "q4_mean_local",
-        "Q4_global",
-        "q6_mean_local",
-        "Q6_global",
-    ]
-    assert np.all(np.isfinite(out))
+    assert isinstance(out, dict)
+    assert list(out.keys()) == ["steinhardtorderparameterlabeler"]
+    assert out["steinhardtorderparameterlabeler"].shape == (4,)
+    assert ql.get_label_names() == ["steinhardtorderparameterlabeler"]
+    assert np.all(np.isfinite(out["steinhardtorderparameterlabeler"]))
 
 
 @pytest.mark.unit
@@ -186,9 +227,14 @@ def test_column_selector_labeler(plumed_dataframe, metargs):
         **metargs,
     )
     out = lbl.compute([0, 1, 2, 3])
-    assert out.shape == (4, 2)
-    assert lbl.get_label_names() == ["phi", "psi"]
-    np.testing.assert_allclose(out, plumed_dataframe.loc[[0, 1, 2, 3], ["phi", "psi"]].values)
+    assert isinstance(out, dict)
+    assert list(out.keys()) == ["columnselectorlabeler"]
+    assert out["columnselectorlabeler"].shape == (4, 2)
+    assert lbl.get_label_names() == ["columnselectorlabeler"]
+    np.testing.assert_allclose(
+        out["columnselectorlabeler"],
+        plumed_dataframe.loc[[0, 1, 2, 3], ["phi", "psi"]].values,
+    )
 
     # Missing column raises ValueError
     with pytest.raises(ValueError, match="not present"):
@@ -200,10 +246,11 @@ def test_column_selector_labeler(plumed_dataframe, metargs):
 
 
 @pytest.mark.unit
-def test_concat_labeler(synthetic_universe, plumed_dataframe, metargs):
-    # FrameLabeler mode (Universe)
+def test_concat_labeler(synthetic_peptide_universe, plumed_dataframe, metargs):
+    # FrameLabeler mode: two DISTANCE labelers with default names merge into one key,
+    # while a named DISTANCE labeler and TOPOLOGY labeler create new keys.
     concat_frame = ConcatLabeler(
-        universe=synthetic_universe,
+        universe=synthetic_peptide_universe,
         args={
             "labelers": [
                 {
@@ -214,16 +261,34 @@ def test_concat_labeler(synthetic_universe, plumed_dataframe, metargs):
                     "type": "DISTANCE",
                     "args": {"selections": ["index 1 or index 2"]},
                 },
+                {
+                    "type": "DISTANCE",
+                    "args": {"name": "custom_dist", "selections": ["index 2 or index 3"]},
+                },
+                {
+                    "type": "TOPOLOGY",
+                    "args": {},
+                },
             ]
         },
         **metargs,
     )
-    synthetic_universe.trajectory[0]
+    synthetic_peptide_universe.trajectory[0]
     out_frame = concat_frame.compute()
-    assert len(out_frame) == 2
-    assert concat_frame.get_label_names() == ["distance_value_1", "distance_value_1"]
+    assert isinstance(out_frame, dict)
+    assert concat_frame.get_label_names() == [
+        "distancevaluelabeler",
+        "custom_dist",
+        "bonds",
+        "angles",
+        "cos_torsions",
+        "sin_torsions",
+    ]
+    assert out_frame["distancevaluelabeler"].shape == (2,)
+    assert out_frame["custom_dist"].shape == (1,)
+    assert out_frame["bonds"].shape == (8,)
 
-    # BatchLabeler mode (DataFrame)
+    # BatchLabeler mode (DataFrame): two COLUMN_SELECTOR labelers merge under "columnselectorlabeler"
     concat_batch = ConcatLabeler(
         dataframe=plumed_dataframe,
         args={
@@ -235,5 +300,10 @@ def test_concat_labeler(synthetic_universe, plumed_dataframe, metargs):
         **metargs,
     )
     out_batch = concat_batch.compute([0, 1, 2])
-    assert out_batch.shape == (3, 2)
-    assert concat_batch.get_label_names() == ["phi", "psi"]
+    assert isinstance(out_batch, dict)
+    assert concat_batch.get_label_names() == ["columnselectorlabeler"]
+    assert out_batch["columnselectorlabeler"].shape == (3, 2)
+    np.testing.assert_allclose(
+        out_batch["columnselectorlabeler"],
+        plumed_dataframe.loc[[0, 1, 2], ["phi", "psi"]].values,
+    )

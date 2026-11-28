@@ -8,7 +8,7 @@ import ase
 import MDAnalysis as mda
 
 import gslibs.validation as gsv
-from .trajectory import TrajectoryReaderBase
+from collective_encoder.datareaders.base_trajectory import TrajectoryReaderBase
 
 class CompressedTrajectoryReader(TrajectoryReaderBase):
     """

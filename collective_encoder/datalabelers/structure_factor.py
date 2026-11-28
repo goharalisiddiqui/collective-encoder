@@ -3,6 +3,7 @@ from typing import Dict, List, Union, Optional
 import MDAnalysis as mda
 import numpy as np
 
+from .base import BaseLabeler
 from .mda import MDALabeler
 
 
@@ -34,20 +35,22 @@ class StaticStructureFactorLabeler(MDALabeler):
           Defaults to ``10``.
         - ``use_pbc`` (bool, optional): Whether to apply PBC using universe box dimensions.
           Defaults to ``True``.
+        - ``name`` (str, optional): Custom label dictionary key.
     kwargs : dict
         Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "STATIC_STRUCTURE_FACTOR"
     _REQUIRED_ARGS = []
-    _OPTIONAL_ARGS = {
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
+    _OPTIONAL_ARGS.update({
         "selection": "all",
         "q_values": None,
         "q_min": 0.5,
         "q_max": 5.0,
         "q_num": 10,
         "use_pbc": True,
-    }
+    })
 
     def __init__(
         self,
@@ -77,27 +80,33 @@ class StaticStructureFactorLabeler(MDALabeler):
 
     def get_label_names(self) -> List[str]:
         """
-        Return the names of the label columns.
+        Return the dictionary key name for this labeler.
 
         Returns
         -------
         list of str
-            Label names for each wavenumber q.
+            Single-element list containing ``self.get_default_label_name()``.
         """
-        return self.label_names
+        return [self.get_default_label_name()]
 
-    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
         """
         Compute the static structure factor for the current frame.
 
+        Parameters
+        ----------
+        indices : list of int, optional
+            Unused frame indices argument for interface compatibility.
+
         Returns
         -------
-        list of float
-            Values of S(q) evaluated at the specified wavenumbers.
+        dict of str to numpy.ndarray
+            Dictionary mapping the label name to a 1-D NumPy array of S(q) values.
         """
+        key = self.get_default_label_name()
         n_atoms = len(self.atoms)
         if n_atoms < 2:
-            return [1.0] * len(self.q_arr)
+            return {key: np.ones(len(self.q_arr), dtype=float)}
 
         positions = self.atoms.positions
         box = (
@@ -116,4 +125,4 @@ class StaticStructureFactorLabeler(MDALabeler):
         
         # S(q) = 1 + (2 / N) * sum_{j < k} sin(q * r_{jk}) / (q * r_{jk})
         S_q = 1.0 + (2.0 / float(n_atoms)) * np.sum(sinc_QR, axis=1)
-        return S_q
+        return {key: np.asarray(S_q, dtype=float)}

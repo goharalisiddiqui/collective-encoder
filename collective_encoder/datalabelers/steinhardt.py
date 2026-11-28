@@ -4,6 +4,7 @@ import MDAnalysis as mda
 import numpy as np
 import scipy.special as sp
 
+from .base import BaseLabeler
 from .mda import MDALabeler
 
 
@@ -46,14 +47,15 @@ class SteinhardtOrderParameterLabeler(MDALabeler):
 
     _IDENTIFIER = "STEINHARDT"
     _REQUIRED_ARGS = []
-    _OPTIONAL_ARGS = {
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
+    _OPTIONAL_ARGS.update({
         "selection_centers": "all",
         "selection_neighbors": "all",
         "cutoff_distance": 3.5,
         "degrees": [4, 6],
         "average_type": "both",
         "use_pbc": True,
-    }
+    })
 
     def __init__(
         self,
@@ -85,24 +87,31 @@ class SteinhardtOrderParameterLabeler(MDALabeler):
 
     def get_label_names(self) -> List[str]:
         """
-        Return the names of the label columns.
+        Return the dictionary key name for this labeler.
 
         Returns
         -------
         list of str
-            Label names for the selected Steinhardt order parameters.
+            Single-element list containing ``self.get_default_label_name()``.
         """
-        return self.label_names
+        return [self.get_default_label_name()]
 
-    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
         """
         Compute the Steinhardt order parameters for the current frame.
 
+        Parameters
+        ----------
+        indices : list of int, optional
+            Unused frame indices argument for interface compatibility.
+
         Returns
         -------
-        list of float
-            The evaluated order parameter values based on configured degrees and average types.
+        dict of str to numpy.ndarray
+            Dictionary mapping the label name to a 1-D NumPy array of evaluated
+            Steinhardt order parameter values.
         """
+        key = self.get_default_label_name()
         n_centers = len(self.centers)
         cutoff = float(self.cutoff_distance)
 
@@ -121,7 +130,7 @@ class SteinhardtOrderParameterLabeler(MDALabeler):
         )
 
         if len(pairs) == 0:
-            return [0.0] * len(self.label_names)
+            return {key: np.zeros(len(self.label_names), dtype=float)}
 
         c_indices = pairs[:, 0]
         n_indices = pairs[:, 1]
@@ -129,7 +138,7 @@ class SteinhardtOrderParameterLabeler(MDALabeler):
         # Filter out self-interactions if centers and neighbors overlap
         mask = (self.centers[c_indices].indices != self.neighbors[n_indices].indices)
         if not np.any(mask):
-            return [0.0] * len(self.label_names)
+            return {key: np.zeros(len(self.label_names), dtype=float)}
 
         c_indices = c_indices[mask]
         n_indices = n_indices[mask]
@@ -148,7 +157,6 @@ class SteinhardtOrderParameterLabeler(MDALabeler):
         phi = np.arctan2(vecs[:, 1], vecs[:, 0])
 
         results = []
-        n_total_bonds = len(vecs)
 
         for l in self.degrees_list:
             norm_factor = 4.0 * np.pi / (2.0 * float(l) + 1.0)
@@ -189,4 +197,4 @@ class SteinhardtOrderParameterLabeler(MDALabeler):
                 Q_l = float(np.sqrt(norm_factor * np.sum(np.abs(Q_lm) ** 2)))
                 results.append(Q_l)
 
-        return np.array(results, dtype=float)
+        return {key: np.array(results, dtype=float)}

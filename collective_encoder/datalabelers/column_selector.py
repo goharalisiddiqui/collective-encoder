@@ -32,7 +32,7 @@ class ColumnSelectorLabeler(BaseLabeler):
 
     _IDENTIFIER = "COLUMN_SELECTOR"
     _REQUIRED_ARGS = ["columns"]
-    _OPTIONAL_ARGS = {}
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
 
     def __init__(self,
                  dataframe: pd.DataFrame,
@@ -53,16 +53,16 @@ class ColumnSelectorLabeler(BaseLabeler):
         
     def get_label_names(self) -> List[str]:
         """
-        Return the names of the label columns.
+        Return the dictionary key name for this labeler.
 
         Returns
         -------
         list of str
-            Names of the selected columns.
+            Single-element list containing ``self.get_default_label_name()``.
         """
-        return self.columns
+        return [self.get_default_label_name()]
 
-    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
         """
         Compute labels for the given DataFrame row indices.
 
@@ -73,10 +73,10 @@ class ColumnSelectorLabeler(BaseLabeler):
 
         Returns
         -------
-        numpy.ndarray
-            Values from the selected columns for the given indices.
+        dict of str to numpy.ndarray
+            Dictionary mapping the label name to a NumPy array of values from the
+            selected columns for the given indices.
         """
-        # Select the specified columns and the given indices
         selected_data = self.dataframe.loc[indices, self.columns]
-        return selected_data.values  # Return as numpy array
+        return {self.get_default_label_name(): np.asarray(selected_data.values, dtype=float)}
         

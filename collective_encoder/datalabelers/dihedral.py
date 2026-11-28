@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import MDAnalysis as mda
 import numpy as np
 
+from .base import BaseLabeler
 from .mda import MDALabeler
 
 
@@ -40,7 +41,7 @@ class DihedralValueLabeler(MDALabeler):
 
     _IDENTIFIER = "DIHEDRAL"
     _REQUIRED_ARGS = ["label_dihedrals"]
-    _OPTIONAL_ARGS = {}
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
 
     def __init__(
         self,
@@ -315,16 +316,16 @@ class DihedralValueLabeler(MDALabeler):
 
     def get_label_names(self) -> List[str]:
         """
-        Return the names of the configured dihedral labels.
+        Return the unique names of the configured dihedral labels.
 
         Returns
         -------
         list of str
             Dihedral label names in configuration order.
         """
-        return list(self.label_list)
+        return list(dict.fromkeys(self.label_list))
 
-    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
         """
         Compute the dihedral angles (in radians) for the current trajectory frame.
 
@@ -335,17 +336,18 @@ class DihedralValueLabeler(MDALabeler):
 
         Returns
         -------
-        numpy.ndarray
-            1-D array of computed dihedral angles in radians of shape ``(n_dihedrals,)``.
+        dict of str to numpy.ndarray
+            Dictionary mapping each configured dihedral label name to a 1-D NumPy array
+            of computed dihedral angle(s) in radians.
         """
-        dihedrals = []
-        for atoms in self.label_atoms:
+        grouped: Dict[str, List[float]] = {}
+        for label_name, atoms in zip(self.label_list, self.label_atoms):
             dihedral = mda.lib.distances.calc_dihedrals(
                 atoms.positions[0],
                 atoms.positions[1],
                 atoms.positions[2],
                 atoms.positions[3],
             )
-            dihedrals.append(float(dihedral))
+            grouped.setdefault(label_name, []).append(float(dihedral))
 
-        return np.array(dihedrals, dtype=float)
+        return {k: np.array(v, dtype=float) for k, v in grouped.items()}

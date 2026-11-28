@@ -67,7 +67,7 @@ class DistancesDataset(Dataset, BaseDataset):
         **kwargs,
     ):
         super().__init__(args=args, **kwargs)
-        assert len(structures) == len(labels), "Number of structures and labels must match"
+        label_tensors = self._normalize_labels_to_list(labels, len(structures))
         atns = structures[0].get_atomic_numbers()
 
         if self.group1 is None:
@@ -97,7 +97,7 @@ class DistancesDataset(Dataset, BaseDataset):
                 distances.append(dist)
             self.distances.append(torch.tensor(distances, dtype=self.dtype))
 
-        self.labels = [torch.tensor(d, dtype=self.dtype) for d in labels]
+        self.labels = label_tensors
         self.num_inputs = len(pairs)
         
         if self.atm_ids is not None:

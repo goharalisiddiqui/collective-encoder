@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
+import torch
 from typing import Any, List, Dict, Optional, Tuple, Union
 
+from collective_encoder import TENSOR_PRECISION
 from collective_encoder.common.registry import get_module
 import gslibs.validation as gsv
 from gslibs.utils.plumed import plumed_outfile_reader
@@ -38,11 +40,12 @@ class PlumedOutputReader(BaseDataReader):
     _IDENTIFIER = "PLUMED_OUTPUT"
     _COMPATIBLE_LABELERS = BaseDataReader._COMPATIBLE_LABELERS + ["COLUMN_SELECTOR"]
     _REQUIRED_ARGS = ["plumed_file"]
-    _OPTIONAL_ARGS = {
+    _OPTIONAL_ARGS = BaseDataReader._OPTIONAL_ARGS.copy()
+    _OPTIONAL_ARGS.update({
         "columns": None,
         "ignore_list": None,
         "column_match": None,
-    }
+    })
 
     def __init__(self,
                  args: Optional[Dict[str, Any]] = None,
@@ -181,28 +184,37 @@ class PlumedOutputReader(BaseDataReader):
         self.label_list = labeler.get_label_names()
 
         trajs, labels = [], []
+        drop_cols = list(getattr(labeler, "columns", None) or self.label_list)
 
         for seq_indices in indices:
             # Extract data for this sequence
             seq_data = self.data.iloc[seq_indices]
 
             # Exclude any columns used in labels
-            seq_data = seq_data.drop(columns=self.label_list, errors='ignore')
+            seq_data = seq_data.drop(columns=drop_cols, errors='ignore')
 
             # Convert to numpy array
             traj_data = seq_data.values  # Shape: (n_frames, n_features)
 
             if len(seq_indices) == 0:
-                label_data = np.empty((0, len(self.label_list)))
+                label_data = {
+                    k: torch.zeros((0, 0), dtype=TENSOR_PRECISION)
+                    for k in self.label_list
+                }
             else:
-                label_data = labeler.compute(seq_indices)
+                raw_dict = labeler.compute(seq_indices)
+                label_data = {}
+                for k, v in raw_dict.items():
+                    arr = np.asarray(v, dtype=float)
+                    if arr.ndim == 1:
+                        arr = arr.reshape(len(seq_indices), -1)
+                    label_data[k] = torch.as_tensor(arr, dtype=TENSOR_PRECISION)
 
             trajs.append(traj_data)
             labels.append(label_data)
 
         self.log_msg(f"Finished reading PLUMED data. "
                     f"Read {len(trajs)} sequences with shapes "
-                    f"{[t.shape for t in trajs]} and "
-                    f"label shapes {[l.shape for l in labels]}.")
+                    f"{[t.shape for t in trajs]}.")
 
         return trajs, labels, tuple([] for _ in indices)

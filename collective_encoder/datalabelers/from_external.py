@@ -40,7 +40,7 @@ class FromExternalLabeler(BaseLabeler):
 
     _IDENTIFIER = "FROM_EXTERNAL"
     _REQUIRED_ARGS = ["keys"]
-    _OPTIONAL_ARGS = {}
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
 
     def __init__(
         self,
@@ -90,31 +90,31 @@ class FromExternalLabeler(BaseLabeler):
 
     def get_label_names(self) -> List[str]:
         """
-        Return the names of the label columns.
+        Return the dictionary key name for this labeler.
 
         Returns
         -------
         list of str
-            Names of the generated label columns.
+            Single-element list containing ``self.get_default_label_name()``.
         """
-        return self.label_names
+        return [self.get_default_label_name()]
 
-    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
         """
-        Compute labels for the current frame (FrameLabeler) or given indices (batch).
+        Compute labels for the given indices and return a dictionary.
 
         Parameters
         ----------
         indices : int, list of int, or numpy.ndarray, optional
-            If provided, extracts labels for the given batch of row indices as a 2D NumPy array.
-            If None, extracts labels for the current trajectory frame from ``self.universe``.
+            Frame or batch row indices to extract from ``self.dataset``.
 
         Returns
         -------
-        list of float or numpy.ndarray
-            List of floats if called without indices (frame mode),
-            or 2D NumPy array if called with indices (batch mode).
+        dict of str to numpy.ndarray
+            Dictionary mapping ``self.get_default_label_name()`` to a 2-D NumPy
+            array of extracted values.
         """
+        key = self.get_default_label_name()
         if isinstance(indices, (int, np.integer)):
             indices = [indices]
         n_samples = len(indices)
@@ -131,6 +131,6 @@ class FromExternalLabeler(BaseLabeler):
             blocks.append(sub)
 
         if not blocks:
-            return np.empty((n_samples, 0))
+            return {key: np.empty((n_samples, 0), dtype=float)}
 
-        return np.hstack(blocks)
+        return {key: np.asarray(np.hstack(blocks), dtype=float)}

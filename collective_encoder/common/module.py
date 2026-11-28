@@ -23,6 +23,7 @@ class CEModule(ABC):
     _IDENTIFIER: str = None
     _REQUIRED_ARGS: List[str] = []
     _OPTIONAL_ARGS: Dict[str, Any] = {}
+    _NO_LOG_ARGS: List[str] = []
 
     def __init__(self, args: Dict[str, Union[float, int, str]] = None, **kwargs):
         if args is None:
@@ -58,7 +59,10 @@ class CEModule(ABC):
             self._ce_log.info("=" * 80)
             self._ce_log.info("[Initializing module: %s]", self.__class__.__name__)
             self._ce_log.info("=" * 80)
-            self.ce_log_dict("Initialization args", self.args, indent=2)
+            logged_args = {
+                k: v for k, v in self.args.items() if k not in self._NO_LOG_ARGS
+            }
+            self.ce_log_dict("Initialization args", logged_args, indent=2)
 
     def _create_dir(self, 
                     name: str, 

@@ -2,12 +2,10 @@
 Label calculation modules for molecular features.
 
 This module provides tools for creating target "labels" for molecular structures
-and trajectories (e.g. Structure Factors, Steinhardt parameters, Dihedrals).
+and trajectories (e.g. Structure Factors, Steinhardt parameters, Dihedrals, Topology).
 These labels are useful for supervision or enforcing physics-informed loss
-calculations. Implementations inherit from `BaseLabeler`, `FrameLabeler`,
-or `BatchLabeler`.
+calculations. Implementations inherit from `BaseLabeler`.
 """
-
 
 from collective_encoder.common.registry import define_kind, register, lazy_exports
 from .base import BaseLabeler
@@ -19,6 +17,7 @@ _BUILTINS = {
     "COORDINATION":                 ("collective_encoder.datalabelers.coordination",     "CoordinationCountLabeler"),
     "DISTANCE":                     ("collective_encoder.datalabelers.distance",         "DistanceValueLabeler"),
     "DIHEDRAL":                     ("collective_encoder.datalabelers.dihedral",         "DihedralValueLabeler"),
+    "TOPOLOGY":                     ("collective_encoder.datalabelers.topology",         "TopologyLabeler"),
     "COLUMN_SELECTOR":              ("collective_encoder.datalabelers.column_selector",  "ColumnSelectorLabeler"),
     "STRUCTURE_FACTOR":             ("collective_encoder.datalabelers.structure_factor", "StaticStructureFactorLabeler"),
     "DEBYE_STRUCTURE_FACTOR":       ("collective_encoder.datalabelers.debye",            "DebyeStructureFactorLabeler"),

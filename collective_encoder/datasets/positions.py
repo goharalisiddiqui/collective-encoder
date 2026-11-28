@@ -45,7 +45,7 @@ class PositionsDataset(Dataset, BaseDataset):
         BaseDataset.__init__(self, dataset_args=dataset_args, **kwargs)
         
         self.positions = [torch.tensor(s.positions, dtype=self.dtype) for s in structures]
-        self.labels = [torch.tensor(l, dtype=self.dtype).flatten() for l in labels]
+        self.labels = self._normalize_labels_to_list(labels, len(structures), flatten=True)
 
     def __len__(self):
         """

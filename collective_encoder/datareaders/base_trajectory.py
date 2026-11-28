@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Dict, Any, Union
+from typing import List, Tuple, Dict, Any, Optional, Union
+import logging
 import os
 from multiprocessing import Pool
 from tqdm import tqdm
@@ -10,10 +11,59 @@ import ase
 import MDAnalysis.transformations as trans
 from MDAnalysis.exceptions import NoDataError
 
+from collective_encoder import TENSOR_PRECISION
 from collective_encoder.datalabelers.base import BaseLabeler
 from collective_encoder.datareaders.base import BaseDataReader
 from collective_encoder.common.registry import get_module
-from MDAnalysis.exceptions import NoDataError
+import torch
+
+
+def collate_frame_label_dicts(
+    frame_dicts: List[Dict[str, Any]],
+    default_keys: List[str] = None,
+) -> Dict[str, torch.Tensor]:
+    """
+    Zero-pad varying-length per-frame label dictionaries and convert each key
+    into a single 2-D :class:`torch.Tensor` of shape ``(n_frames, max_len_key)``.
+
+    Parameters
+    ----------
+    frame_dicts : list of dict of str to numpy.ndarray
+        Per-frame dictionaries returned by ``labeler.compute()``.
+    default_keys : list of str, optional
+        Fallback keys to use when ``frame_dicts`` is empty.
+
+    Returns
+    -------
+    dict of str to torch.Tensor
+        Dictionary mapping each label key to a zero-padded 2-D tensor of shape
+        ``(n_frames, max_len_key)`` with ``dtype=TENSOR_PRECISION``.
+    """
+    n_frames = len(frame_dicts)
+    if n_frames == 0:
+        keys = list(default_keys or [])
+        return {k: torch.zeros((0, 0), dtype=TENSOR_PRECISION) for k in keys}
+
+    all_keys: List[str] = []
+    for d in frame_dicts:
+        if isinstance(d, dict):
+            for k in d.keys():
+                if k not in all_keys:
+                    all_keys.append(k)
+
+    out: Dict[str, torch.Tensor] = {}
+    for k in all_keys:
+        arrays = [
+            np.asarray(d[k], dtype=float).reshape(-1) if (isinstance(d, dict) and k in d) else np.empty((0,), dtype=float)
+            for d in frame_dicts
+        ]
+        max_len = max((a.size for a in arrays), default=0)
+        padded = torch.zeros((n_frames, max_len), dtype=TENSOR_PRECISION)
+        for i, a in enumerate(arrays):
+            if a.size > 0:
+                padded[i, : a.size] = torch.as_tensor(a, dtype=TENSOR_PRECISION)
+        out[k] = padded
+    return out
 
 
 def _read_and_label(args):
@@ -94,6 +144,7 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         "COORDINATION",
         "DISTANCE",
         "DIHEDRAL",
+        "TOPOLOGY",
         "STRUCTURE_FACTOR",
         "DEBYE_STRUCTURE_FACTOR",
         "STEINHARDT_ORDER_PARAMETER",
@@ -106,6 +157,7 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
     }
 
     def __init__(self, args: Dict[str, Any] = None, **kwargs):
+        logging.getLogger("MDAnalysis").setLevel(logging.WARNING)
         super().__init__(args=args, **kwargs)
 
     def read(self,
@@ -119,6 +171,50 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
             labeler_args=labeler_args,
         )
 
+    def _inject_selection_into_labeler_args(
+        self,
+        labeler_type: str,
+        labeler_args: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        Propagate ``self.selection`` to labelers that accept ``selection`` (such as
+        ``TOPOLOGY``) when not explicitly provided in ``labeler_args``, including
+        child labelers inside ``CONCAT``.
+        """
+        resolved_args = dict(labeler_args or {})
+        labeler_cls = get_module("datalabelers", labeler_type)
+        if (
+            "selection" in getattr(labeler_cls, "_OPTIONAL_ARGS", {})
+            and "selection" not in resolved_args
+        ):
+            resolved_args["selection"] = self.selection
+
+        if labeler_type == "CONCAT" and "labelers" in resolved_args:
+            new_children = []
+            for child_cfg in resolved_args["labelers"]:
+                if isinstance(child_cfg, dict) and (
+                    "labeler_type" in child_cfg or "type" in child_cfg
+                ):
+                    c_type = child_cfg.get("labeler_type") or child_cfg.get("type")
+                    raw_c_args = (
+                        child_cfg.get("labeler_args")
+                        if "labeler_args" in child_cfg
+                        else child_cfg.get("args")
+                    )
+                    c_args = self._inject_selection_into_labeler_args(
+                        c_type, raw_c_args
+                    )
+                    updated_child = dict(child_cfg)
+                    if "labeler_args" in updated_child or "type" not in updated_child:
+                        updated_child["labeler_args"] = c_args
+                    else:
+                        updated_child["args"] = c_args
+                    new_children.append(updated_child)
+                else:
+                    new_children.append(child_cfg)
+            resolved_args["labelers"] = new_children
+        return resolved_args
+
     def _initialize_labeler(self,
                           labeler_type: str,
                           labeler_args: dict) -> BaseLabeler:
@@ -126,7 +222,10 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         Instantiate the labeler for this trajectory reader.
         """
         labeler_cls = get_module("datalabelers", labeler_type)
-        return labeler_cls(universe=self.u, args=labeler_args, **self.get_run_args())
+        resolved_args = self._inject_selection_into_labeler_args(
+            labeler_type, labeler_args
+        )
+        return labeler_cls(universe=self.u, args=resolved_args, **self.get_run_args())
 
     def read_trajectory(self,
                         indices: List[List[int]],
@@ -172,16 +271,18 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
         trajs, labels, all_failed = (), (), ()
         for seq_idx, index_list in enumerate(tqdm(prepared_indices,
                                position=0,
-                               disable=not getattr(self, 'verbose', True),
+                               disable=not self.verbose,
                                leave=True,
                                desc="Processing sequences",
                                dynamic_ncols=True)):
 
-            if not self.parallel or len(index_list) < 8:  # Threshold for parallel processing
+            if len(index_list) == 0:
+                traj, label, failed = [], [], []
+            elif not self.parallel or len(index_list) < 8:  # Threshold for parallel processing
                 # Sequential read
                 args = (0, self.u, self.selection, self.atns, 
                         self.at_elements, index_list, labeler)
-                self.ce_log_list(f"Reading sequence {seq_idx} sequentially with {len(index_list)} frames.", index_list)
+                self.log_debug(f"Reading sequence {seq_idx} sequentially with {len(index_list)} frames.")
                 traj, label, failed = _read_and_label(args)
             else:
                 # Parallel read
@@ -219,6 +320,9 @@ class TrajectoryReaderBase(BaseDataReader, ABC):
             # Apply post-processors
             for processor in self.processors:
                 traj, label = processor.postprocess_seq(traj, label)
+
+            if isinstance(label, list) and (len(label) == 0 or isinstance(label[0], dict)):
+                label = collate_frame_label_dicts(label, self.label_list)
 
             trajs      += (traj,)
             labels     += (label,)

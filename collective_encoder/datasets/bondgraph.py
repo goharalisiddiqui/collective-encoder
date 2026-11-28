@@ -1,6 +1,6 @@
 import os
 from multiprocessing import Pool
-from typing import List, Tuple, Dict, Optional, Union
+from typing import Any, List, Tuple, Dict, Optional, Union
 import math
 
 import numpy as np
@@ -11,9 +11,8 @@ from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader as GeoDataLoader
 from tqdm import tqdm
 
-from .base import BaseDataset
+from collective_encoder.datasets.base_graph import BaseGraphDataset
 from collective_encoder import TENSOR_PRECISION
-from collective_encoder.datareaders.base import BaseDataReader
 from collective_encoder.datareaders.base import BaseDataReader
 
 from .utils.bondgraph import (assemble_bonds, bond_node_features, 
@@ -37,18 +36,34 @@ def _compute_graph(structure: ase.Atoms, bond_indices: List[Tuple[int, int]]) ->
         x=x,
         edge_index=edge_index,
         edge_attr=edge_attr,
-        pos=positions,
-        y_bonds=torch.tensor([b[2] for b in bonds], dtype=TENSOR_PRECISION),
-        y_angles=torch.tensor([edge_attr[i, 2]
-                               for i in range(edge_attr.size(0)) if edge_attr[i, 0] == 1.0], dtype=TENSOR_PRECISION),
-        y_torsions_sin=torch.tensor([math.sin(edge_attr[i, 2])
-                                     for i in range(edge_attr.size(0)) if edge_attr[i, 1] == 1.0], dtype=TENSOR_PRECISION),
-        y_torsions_cos=torch.tensor([math.cos(edge_attr[i, 2])
-                                     for i in range(edge_attr.size(0)) if edge_attr[i, 1] == 1.0], dtype=TENSOR_PRECISION),
     )
     if "species_id" in structure.info:
         data.species_id = torch.tensor([int(structure.info["species_id"])], dtype=torch.long)
     return data
+
+
+def _attach_graph_label(
+    graph: Data,
+    label: Any,
+    dtype: torch.dtype = TENSOR_PRECISION,
+    prefix: str = "y",
+) -> Data:
+    """
+    Attach a per-structure label (dict or array-like) as native tensor attribute(s)
+    on a PyG :class:`Data` object.
+
+    When ``label`` is a dictionary, each key ``k`` is attached as ``graph[f"{prefix}_{k}"]``
+    (or ``graph[k]`` if ``k`` already begins with ``f"{prefix}_"``) with shape ``(1, D_k)``.
+    """
+    if label is None:
+        return graph
+    if isinstance(label, dict):
+        for k, v in label.items():
+            attr_name = k if k.startswith(f"{prefix}_") else f"{prefix}_{k}"
+            graph[attr_name] = torch.as_tensor(v, dtype=dtype).reshape(1, -1)
+    else:
+        graph[prefix] = torch.as_tensor(label, dtype=dtype)
+    return graph
 
 
 def _compute_graph_worker(args):
@@ -65,11 +80,11 @@ def _compute_graph_worker(args):
                                              dynamic_ncols=True):
         graph = _compute_graph(structure, bond_indices)
         if label is not None:
-            graph.y = torch.tensor(label, dtype=TENSOR_PRECISION)
+            _attach_graph_label(graph, label, TENSOR_PRECISION)
         torch.save(graph, os.path.join(graphs_dir, f"graph_{global_idx}.pt"))
 
 
-class BondGraphDataset(BaseDataset, Dataset):
+class BondGraphDataset(BaseGraphDataset, Dataset):
     """
     Graph dataset where nodes are bonds and edges connect bonds via angles or torsions.
 
@@ -98,46 +113,29 @@ class BondGraphDataset(BaseDataset, Dataset):
     """
 
     _IDENTIFIER = "BONDGRAPH"
-    _REQUIRED_ARGS = ["bond_indices"]
-    _OPTIONAL_ARGS = {
-        'precompute_graphs': True,
-        'parallel': True,
-    }
+    _REQUIRED_ARGS = [
+        "bond_indices"
+    ]
     
     @classmethod
     def _prepare_dataset(cls, 
                          dataset_args: Dict[str, Union[float, int, str]], 
                          datareader: BaseDataReader) \
         -> Tuple[type, Dict[str, Union[float, int, str]], type]:
-        """
-        Prepare the dataset. This method is a placeholder for any preprocessing steps.
-
-        Parameters
-        ----------
-        dataset_args : dict
-            Configuration dictionary (not used in this dataset).
-        datareader : BaseDataReader
-            Data reader instance (to inject information into dataset args).
-        """
         return cls, {**dataset_args, "bond_indices": datareader.get_bonds()}, GeoDataLoader
 
     def __init__(
             self,
             structures: List[ase.Atoms],
-            labels: Optional[List[float]] = None,
+            labels: Optional[Union[Dict[str, Union[torch.Tensor, np.ndarray, List]], List[float]]] = None,
             args: Dict[str, Union[float, int, str]] = None,
             **kwargs,
         ):
-        """Initialize dataset.
-
-        bond_indices: list of (i,j) atom index pairs defining bonds (single global list applied to every structure).
-        If validate_indices=True, will assert indices are in range for each structure.
-        """
-        BaseDataset.__init__(self, args=args, **kwargs)
+        BaseGraphDataset.__init__(self, args=args, **kwargs)
         Dataset.__init__(self)
         
         self.structures = structures
-        self.labels = labels
+        self.labels = self._validate_and_prepare_labels(labels, len(structures))
         self.tag = kwargs.get("tag", None)
         
         if self.bond_indices is None or len(self.bond_indices) == 0:
@@ -171,28 +169,69 @@ class BondGraphDataset(BaseDataset, Dataset):
                 assert 0 <= i < n_atoms0 and 0 <= j < n_atoms0, f"Bond index out of range: ({i},{j}) for n_atoms={n_atoms0}"
 
         self._calculate_label_indices()
-        self.ce_log_list("Bond set (atom index pairs)", self.bond_indices)
-        self.ce_log_list("Angle set (atom index triplets)", self.angle_index)
-        self.ce_log_list("Torsion set (atom index quartets)", self.torsion_index)
-        
-        if self.precompute_graphs:
-            self.log_msg("Precomputing graph representations for all structures...")
-            self._precompute_graphs()
-        
-        # Log dataset info
-        self.log_msg(f"Loaded graph dataset with {self.len()} graphs") 
-        self.log_msg(f"Number of bonds (nodes): {len(self.bond_indices)}") 
-        sample = self.get(0)
-        self.node_feat = sample.x.shape[1]
-        self.edge_feat = sample.edge_attr.shape[1]
-        self.log_msg(f"Node feature size: {self.node_feat}") 
-        self.log_msg(f"Edge feature size: {self.edge_feat}") 
-        self.log_msg(f"Total number of edges: {sample.edge_index.shape[1]}") 
+        unique_angles = list(dict.fromkeys(tuple(a) for a in self.angle_index))
+        unique_torsions = list(dict.fromkeys(tuple(t) for t in self.torsion_index))
+        self.log_info(
+            f"Topology internal coordinate counts (reference structure): "
+            f"{len(self.bond_indices)} bonds, "
+            f"{len(unique_angles)} unique angles ({len(self.angle_index)} directed), "
+            f"{len(unique_torsions)} unique torsions ({len(self.torsion_index)} directed)"
+        )
+        self.log_debug(f"Bond set (atom index pairs): {self.bond_indices}")
+        self.log_debug(f"Angle set (unique atom index triplets): {unique_angles}")
+        self.log_debug(f"Torsion set (unique atom index quartets): {unique_torsions}")
     
+        self._post_init()
+    
+    def _validate_and_prepare_labels(
+        self,
+        labels: Optional[Union[Dict[str, Any], List[Any], np.ndarray, torch.Tensor]],
+        n_structures: int,
+    ):
+        """
+        Validate that ``labels`` matches ``n_structures`` along the first dimension.
+
+        When ``labels`` is a dictionary, validates that every key's tensor/array/list
+        has ``shape[0] == n_structures`` and converts each value to a 2-D tensor of
+        shape ``(n_structures, D_k)``.
+        """
+        if labels is None:
+            return None
+
+        if isinstance(labels, dict):
+            validated: Dict[str, torch.Tensor] = {}
+            for key, val in labels.items():
+                t = torch.as_tensor(val, dtype=self.dtype)
+                if t.ndim == 1:
+                    t = t.unsqueeze(1)
+                if t.shape[0] != n_structures:
+                    self.raise_error(
+                        f"Label '{key}' first dimension ({t.shape[0]}) must equal "
+                        f"the number of structures ({n_structures})."
+                    )
+                validated[key] = t
+            return validated
+
+        if len(labels) != n_structures:
+            self.raise_error(
+                f"Number of labels ({len(labels)}) must equal "
+                f"the number of structures ({n_structures})."
+            )
+        return labels
+
+    def _get_label_at(self, idx: int):
+        """Extract the label (dict or array/tensor) for structure ``idx``."""
+        if self.labels is None:
+            return None
+        if isinstance(self.labels, dict):
+            return {k: v[idx].reshape(1, -1) for k, v in self.labels.items()}
+        return self.labels[idx]
+
     def _compute_graph(self, idx: int) -> Data:
         graph = _compute_graph(self.structures[idx], self.bond_indices)
-        if self.labels is not None:
-            graph.y = torch.tensor(self.labels[idx], dtype=self.dtype)
+        lbl = self._get_label_at(idx)
+        if lbl is not None:
+            _attach_graph_label(graph, lbl, self.dtype, prefix=self._GRAPH_LABEL_PREFIX)
         return graph
 
     def _calculate_label_indices(self):
@@ -231,7 +270,7 @@ class BondGraphDataset(BaseDataset, Dataset):
         else:
             precomputed_graphs_dir = create_rundir(self.run_dir, "precomputed_graphs", 0, overwrite=False)
 
-        labels_list = self.labels if self.labels is not None else [None] * self.len()
+        labels_list = [self._get_label_at(i) for i in range(self.len())]
         items = [(idx, struct, lbl)
                  for idx, (struct, lbl) in enumerate(zip(self.structures, labels_list))]
 
@@ -240,7 +279,7 @@ class BondGraphDataset(BaseDataset, Dataset):
                                               disable=not self.verbose, dynamic_ncols=True):
                 graph = _compute_graph(structure, self.bond_indices)
                 if label is not None:
-                    graph.y = torch.tensor(label, dtype=self.dtype)
+                    _attach_graph_label(graph, label, self.dtype, prefix=self._GRAPH_LABEL_PREFIX)
                 torch.save(graph, os.path.join(precomputed_graphs_dir, f"graph_{idx}.pt"))
         else:
             n_workers = min(16, os.cpu_count() or 1, max(1, len(items)))
@@ -264,88 +303,7 @@ class BondGraphDataset(BaseDataset, Dataset):
                 ))
 
         self.precompute_graphs_dir = precomputed_graphs_dir
-    
-    def __len__(self):
-        return self.len()
 
-    def len(self) -> int: # for PyG Dataset compatibility
-        return len(self.structures)
-
-    def __getitem__(self, idx):
-        return self.get(idx)
-    
-    def get(self, idx: int) -> Data:  # for PyG Dataset compatibility
-        if self.precompute_graphs:
-            graph_path = os.path.join(self.precompute_graphs_dir, f"graph_{idx}.pt")
-            graph = torch.load(graph_path, weights_only=False)
-        else:
-            graph = self._compute_graph(idx)
-        return graph
-    
-    def get_num_node_features(self) -> int:
-        if not hasattr(self, 'node_feat'): # For backwards compatibility with old checkpoints that don't have these attributes saved
-            sample = self.get(0)
-            self.node_feat = sample.x.shape[1]
-        return self.node_feat
-
-    def get_num_edge_features(self) -> int:
-        if not hasattr(self, 'edge_feat'): # For backwards compatibility with old checkpoints that don't have these attributes saved
-            sample = self.get(0)
-            self.edge_feat = sample.edge_attr.shape[1]
-        return self.edge_feat
-
-    def get_datapoint_shape(self) -> Dict[str, Tuple]:
-        """
-        Return dictionary of data point tensor shapes.
-
-        Returns
-        -------
-        dict
-            Mapping of feature keys (like 'x', 'edge_index') to their tensor shapes.
-        """
-        sample = self.get(0)
-        shapes = {
-            'x': tuple(sample.x.shape),
-            'edge_index': tuple(sample.edge_index.shape),
-            'edge_attr': tuple(sample.edge_attr.shape),
-            'pos': tuple(sample.pos.shape),
-            'y_bonds': tuple(sample.y_bonds.shape),
-            'y_angles': tuple(sample.y_angles.shape),
-            'y_torsions_sin': tuple(sample.y_torsions_sin.shape),
-            'y_torsions_cos': tuple(sample.y_torsions_cos.shape),
-        }
-        return shapes
-    
-    def get_data(self):
-        """
-        Get all graphs.
-
-        Returns
-        -------
-        tuple
-            Tuple of (graphs_list, labels_list).
-        """
-        graphs = [self.get(idx) for idx in range(self.len())]
-        return graphs
-    
-    def get_norm_data(self) -> np.ndarray:
-        """
-        Return array of data to be normalized.
-
-        Returns
-        -------
-        numpy.ndarray
-            Flattened array containing node and edge features for normalizer fitting.
-        """
-        data_to_normalize = []
-        for idx in range(self.len()):
-            data = self.get(idx)
-            node_feats = data.x.numpy()
-            edge_feats = data.edge_attr.numpy()
-            data_to_normalize.append(np.hstack([node_feats.mean(axis=0), edge_feats.mean(axis=0)]))
-        data_to_normalize = np.vstack(data_to_normalize)
-        return data_to_normalize
-    
     def get_label_indices(self, species_id: Optional[int] = None) -> tuple:
         """
         Return list of atom indices of labels (optionally for a specific species).

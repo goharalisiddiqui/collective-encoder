@@ -121,7 +121,8 @@ def test_heterogeneous_coordinates_datamodule_basic(two_species_trajectories, me
     batch = next(iter(loader))
     assert hasattr(batch, "species_id")
     assert batch.species_id.numel() == 4
-    assert batch.y.shape == (4, 1)
+    assert hasattr(batch, "y_species_id")
+    assert batch.y_species_id.shape == (4, 1)
     for sid in batch.species_id:
         assert sid.item() in (0, 1)
 
@@ -186,12 +187,12 @@ def test_heterogeneous_coordinates_labeler_override_and_graph_analyser(
                     "analyser_args": {
                         "labels_selection": {
                             "phi": [
-                                "y",
+                                "y_phi_2",
                                 0,
                             ],
                             "psi": [
-                                "y",
-                                1,
+                                "y_psi_2",
+                                0,
                             ],
                         },
                         "plots_2dscatter_cb": [
@@ -211,9 +212,11 @@ def test_heterogeneous_coordinates_labeler_override_and_graph_analyser(
     label_names = dmod.get_label_names()
     assert label_names == ["phi_2", "psi_2", "species_id"]
 
-    # Check 2-D PyG batch collation (B, 3) when n_labels == 3
+    # Check native y_<key> PyG batch collation
     batch = next(iter(dmod.train_dataloader()))
-    assert batch.y.shape == (4, 3)
+    assert batch.y_phi_2.shape == (4, 1)
+    assert batch.y_psi_2.shape == (4, 1)
+    assert batch.y_species_id.shape == (4, 1)
 
 
 @pytest.mark.unit
@@ -252,6 +255,7 @@ def test_multispecies_bge_forward_loss_metrics_and_decode(
             "dataset_args": {
                 "precompute_graphs": False,
             },
+            "labeler_type": "TOPOLOGY",
             "train_size": 8,
             "batch_size": 4,
             "validation_size": 4,

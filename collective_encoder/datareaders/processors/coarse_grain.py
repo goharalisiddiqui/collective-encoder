@@ -65,6 +65,21 @@ class CoarseGrainProcessor(BaseDataProcessor):
 
         if isinstance(labels, list) and len(labels) > 0 and isinstance(labels[0], (np.ndarray, torch.Tensor)):
             labels = self._coarsen_array(labels)
+        elif isinstance(labels, list) and len(labels) > 0 and isinstance(labels[0], dict):
+            cg_window = self.cg_window
+            cg_labels = []
+            for i in range(0, len(labels), cg_window):
+                window_dicts = labels[i : i + cg_window]
+                merged_dict = {}
+                for k in window_dicts[0].keys():
+                    arrs = [np.asarray(d[k], dtype=float).reshape(-1) for d in window_dicts if k in d]
+                    merged_dict[k] = np.mean(np.stack(arrs, axis=0), axis=0)
+                cg_labels.append(merged_dict)
+            labels = cg_labels
+        elif isinstance(labels, dict):
+            labels = {k: self._coarsen_array(v) for k, v in labels.items()}
+        elif isinstance(labels, list) and len(labels) == 0:
+            pass
         elif isinstance(labels, (np.ndarray, torch.Tensor)):
             labels = self._coarsen_array(labels)
         else:

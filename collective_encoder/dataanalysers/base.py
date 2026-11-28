@@ -31,6 +31,7 @@ class BaseDataAnalyser(BasePlotter, ABC):
         'data_selection': None,  
         'labels_selection': None,
     }
+    _NO_LOG_ARGS = ["datamodule_args", "datamodule_labels_list"]
     _PLOTTER_TYPE = "data_analyser"
     
     

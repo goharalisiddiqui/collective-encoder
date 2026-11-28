@@ -102,7 +102,7 @@ class BaseDataModule(CEModule, pl.LightningDataModule, ABC):
         from collective_encoder.common.registry import get_module
         for analyser_info in data_analysers:
             analyser_type = analyser_info.get('analyser_type', None)
-            analyser_args = analyser_info.get('analyser_args', {})
+            analyser_args = dict(analyser_info.get('analyser_args') or {})
             if analyser_type is None:
                 self.log_warn("Data analyser type not specified; skipping this analyser.")
                 continue

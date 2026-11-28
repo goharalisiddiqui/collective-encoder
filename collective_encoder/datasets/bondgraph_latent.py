@@ -67,6 +67,9 @@ class BondGraphLatentDataset(BondGraphDataset):
     def get(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
         if not hasattr(self, "encoded"):
             return super().get(index)  # Return Graph if not encoded
+        if isinstance(self.labels, dict):
+            lbl = torch.cat([v[index].reshape(-1) for v in self.labels.values()], dim=0)
+            return self.encoded[index], lbl
         return self.encoded[index], self.labels[index]
     
     def get_data(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -78,6 +81,9 @@ class BondGraphLatentDataset(BondGraphDataset):
         tuple
             Tuple of (latents_array, labels_array).
         """
+        if isinstance(self.labels, dict):
+            lbls = torch.cat([v.reshape(len(self.structures), -1) for v in self.labels.values()], dim=1).numpy()
+            return np.array([d.numpy() for d in self.encoded]), lbls
         return np.array([d.numpy() for d in self.encoded]), np.array([l.numpy() for l in self.labels])
     
     def get_norm_data(self) -> np.ndarray:

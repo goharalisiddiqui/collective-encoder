@@ -69,24 +69,39 @@ def test_bondgraph_dataset_on_the_fly_and_precomputed(synthetic_atoms_list, meta
     structures, labels = synthetic_atoms_list
     bonds = [(0, 1), (1, 2), (2, 3)]
 
-    # 1. On-the-fly graph construction (precompute_graphs=False)
+    # 1. On-the-fly graph construction with dictionary labels (precompute_graphs=False)
+    dict_labels = {
+        "bonds": torch.ones((5, 3), dtype=torch.float64),
+        "angles": torch.ones((5, 4), dtype=torch.float64),
+        "cos_torsions": torch.ones((5, 2), dtype=torch.float64),
+        "sin_torsions": torch.zeros((5, 2), dtype=torch.float64),
+    }
     ds_fly = BondGraphDataset(
         structures=structures[:5],
-        labels=labels[:5],
+        labels=dict_labels,
         args={"bond_indices": bonds, "precompute_graphs": False, "parallel": False},
         tag="train_fly",
         **metargs,
     )
     assert len(ds_fly) == 5
-    assert ds_fly.get_num_node_features() == 3
-    assert ds_fly.get_num_edge_features() == 3
+    assert ds_fly.num_node_features == 3
+    assert ds_fly.num_edge_features == 3
     g0 = ds_fly[0]
     assert g0.x.shape == (3, 3)  # 3 bonds, 3 node features
     assert g0.edge_index.shape[0] == 2
-    assert g0.y_bonds.shape == (3,)
-    assert g0.y_angles.shape == (4,)  # 2 angles * 2 directed edges
-    assert g0.y_torsions_sin.shape == (2,)  # 1 torsion * 2 directed edges
-    assert g0.y_torsions_cos.shape == (2,)
+    assert g0.y_bonds.shape == (1, 3)
+    assert g0.y_angles.shape == (1, 4)
+    assert g0.y_cos_torsions.shape == (1, 2)
+    assert g0.y_sin_torsions.shape == (1, 2)
+
+    # Mismatched first dimension in label dictionary raises ValueError
+    with pytest.raises(ValueError, match="first dimension"):
+        BondGraphDataset(
+            structures=structures[:5],
+            labels={"bonds": torch.ones((4, 3), dtype=torch.float64)},
+            args={"bond_indices": bonds, "precompute_graphs": False, "parallel": False},
+            **metargs,
+        )
 
     # Template graph and label indices
     bond_idx, angle_idx, torsion_idx = ds_fly.get_label_indices()
@@ -100,7 +115,7 @@ def test_bondgraph_dataset_on_the_fly_and_precomputed(synthetic_atoms_list, meta
     # 2. Precomputed graph mode (precompute_graphs=True, parallel=False)
     ds_pre = BondGraphDataset(
         structures=structures[:5],
-        labels=labels[:5],
+        labels=dict_labels,
         args={"bond_indices": bonds, "precompute_graphs": True, "parallel": False},
         tag="train_pre",
         **metargs,
@@ -108,6 +123,11 @@ def test_bondgraph_dataset_on_the_fly_and_precomputed(synthetic_atoms_list, meta
     g0_pre = ds_pre[0]
     torch.testing.assert_close(g0.x, g0_pre.x)
     torch.testing.assert_close(g0.edge_attr, g0_pre.edge_attr)
+    torch.testing.assert_close(g0.y_bonds, g0_pre.y_bonds)
+    graphs_out, labels_out = ds_pre.get_data()
+    assert len(graphs_out) == 5
+    assert isinstance(labels_out, dict)
+    assert "y_bonds" in labels_out and len(labels_out["y_bonds"]) == 5
 
     # Empty bond_indices raises ValueError
     with pytest.raises(ValueError, match="bond_indices cannot be empty"):

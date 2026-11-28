@@ -492,6 +492,133 @@ class BasePlotter(CEModule, ABC):
         """
         pass
 
+    @staticmethod
+    def _prepare_scatter_1d(
+        x_data: np.ndarray,
+        y_data: np.ndarray,
+        x_err: np.ndarray = None,
+        y_err: np.ndarray = None,
+        color_data: Dict[str, np.ndarray] = None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
+        """
+        Flatten multi-dimensional ``(N_samples, D)`` scatter arrays to 1-D pairs,
+        broadcasting per-sample 1-D color arrays across features and filtering
+        out non-finite (``NaN`` / ``inf``) entries.
+        """
+        x_arr = np.asarray(x_data)
+        y_arr = np.asarray(y_data)
+        if x_arr.ndim > 1 and x_arr.shape == y_arr.shape:
+            n_samples = x_arr.shape[0]
+            n_feats = int(np.prod(x_arr.shape[1:]))
+            if color_data is not None:
+                new_color = {}
+                for c, arr in color_data.items():
+                    c_arr = np.asarray(arr)
+                    if c_arr.ndim == 2 and c_arr.shape[1] == 1:
+                        c_arr = c_arr.squeeze(1)
+                    if c_arr.ndim == 1 and c_arr.shape[0] == n_samples:
+                        new_color[c] = np.repeat(c_arr, n_feats)
+                    else:
+                        new_color[c] = c_arr.reshape(-1)
+                color_data = new_color
+            x_arr = x_arr.reshape(-1)
+            y_arr = y_arr.reshape(-1)
+            if x_err is not None:
+                x_err = np.asarray(x_err).reshape(-1)
+            if y_err is not None:
+                y_err = np.asarray(y_err).reshape(-1)
+        elif color_data is not None:
+            color_data = {
+                c: (
+                    np.asarray(arr).squeeze(1)
+                    if np.asarray(arr).ndim == 2 and np.asarray(arr).shape[1] == 1
+                    else np.asarray(arr).reshape(-1)
+                )
+                for c, arr in color_data.items()
+            }
+
+        valid = np.isfinite(x_arr) & np.isfinite(y_arr)
+        if not np.all(valid):
+            x_arr = x_arr[valid]
+            y_arr = y_arr[valid]
+            if x_err is not None:
+                x_err = np.asarray(x_err)[valid]
+            if y_err is not None:
+                y_err = np.asarray(y_err)[valid]
+            if color_data is not None:
+                color_data = {c: arr[valid] for c, arr in color_data.items()}
+
+        return x_arr, y_arr, x_err, y_err, color_data
+
+    @staticmethod
+    def _decorate_scatter_axes(
+        axes: List[plt.Axes],
+        plot: Dict[str, Any],
+        x_data: np.ndarray,
+        y_data: np.ndarray,
+        title_override: str = None,
+    ) -> None:
+        """
+        Apply angular axis limits/ticks, title, and optional ``y = x`` diagonal
+        ideal reference line to 2-D scatter plot axes.
+        """
+        is_angles = bool(plot.get("angles", False))
+        is_angle_x = is_angles or bool(plot.get("angle_x", False))
+        is_angle_y = is_angles or bool(plot.get("angle_y", False))
+        draw_diag = bool(
+            plot.get("diagonal", False)
+            or plot.get("ideal_line", False)
+            or plot.get("x_eq_y", False)
+        )
+        title = title_override if title_override is not None else plot.get("title", None)
+
+        for ax in axes:
+            if is_angle_x:
+                ax.set_xlim([-np.pi, np.pi])
+                ax.set_xticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
+                ax.set_xticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
+            if is_angle_y:
+                ax.set_ylim([-np.pi, np.pi])
+                ax.set_yticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
+                ax.set_yticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
+            if draw_diag and x_data.size > 0 and y_data.size > 0:
+                if is_angle_x and is_angle_y:
+                    d_min, d_max = -np.pi, np.pi
+                else:
+                    d_min = float(min(np.min(x_data), np.min(y_data)))
+                    d_max = float(max(np.max(x_data), np.max(y_data)))
+                ax.plot(
+                    [d_min, d_max],
+                    [d_min, d_max],
+                    linestyle="--",
+                    color="crimson",
+                    linewidth=1.5,
+                    label="Ideal (x = y)",
+                )
+                ax.legend(loc="upper left", fontsize="small")
+            if title:
+                ax.set_title(title)
+
+    @staticmethod
+    def _resolve_group_label(group_names: Any, g_val: Any) -> str:
+        """Resolve a human-readable group/species name from ``group_names``."""
+        try:
+            g_int = int(g_val)
+        except (ValueError, TypeError):
+            g_int = None
+
+        if isinstance(group_names, dict):
+            if g_val in group_names:
+                return str(group_names[g_val])
+            if g_int is not None and g_int in group_names:
+                return str(group_names[g_int])
+            if str(g_val) in group_names:
+                return str(group_names[str(g_val)])
+        elif isinstance(group_names, (list, tuple)) and g_int is not None:
+            if 0 <= g_int < len(group_names):
+                return str(group_names[g_int])
+        return f"species_{g_int}" if g_int is not None else str(g_val)
+
     def _plot_2dscatter_plots(self, vals: Dict[str, np.ndarray]) -> None:
         """
         Generate configured 2D scatter plots from the accumulated data.
@@ -502,10 +629,9 @@ class BasePlotter(CEModule, ABC):
             Unified dictionary of all accumulated numeric data.
         """
         for plot in self.plots_2dscatter_cb:
-            for key in ['x', 'y']:
-                if key not in plot.keys():
-                    self.log_exception(f"Missing '{key}' in plot specification: {plot}. Skipping this plot.")
-                    continue
+            if any(key not in plot.keys() for key in ["x", "y"]):
+                self.log_exception(f"Missing 'x' or 'y' in plot specification: {plot}. Skipping this plot.")
+                continue
             x_label, y_label = plot['x'], plot['y']
             color_label = plot.get('color', None)
             x_error_data, y_error_data = None, None
@@ -528,13 +654,21 @@ class BasePlotter(CEModule, ABC):
                 self.log_exception(f"Label '{y_label}' not found in collected data. Available labels: {list(vals.keys())}.")
                 continue
             if color_label is not None:
-                for c in color_label.split(':'):
-                    if c not in vals:
-                        self.log_exception(f"Color label '{c}' not found in collected data. Available labels: {list(vals.keys())}. Skipping this plot.")
-                        continue
+                missing_colors = [c for c in color_label.split(':') if c not in vals]
+                if missing_colors:
+                    self.log_exception(f"Color label(s) '{missing_colors}' not found in collected data. Available labels: {list(vals.keys())}. Skipping this plot.")
+                    continue
             x_data = vals[x_label]
             y_data = vals[y_label]
             color_data = {c: vals[c] for c in color_label.split(':') if c in vals} if color_label is not None else None
+            group_key = plot.get("group_by", None)
+            group_arr = None
+            if group_key is not None:
+                if group_key not in vals:
+                    self.log_exception(f"Group label '{group_key}' not found in collected data. Available labels: {list(vals.keys())}. Skipping this plot.")
+                    continue
+                group_arr = np.asarray(vals[group_key]).reshape(-1)
+
             fname = plot.get('xlabel', x_label) + "_" + plot.get('ylabel', y_label)
             if 'sparse_steps' in plot:
                 sparse_steps = plot['sparse_steps']
@@ -546,30 +680,100 @@ class BasePlotter(CEModule, ABC):
                 x_error_data = x_error_data[::sparse_steps] if x_error_data is not None else None
                 y_error_data = y_error_data[::sparse_steps] if y_error_data is not None else None
                 color_data = {c: color_data[c][::sparse_steps] for c in color_data} if color_data is not None else None
+                if group_arr is not None:
+                    group_arr = group_arr[::sparse_steps]
                 fname += f"_sparse{str(sparse_steps)}"
-            fig, axes = self._plot_2dscatter(x_data, y_data, 
-                                         xerr=x_error_data, yerr=y_error_data,
-                                         xlabel=plot.get('xlabel', x_label),
-                                         ylabel=plot.get('ylabel', y_label),
-                                         clabels=color_data)
+
+            xlabel = plot.get('xlabel', x_label)
+            ylabel = plot.get('ylabel', y_label)
+            base_fname = plot.get('name', fname)
+
+            if group_arr is not None:
+                uniq_groups = [g for g in np.unique(group_arr) if np.isfinite(g)]
+                group_names = plot.get("group_names", None)
+                group_mode = plot.get("group_mode", "subplots")
+                base_title = plot.get("title", base_fname)
+
+                if group_mode == "files":
+                    for g_val in uniq_groups:
+                        g_mask = group_arr == g_val
+                        g_name = self._resolve_group_label(group_names, g_val)
+                        gx, gy, gx_err, gy_err, gc = self._prepare_scatter_1d(
+                            x_data[g_mask],
+                            y_data[g_mask],
+                            x_error_data[g_mask] if x_error_data is not None else None,
+                            y_error_data[g_mask] if y_error_data is not None else None,
+                            {c: arr[g_mask] for c, arr in color_data.items()} if color_data is not None else None,
+                        )
+                        if gx.size == 0:
+                            continue
+                        fig, axes = self._plot_2dscatter(
+                            gx, gy, xerr=gx_err, yerr=gy_err,
+                            xlabel=xlabel, ylabel=ylabel, clabels=gc,
+                        )
+                        self.after_2dscatter(plot, (gx, gy, gx_err, gy_err, gc), fig, axes)
+                        self._decorate_scatter_axes(
+                            axes, plot, gx, gy, title_override=f"{base_title} ({g_name})"
+                        )
+                        out_name = f"{base_fname}_{g_name}"
+                        if tag := plot.get('tag', False):
+                            out_name = f"{out_name}_{tag}"
+                        self.log_image(fig, out_name)
+                        plt.close(fig)
+                else:
+                    n_groups = max(1, len(uniq_groups))
+                    fig, axes = plt.subplots(
+                        nrows=1, ncols=n_groups, figsize=(6.5 * n_groups, 5.5)
+                    )
+                    if n_groups == 1:
+                        axes = [axes]
+                    for ax, g_val in zip(axes, uniq_groups):
+                        g_mask = group_arr == g_val
+                        g_name = self._resolve_group_label(group_names, g_val)
+                        gx, gy, gx_err, gy_err, _ = self._prepare_scatter_1d(
+                            x_data[g_mask],
+                            y_data[g_mask],
+                            x_error_data[g_mask] if x_error_data is not None else None,
+                            y_error_data[g_mask] if y_error_data is not None else None,
+                            None,
+                        )
+                        ax.scatter(gx, gy, alpha=0.7)
+                        if gx_err is not None and gy_err is not None:
+                            ax.errorbar(
+                                gx, gy, xerr=gx_err, yerr=gy_err,
+                                fmt='o', c='gray', alpha=0.5,
+                                ecolor='lightgray', elinewidth=1, capsize=2,
+                            )
+                        ax.set_xlabel(xlabel)
+                        ax.set_ylabel(ylabel)
+                        self._decorate_scatter_axes(
+                            [ax], plot, gx, gy, title_override=f"{base_title} ({g_name})"
+                        )
+                    plt.tight_layout()
+                    self.after_2dscatter(plot, (x_data, y_data, x_error_data, y_error_data, color_data), fig, axes)
+                    out_name = base_fname
+                    if tag := plot.get('tag', False):
+                        out_name = f"{out_name}_{tag}"
+                    self.log_image(fig, out_name)
+                    plt.close(fig)
+                continue
+
+            x_1d, y_1d, x_err_1d, y_err_1d, color_1d = self._prepare_scatter_1d(
+                x_data, y_data, x_error_data, y_error_data, color_data
+            )
+            fig, axes = self._plot_2dscatter(x_1d, y_1d, 
+                                         xerr=x_err_1d, yerr=y_err_1d,
+                                         xlabel=xlabel,
+                                         ylabel=ylabel,
+                                         clabels=color_1d)
             self.after_2dscatter(plot, 
-                (x_data, y_data, x_error_data, y_error_data, color_data), 
+                (x_1d, y_1d, x_err_1d, y_err_1d, color_1d), 
                 fig, axes)
-            
-            if plot.get('angles', False) or plot.get('angle_x', False):
-                for ax in axes:
-                    ax.set_ylim([-np.pi, np.pi])
-                    ax.set_yticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
-                    ax.set_yticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
-            if plot.get('angles', False) or plot.get('angle_y', False):
-                for ax in axes:
-                    ax.set_xlim([-np.pi, np.pi])
-                    ax.set_xticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
-                    ax.set_xticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
-            fname = plot.get('name', fname)
+            self._decorate_scatter_axes(axes, plot, x_1d, y_1d)
+            out_name = base_fname
             if tag := plot.get('tag', False):
-                fname = f"{fname}_{tag}"
-            self.log_image(fig, fname)
+                out_name = f"{out_name}_{tag}"
+            self.log_image(fig, out_name)
             plt.close(fig)
     
     ############################################################################

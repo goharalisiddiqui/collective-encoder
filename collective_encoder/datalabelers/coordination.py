@@ -2,6 +2,7 @@ import numpy as np
 import MDAnalysis as mda
 from typing import Optional, Dict, List, Union
 
+from .base import BaseLabeler
 from .mda import MDALabeler
 
 
@@ -11,7 +12,7 @@ class CoordinationCountLabeler(MDALabeler):
 
     For each center atom, counts how many neighbour atoms lie within
     ``cutoff_distance`` Å and compares the count against each threshold in
-    ``bins``.  One label column is produced per bin threshold.
+    ``bins``.
 
     Parameters
     ----------
@@ -27,16 +28,18 @@ class CoordinationCountLabeler(MDALabeler):
           Defaults to ``5.0``.
         - ``bins`` (list of int, optional): Coordination number thresholds to
           count against. Defaults to ``[6]``.
+        - ``name`` (str, optional): Custom label dictionary key.
     kwargs : dict
         Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "COORDINATION"
     _REQUIRED_ARGS = ["selection_centers", "selection_neighbors"]
-    _OPTIONAL_ARGS = {
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
+    _OPTIONAL_ARGS.update({
         "cutoff_distance": 5.0,
-        "bins": [6]
-    }
+        "bins": [6],
+    })
 
     def __init__(self,
                  universe: mda.Universe,
@@ -61,23 +64,29 @@ class CoordinationCountLabeler(MDALabeler):
 
     def get_label_names(self) -> List[str]:
         """
-        Return the names of the label columns.
+        Return the dictionary key name for this labeler.
 
         Returns
         -------
         list of str
-            Label names for each coordination threshold bin.
+            Single-element list containing ``self.get_default_label_name()``.
         """
-        return [f'coordination_count_{b}' for b in self.bins]
+        return [self.get_default_label_name()]
 
-    def compute(self, indices: Optional[List[int]] = None) -> np.ndarray:
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
         """
         Compute the coordination count labels for the current frame.
 
+        Parameters
+        ----------
+        indices : list of int, optional
+            Unused frame indices argument for interface compatibility.
+
         Returns
         -------
-        list of float
-            The count of central atoms meeting each coordination threshold.
+        dict of str to numpy.ndarray
+            Dictionary mapping the label name to a 1-D NumPy array of counts of
+            central atoms meeting each coordination threshold.
         """
         centers = self.centers
         neighbors = self.neighbors
@@ -95,5 +104,5 @@ class CoordinationCountLabeler(MDALabeler):
                 if count >= b:
                     counts[i] += 1
         
-        return np.array(counts, dtype=float)
+        return {self.get_default_label_name(): np.array(counts, dtype=float)}
 

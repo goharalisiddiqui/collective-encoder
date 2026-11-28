@@ -57,8 +57,8 @@ class BondGraphEncoderDecoder(CENetBase):
             raise ValueError("Missing 'template_khop' in decoder_args")
         datasetobject = datamodule.get_any_dataset()
         encoder_args = {
-            'node_feat': datasetobject.get_num_node_features(),
-            'edge_feat': datasetobject.get_num_edge_features(),
+            'node_feat': datasetobject.num_node_features,
+            'edge_feat': datasetobject.num_edge_features,
         }
         decoder_args = {
             'template_data': datasetobject.get_template_graph(k=khops),
@@ -359,33 +359,107 @@ class BondGraphEncoderDecoder(CENetBase):
             out[:, : min(per_g, max_dim)] = raw.view(num_graphs, per_g)[:, :max_dim]
         return out
 
+    def _align_dict_target(
+        self,
+        raw_tensor: torch.Tensor,
+        num_graphs: int,
+        max_dim: int,
+        species_counts: dict,
+        sids: torch.Tensor = None,
+    ) -> torch.Tensor:
+        """
+        Reshape a dictionary target tensor to ``(num_graphs, max_dim)`` and mask
+        zero-padded columns beyond each species' true internal coordinate count
+        with ``NaN`` when running in multi-species mode.
+        """
+        t = raw_tensor.view(num_graphs, -1)
+        if not getattr(self.decoder_net, "is_multispecies", False):
+            return t
+
+        out = torch.full(
+            (num_graphs, max_dim),
+            float("nan"),
+            dtype=t.dtype,
+            device=t.device,
+        )
+        if sids is not None and species_counts:
+            for g, sid_t in enumerate(sids.view(-1)):
+                cnt = species_counts.get(int(sid_t.item()), t.shape[1])
+                length = min(cnt, max_dim, t.shape[1])
+                if length > 0:
+                    out[g, :length] = t[g, :length]
+            return out
+
+        c = min(t.shape[1], max_dim)
+        out[:, :c] = t[:, :c]
+        return out
+
     def extract_labels(self, batch) -> dict:
         """Extract per-graph target tensors from a PyG batch."""
         batch_vec = getattr(batch, "batch", None)
         num_graphs = (int(batch_vec.max().item()) + 1) if batch_vec is not None and batch_vec.numel() > 0 else 1
         out_labels = self.out_labels
-
-        if not getattr(self.decoder_net, "is_multispecies", False):
-            return {
-                out_labels[0]: batch.y_bonds.view(num_graphs, -1),
-                out_labels[1]: batch.y_angles.view(num_graphs, -1),
-                out_labels[2]: batch.y_torsions_cos.view(num_graphs, -1),
-                out_labels[3]: batch.y_torsions_sin.view(num_graphs, -1),
-            }
-
         dec = self.decoder_net
-        bond_counts = {sid: len(v) for sid, v in dec.species_bond_index.items()}
-        angle_counts = {sid: len(v) for sid, v in dec.species_angle_index.items()}
-        torsion_counts = {sid: len(v) for sid, v in dec.species_torsion_index.items()}
+        sids = getattr(batch, "species_id", None)
+        if sids is None and hasattr(batch, "y_species_id"):
+            sids = getattr(batch, "y_species_id")
 
-        res = {
-            out_labels[0]: self._slice_and_pad_attr(batch, "y_bonds", num_graphs, dec.max_bonds, bond_counts),
-            out_labels[1]: self._slice_and_pad_attr(batch, "y_angles", num_graphs, dec.max_angles, angle_counts),
-            out_labels[2]: self._slice_and_pad_attr(batch, "y_torsions_cos", num_graphs, dec.max_torsions, torsion_counts),
-            out_labels[3]: self._slice_and_pad_attr(batch, "y_torsions_sin", num_graphs, dec.max_torsions, torsion_counts),
-        }
-        if hasattr(batch, "species_id") and batch.species_id is not None:
-            res["species_id"] = batch.species_id.view(num_graphs, -1)
+        bond_counts = (
+            {sid: len(v) for sid, v in dec.species_bond_index.items()}
+            if getattr(dec, "is_multispecies", False)
+            else {}
+        )
+        angle_counts = (
+            {sid: len(v) for sid, v in dec.species_angle_index.items()}
+            if getattr(dec, "is_multispecies", False)
+            else {}
+        )
+        torsion_counts = (
+            {sid: len(v) for sid, v in dec.species_torsion_index.items()}
+            if getattr(dec, "is_multispecies", False)
+            else {}
+        )
+
+        cos_attr = "y_cos_torsions" if hasattr(batch, "y_cos_torsions") else "y_torsions_cos"
+        sin_attr = "y_sin_torsions" if hasattr(batch, "y_sin_torsions") else "y_torsions_sin"
+
+        key_map = [
+            ("y_bonds", out_labels[0], getattr(dec, "max_bonds", 0), bond_counts),
+            ("y_angles", out_labels[1], getattr(dec, "max_angles", 0), angle_counts),
+            (cos_attr, out_labels[2], getattr(dec, "max_torsions", 0), torsion_counts),
+            (sin_attr, out_labels[3], getattr(dec, "max_torsions", 0), torsion_counts),
+        ]
+        res = {}
+        consumed_attrs = set()
+        for attr_name, out_key, max_d, counts_map in key_map:
+            if hasattr(batch, attr_name) and getattr(batch, attr_name) is not None:
+                consumed_attrs.add(attr_name)
+                t_src = getattr(batch, attr_name)
+                if t_src.ndim >= 2:
+                    eff_max = max_d if max_d > 0 else t_src.view(num_graphs, -1).shape[1]
+                    res[out_key] = self._align_dict_target(
+                        t_src, num_graphs, eff_max, counts_map, sids
+                    )
+                else:
+                    eff_max = max_d if max_d > 0 else (t_src.numel() // max(1, num_graphs))
+                    res[out_key] = self._slice_and_pad_attr(
+                        batch, attr_name, num_graphs, eff_max, counts_map
+                    )
+
+        # Preserve any additional y_* attributes (e.g. y_phi_2, y_psi_2, y_species_id)
+        for extra_k in batch.keys():
+            if (
+                extra_k not in consumed_attrs
+                and extra_k.startswith("y_")
+                and isinstance(batch[extra_k], torch.Tensor)
+            ):
+                res[extra_k] = batch[extra_k].view(num_graphs, -1)
+                short_k = extra_k[2:]
+                if short_k not in res:
+                    res[short_k] = res[extra_k]
+
+        if sids is not None and "species_id" not in res:
+            res["species_id"] = sids.view(num_graphs, -1)
         return res
 
     def aggregate_losses(self, losses):

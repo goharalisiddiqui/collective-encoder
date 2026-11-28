@@ -32,7 +32,7 @@ def test_compressed_trajectory_reader_seq_and_parallel(trajectory_files, metargs
     assert len(reader_seq.get_bonds()) == 5
 
     splits = [[0, 1, 2, 3], [4, 5], [6, 7], []]
-    trajs_seq, labels_seq, failed_seq = reader_seq.read_trajectory(
+    trajs_seq, labels_seq = reader_seq.read_trajectory(
         indices=splits,
         labeler_type="DISTANCE",
         labeler_args={"selections": ["index 0 or index 1"]},
@@ -41,8 +41,9 @@ def test_compressed_trajectory_reader_seq_and_parallel(trajectory_files, metargs
     assert len(trajs_seq[0]) == 4
     assert len(trajs_seq[1]) == 2
     assert len(trajs_seq[3]) == 0
-    assert failed_seq == ([], [], [], [])
-    assert reader_seq.get_label_names() == ["distance_value_1"]
+    assert isinstance(labels_seq[0], dict)
+    assert labels_seq[0]["distancevaluelabeler"].shape == (4, 1)
+    assert reader_seq.get_label_names() == ["distancevaluelabeler"]
 
     # Parallel mode (>= 8 frames in a split triggers multiprocessing Pool)
     reader_par = CompressedTrajectoryReader(
@@ -56,13 +57,12 @@ def test_compressed_trajectory_reader_seq_and_parallel(trajectory_files, metargs
         **metargs,
     )
     par_splits = [list(range(10)), [10, 11], [], []]
-    trajs_par, labels_par, failed_par = reader_par.read_trajectory(
+    trajs_par, labels_par = reader_par.read_trajectory(
         indices=par_splits,
         labeler_type="DUMMY",
         labeler_args={},
     )
     assert len(trajs_par[0]) == 10
-    assert failed_par == ([], [], [], [])
     for i in range(4):
         np.testing.assert_allclose(
             trajs_seq[0][i].get_positions(),
@@ -84,7 +84,7 @@ def test_compressed_trajectory_reader_parallel_frame_labeler_reinitialize(trajec
         },
         **metargs,
     )
-    _, labels_seq, _ = reader_seq.read_trajectory(
+    _, labels_seq = reader_seq.read_trajectory(
         indices=[list(range(10)), [], [], []],
         labeler_type="DISTANCE",
         labeler_args={"selections": ["index 0 or index 1"]},
@@ -99,12 +99,17 @@ def test_compressed_trajectory_reader_parallel_frame_labeler_reinitialize(trajec
         },
         **metargs,
     )
-    _, labels_par, _ = reader_par.read_trajectory(
+    _, labels_par = reader_par.read_trajectory(
         indices=[list(range(10)), [], [], []],
         labeler_type="DISTANCE",
         labeler_args={"selections": ["index 0 or index 1"]},
     )
-    np.testing.assert_allclose(labels_seq[0], labels_par[0], rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(
+        labels_seq[0]["distancevaluelabeler"].numpy(),
+        labels_par[0]["distancevaluelabeler"].numpy(),
+        rtol=1e-5,
+        atol=1e-5,
+    )
 
 
 @pytest.mark.unit
@@ -158,11 +163,12 @@ def test_plumed_output_reader_modes_and_trajectory_reading(plumed_colvar_file, m
     )
     assert len(trajs) == 4
     assert trajs[0].shape == (4, 2)  # 'ene' dropped from features -> ['phi', 'psi']
-    assert labels[0].shape == (4, 1)
+    assert isinstance(labels[0], dict)
+    assert labels[0]["columnselectorlabeler"].shape == (4, 1)
     assert trajs[2].shape == (0, 2)
-    assert labels[2].shape == (0, 1)
+    assert labels[2]["columnselectorlabeler"].shape == (0, 0)
     assert failed == ([], [], [], [])
-    assert reader_cols.get_label_names() == ["ene"]
+    assert reader_cols.get_label_names() == ["columnselectorlabeler"]
 
     # 3. Read with column_match
     reader_match = PlumedOutputReader(
