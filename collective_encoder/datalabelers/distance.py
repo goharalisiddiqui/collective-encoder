@@ -1,25 +1,34 @@
+import numpy as np
 import MDAnalysis as mda
-from typing import Dict, List, Union
+from typing import Optional, Dict, List, Union
 
-from .base import FrameLabeler
+from .base import BaseLabeler
+from .mda import MDALabeler
 
 
-class DistanceValueLabeler(FrameLabeler):
-    """Compute inter-atomic distances for the current trajectory frame.
+class DistanceValueLabeler(MDALabeler):
+    """
+    Compute inter-atomic distances for the current trajectory frame.
 
     Each entry in ``selections`` must select exactly two atoms; the Euclidean
-    distance between them is returned as a label column.
+    distance between them is returned in the label vector under the labeler's key.
 
-    Args:
-        universe: MDAnalysis Universe positioned at the target frame.
-        args: Configuration dict with key ``selections`` (required) — a list
-            of MDAnalysis selection strings, each selecting exactly 2 atoms
-            (e.g. ``['resid 1 and name CA', 'resid 5 and name CA']``).
+    Parameters
+    ----------
+    universe : MDAnalysis.Universe
+        MDAnalysis Universe positioned at the target frame.
+    args : dict
+        Configuration dict with key ``selections`` (required) — a list
+        of MDAnalysis selection strings, each selecting exactly 2 atoms
+        (e.g. ``['resid 1 and name CA', 'resid 5 and name CA']``) — and
+        optional ``name`` (str).
+    kwargs : dict
+        Additional keyword arguments forwarded to the base class.
     """
 
     _IDENTIFIER = "DISTANCE"
     _REQUIRED_ARGS = ["selections"]
-    _OPTIONAL_ARGS = {}
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
 
     def __init__(self,
                  universe: mda.Universe,
@@ -40,9 +49,31 @@ class DistanceValueLabeler(FrameLabeler):
             self.raise_error("No valid atom pairs found")
 
     def get_label_names(self) -> List[str]:
-        return [f'distance_value_{i+1}' for i in range(len(self.dist_atoms))]
+        """
+        Return the dictionary key name for this labeler.
 
-    def compute(self) -> List[float]:
+        Returns
+        -------
+        list of str
+            Single-element list containing ``self.get_default_label_name()``.
+        """
+        return [self.get_default_label_name()]
+
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
+        """
+        Compute inter-atomic distances for the current frame.
+
+        Parameters
+        ----------
+        indices : list of int, optional
+            Unused frame indices argument for interface compatibility.
+
+        Returns
+        -------
+        dict of str to numpy.ndarray
+            Dictionary mapping the label name to a 1-D NumPy array of Euclidean
+            distances in Ångstroms.
+        """
         from MDAnalysis.lib.distances import distance_array
 
         dists = []
@@ -52,4 +83,5 @@ class DistanceValueLabeler(FrameLabeler):
                 atoms[1].position.reshape(1, 3)
             ).flatten()[0]
             dists.append(dist)
-        return dists
+
+        return {self.get_default_label_name(): np.array(dists, dtype=float)}

@@ -15,9 +15,9 @@ class KLDSchedulerBase(CEModule, ABC):
         super().__init__(args=args, **kwargs)
     
     @abstractmethod
-    def get_kld_max(self, plmodule: pl.LightningModule) -> float:
+    def get_kld_max(self) -> float:
         raise NotImplementedError("get_kld_max must be implemented by subclasses")
 
-    def on_validation_epoch_end(self, plmodule):
+    def on_validation_epoch_end(self, plmodule: pl.LightningModule):
         """Optional hook that can be implemented by subclasses to update internal state at the end of each validation epoch."""
         pass

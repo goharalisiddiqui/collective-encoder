@@ -1,31 +1,38 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Union
+from typing import Optional, Dict, List, Union
 
-from .base import BatchLabeler
+from .base import BaseLabeler
 
 
-class ColumnSelectorLabeler(BatchLabeler):
-    """Extract specific columns from a PLUMED/tabular DataFrame as labels.
+class ColumnSelectorLabeler(BaseLabeler):
+    """
+    Extract specific columns from a PLUMED/tabular DataFrame as labels.
 
     Selects one or more named columns from a ``pd.DataFrame`` and returns
     the corresponding rows as a NumPy array.  Intended for use with
     :class:`~collective_encoder.datareaders.plumed_output.PlumedOutputReader`.
 
-    Args:
-        dataframe: The full collective-variable DataFrame loaded from the
-            PLUMED output file.
-        args: Configuration dict with key ``columns`` (required) — a list of
-            column names to use as labels (e.g. ``['phi', 'psi']``).
-        **kwargs: Additional keyword arguments forwarded to the base class.
+    Parameters
+    ----------
+    dataframe : pandas.DataFrame
+        The full collective-variable DataFrame loaded from the
+        PLUMED output file.
+    args : dict
+        Configuration dict with key ``columns`` (required) — a list of
+        column names to use as labels (e.g. ``['phi', 'psi']``).
+    kwargs : dict
+        Additional keyword arguments forwarded to the base class.
 
-    Raises:
-        ValueError: If any column in ``columns`` is not present in ``dataframe``.
+    Raises
+    ------
+    ValueError
+        If any column in ``columns`` is not present in ``dataframe``.
     """
 
     _IDENTIFIER = "COLUMN_SELECTOR"
     _REQUIRED_ARGS = ["columns"]
-    _OPTIONAL_ARGS = {}
+    _OPTIONAL_ARGS = BaseLabeler._OPTIONAL_ARGS.copy()
 
     def __init__(self,
                  dataframe: pd.DataFrame,
@@ -45,10 +52,31 @@ class ColumnSelectorLabeler(BatchLabeler):
                              f"dataframe: {missing_columns}")
         
     def get_label_names(self) -> List[str]:
-        return self.columns
+        """
+        Return the dictionary key name for this labeler.
 
-    def compute(self, indices: List[int]) -> np.ndarray:
-        # Select the specified columns and the given indices
+        Returns
+        -------
+        list of str
+            Single-element list containing ``self.get_default_label_name()``.
+        """
+        return [self.get_default_label_name()]
+
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
+        """
+        Compute labels for the given DataFrame row indices.
+
+        Parameters
+        ----------
+        indices : list of int
+            Integer row indices to extract.
+
+        Returns
+        -------
+        dict of str to numpy.ndarray
+            Dictionary mapping the label name to a NumPy array of values from the
+            selected columns for the given indices.
+        """
         selected_data = self.dataframe.loc[indices, self.columns]
-        return selected_data.values  # Return as numpy array
+        return {self.get_default_label_name(): np.asarray(selected_data.values, dtype=float)}
         

@@ -15,9 +15,13 @@ class KLDLinearScheduler(KLDSchedulerBase):
         super().__init__(args=args, **kwargs)
         if self.start_epoch >= self.end_epoch:
             self.raise_error("start_epoch must be less than end_epoch")
-    
-    def get_kld_max(self, plmodule: pl.LightningModule) -> float:
-        epoch = plmodule.current_epoch
+        self.epoch = 1
+
+    def on_validation_epoch_end(self, plmodule: pl.LightningModule):
+        self.epoch += 1
+
+    def get_kld_max(self) -> float:
+        epoch = self.epoch
 
         if epoch < self.start_epoch:
             return self.start_value

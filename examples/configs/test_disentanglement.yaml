@@ -1,0 +1,220 @@
+# ==============================================================================
+# Collective Encoder: Comprehensive Test Plotters & Disentanglement Metrics Guide
+# ==============================================================================
+# This configuration demonstrates how to evaluate trained models using
+# `collective-encoder-test` or `collective-encoder-train`.
+#
+# Command to run:
+#   collective-encoder-test --config collective-encoder/examples/configs/test_disentanglement.yaml
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Output & Model Loading Settings
+# ------------------------------------------------------------------------------
+outpath: "./ala2/train_runs/bVAE"              # Output directory where test plotter folders are saved
+outfolder: "disentanglement_eval"             # Subdirectory name for this testing run
+nexp: 1                                       # Experiment index
+overwrite: True                               # Overwrite existing evaluation results
+output_to_file: True                          # Redirect console logging to 'out.txt' and 'run.log'
+verbose: True
+
+load_datamodule: "./ala2/dmod/ver_2"          # Path to pickled datamodule containing test dataset
+load_model: "./ala2/train_runs/bVAE/run_1"    # Path to trained model folder or checkpoint
+
+# ------------------------------------------------------------------------------
+# 2. Test Plotters Pipeline
+# ------------------------------------------------------------------------------
+# You can attach any combination of test plotters to `test_plotters`.
+# Each plotter runs automatically over the test set batches and generates plots,
+# reports ('results.txt'), and data arrays ('.npy') in its dedicated folder.
+
+test_plotters:
+
+  # ============================================================================
+  # TEST PLOTTER 1: SimplePlotter
+  # General-purpose 2D scatter visualizer and correlation matrix plotter.
+  # ============================================================================
+  - tester_type: SimplePlotter
+    tester_args:
+      # ------------------------------------------------------------------------
+      # Variable Selection Mappings
+      # ------------------------------------------------------------------------
+      # Maps raw batch outputs into named variables used across plotting blocks.
+
+      labels_selection:                       # Extract columns from dataset labels
+        phi: 'phi_2'                          # By label name
+        psi: 'psi_2'
+
+      latents_selection:                      # Extract columns from model latent representations
+        LD_1: 0                               # Latent dimension index 0
+        LD_2: 1                               # Latent dimension index 1
+        LD_3: 2
+
+      meta_selection:                         # Extract tensors from model forward metadata dict
+        LD_1_mean: [mu_latent, 0]             # [dict_key, column_index]
+        LD_2_mean: [mu_latent, 1]
+        LD_1_logvar: [logvar_latent, 0]
+        LD_2_logvar: [logvar_latent, 1]
+
+      # ------------------------------------------------------------------------
+      # On-the-Fly Variable Transformations (`transformed_values`)
+      # ------------------------------------------------------------------------
+      # Allows creating derived variables from existing selections.
+      # Supported transform functions:
+      #   - 'lv2std:<logvar_name>': Computes standard deviation std = sqrt(exp(logvar))
+      transformed_values:
+        LD_1_std: "lv2std:LD_1_logvar"
+        LD_2_std: "lv2std:LD_2_logvar"
+
+      # ------------------------------------------------------------------------
+      # 2D Scatter Plots with Colorbars (`plots_2dscatter_cb`)
+      # ------------------------------------------------------------------------
+      plots_2dscatter_cb:
+        # Plot 1: Latent space scatter colored by phi and psi dihedral angles
+        - name: "latent_vs_dihedrals"
+          x: LD_1
+          y: LD_2
+          color: "phi:psi"                    # Multiple colorbar targets (generates side-by-side plots)
+          sparse_steps: 5                     # Downsample stride (e.g. plot every 5th point for clarity)
+
+        # Plot 2: Latent mean scatter with standard deviation error bars
+        - name: "latent_mean_with_uncertainty"
+          x: LD_1_mean
+          y: LD_2_mean
+          x_error: LD_1_std                   # Horizontal error bars
+          y_error: LD_2_std                   # Vertical error bars
+          color: "phi:psi"
+          sparse_steps: 10
+
+      # ------------------------------------------------------------------------
+      # Feature Correlation Heatmaps (`correlations`)
+      # ------------------------------------------------------------------------
+      correlations:
+        # Correlation matrix between latent dimensions and physical dihedral angles
+        - name: "latent_vs_dihedral_correlations"
+          x: "phi:psi"                        # Variables along x-axis (colon-separated)
+          y: "LD_1:LD_2:LD_3"                 # Variables along y-axis (colon-separated)
+
+  # ============================================================================
+  # TEST PLOTTER 2: DisentanglementBetaMetric (Higgins et al., ICLR 2017)
+  # Measures disentanglement by training a linear classifier to identify which
+  # ground-truth factor was fixed using pairwise difference vectors |z_1 - z_2|.
+  # ============================================================================
+  - tester_type: DisentanglementBetaMetric
+    tester_args:
+      # ------------------------------------------------------------------------
+      # Note: The variable selection mappings and/or transformed values defined in the SimplePlotter 
+      # above are resused here to define all the factors
+      # ------------------------------------------------------------------------
+
+      generative_factors: "phi:psi"           # Factors to evaluate (colon-separated or list)
+      latent_dimensions: "LD_1_mean:LD_2_mean"  # Latent dimensions used as input features to the linear classifier
+
+      factor_tolerances: 0.1                  # Maximum difference |v1 - v2| to consider a factor constant
+      variation_threshold: 0.2                # Minimum variation required across other non-fixed factors
+      batch_size_L: 1                         # Difference vectors averaged per sample (L >= 1)
+      num_models: 10                          # Independent classifier training seeds for confidence intervals
+      confidence_interval: 0.95               # 95% Student-t confidence interval
+      classifier_type: "logistic_regression"  # Classifier: 'logistic_regression', 'linear_svc', or 'ridge'
+      plot_confusion_matrix: True             # Generates confusion matrix heatmap across factors
+      plot_training_points: True              # Generates 2D projection of sampled pairs in data/ folder
+
+  # ============================================================================
+  # TEST PLOTTER 3: DisentanglementMIGMetric (Chen et al., NeurIPS 2018)
+  # Mutual Information Gap (MIG): measures the gap between the highest and
+  # second highest discrete mutual information between latents and each factor.
+  # Output score in [0, 1] (1 = perfect axis-aligned disentanglement).
+  # ============================================================================
+  - tester_type: DisentanglementMIGMetric
+    tester_args:
+      # ------------------------------------------------------------------------
+      # Note: The variable selection mappings and/or transformed values defined in the SimplePlotter 
+      # above are resused here to define all the factors
+      # ------------------------------------------------------------------------
+      generative_factors: "phi:psi"           # Factors to evaluate (colon-separated or list)
+      latent_dimensions: "LD_1_mean:LD_2_mean"  # Latent dimensions used as input features to the linear classifier
+      num_bins: 20                            # Number of histogram bins for discrete entropy/MI estimation
+      subsample_ratio: 0.8                    # Fraction of dataset sampled per split to estimate variance
+      num_models: 10                          # Number of random subsample splits evaluated
+      confidence_interval: 0.95
+      plot_mi_matrix: True                    # Generates mutual information matrix heatmap I(z_i; v_k)
+
+  # ============================================================================
+  # TEST PLOTTER 4: DisentanglementDCIMetric (Eastwood & Williams, ICLR 2018)
+  # Evaluates:
+  #   - Disentanglement (D): each latent dimension captures at most one factor
+  #   - Completeness (C): each factor is captured by at most one latent dimension
+  #   - Informativeness (I): predictive accuracy / R^2 of factors from latents
+  # ============================================================================
+  - tester_type: DisentanglementDCIMetric
+    tester_args:
+      # ------------------------------------------------------------------------
+      # Note: The variable selection mappings and/or transformed values defined in the SimplePlotter 
+      # above are resused here to define all the factors
+      # ------------------------------------------------------------------------
+
+      generative_factors: "phi:psi"
+      latent_dimensions: "LD_1_mean:LD_2_mean"
+
+      regressor_type: "gradient_boosting"     # Regressor: 'gradient_boosting', 'random_forest', 'ridge', 'lasso'
+      test_split: 0.3                         # Held-out test fraction for informativeness evaluation
+      num_models: 10
+      confidence_interval: 0.95
+      plot_importance_matrix: True            # Generates feature importance matrix heatmap R_{i, k}
+
+  # ============================================================================
+  # TEST PLOTTER 5: DisentanglementFactorMetric (Kim & Mnih, ICML 2018)
+  # FactorVAE metric: identifies the dimension with minimum empirical variance
+  # across samples where a factor is fixed, evaluated using a Majority Vote classifier.
+  # ============================================================================
+  - tester_type: DisentanglementFactorMetric
+    tester_args:
+      # ------------------------------------------------------------------------
+      # Note: The variable selection mappings and/or transformed values defined in the SimplePlotter 
+      # above are resused here to define all the factors
+      # ------------------------------------------------------------------------
+      generative_factors: "phi:psi"
+      latent_dimensions: "LD_1_mean:LD_2_mean"
+      batch_size_L: 50                        # Samples per batch to estimate per-dimension variance (L >= 2)
+      max_batches_per_factor: 1000            # Maximum batches generated per factor
+      num_models: 10
+      confidence_interval: 0.95
+      plot_confusion_matrix: True
+
+  # ============================================================================
+  # TEST PLOTTER 6: DisentanglementModularityMetric (Ridgeway & Mozer, NeurIPS 2018)
+  # Computes Modularity (deviation from ideal single-factor encoding per dimension)
+  # and Explicitness (linear decodability of factors from the latent code).
+  # ============================================================================
+  - tester_type: DisentanglementModularityMetric
+    tester_args:
+      # ------------------------------------------------------------------------
+      # Note: The variable selection mappings and/or transformed values defined in the SimplePlotter 
+      # above are resused here to define all the factors
+      # ------------------------------------------------------------------------
+      generative_factors: "phi:psi"
+      latent_dimensions: "LD_1_mean:LD_2_mean"
+      num_bins: 20
+      subsample_ratio: 0.8
+      num_models: 10
+      confidence_interval: 0.95
+      compute_explicitness: True              # Evaluate linear explicitness (R^2 predictability)
+      plot_mi_matrix: True
+
+  # ============================================================================
+  # TEST PLOTTER 7: DisentanglementSAPMetric (Kumar et al., ICLR 2018)
+  # Separated Attribute Predictability (SAP): measures the difference between
+  # the top-2 highest predictability scores (linear regression R^2) for each factor.
+  # ============================================================================
+  - tester_type: DisentanglementSAPMetric
+    tester_args:
+      # ------------------------------------------------------------------------
+      # Note: The variable selection mappings and/or transformed values defined in the SimplePlotter 
+      # above are resused here to define all the factors
+      # ------------------------------------------------------------------------
+      generative_factors: "phi:psi"
+      latent_dimensions: "LD_1_mean:LD_2_mean"
+      test_split: 0.3
+      num_models: 10
+      confidence_interval: 0.95
+      plot_score_matrix: True                 # Generates predictability score matrix heatmap S_{i, k}

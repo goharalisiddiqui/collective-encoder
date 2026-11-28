@@ -38,12 +38,12 @@ network_args:
 # =============================================================================
 datamodule_type: COORDINATES   # Data type: COORDINATES, COLVAR
 datamodule_args:
-    datareader_type: XTC        # XTC | XTC_CHUNKS | XTC_CHUNKS_CG | PLUMED_OUTPUT
+    datareader_type: COMPRESSED_TRAJECTORY        # XTC | XTC_CHUNKS | XTC_CHUNKS_CG | PLUMED_OUTPUT
 
     # Input files
     datareader_args:
-        tprfile: ./data/ala2.tpr   # GROMACS topology file
-        xtcfile: ./data/ala2.xtc   # GROMACS trajectory file
+        topology_file: ./data/ala2.tpr   # GROMACS topology file
+        trajectory_file: ./data/ala2.xtc   # GROMACS trajectory file
 
         # Atom selection (using MDAnalysis selection syntax (https://userguide.mdanalysis.org/stable/selections.html))
         selection: "(resname ALA or resname ACE or resname NME) and not element H"

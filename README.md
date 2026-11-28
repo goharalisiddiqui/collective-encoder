@@ -44,30 +44,42 @@ pip install git+https://github.com/goharalisiddiqui/collective-encoder.git@v0.1.
 
 ### Project Structure
 
-The codebase is organized into modular subpackages for clarity and extensibility. Each subpackage contains a file to define the main class and any necessary utilities. If there is shared code (e.g pytorch modules), it is placed in a subfolder with appropriate name. Each module folder also contains an `__init__.py` file, a `base.py` file for abstract base classes (it should define the main interface for that module), and a `resolver.py` file that provides a method to resolve the modules based on string identifiers supplied in the config file. The main training script (`trainer.py`) and other modules use these resolvers to instantiate the appropriate classes based on the configuration.
+The codebase is organized into modular subpackages for clarity and extensibility. Each subpackage contains:
+- `base.py`: Defines the abstract base class and interface for that plugin kind (inheriting from `CEModule`).
+- `__init__.py`: Declares the plugin kind via `define_kind()`, registers all built-in implementations in the centralized registry (`collective_encoder.common.registry`) via `register()`, and lazily exports classes via `lazy_exports()`.
+- Concrete implementation modules (and subfolders for shared components).
+
+The runner scripts (`trainer.py`, `prepare_dmod.py`, `tester.py`) and other modules resolve classes dynamically from string identifiers in the YAML configuration using `get_module(kind, name)` from `collective_encoder.common.registry`.
 
 ```text
 collective-encoder/
 ├── collective_encoder/
-│   ├── common/            # Shared utilities, config checkers, root module for common functionality (e.g. logging)
-│   ├── datamodules/       # Datamodules classes for different data modalities (Coordinates, COLVAR files etc.)
-│   ├── datareaders/       # Data readers/parsers for different file formats (XTC, XYZ, COLVAR)
-│   ├── datasets/          # Feature extraction for distances, positions, SOAP, etc.
-│   ├── nets/              # Neural network architectures
-│   ├── losses/            # Loss functions for training
-│   ├── metrics/           # Metrics for evaluating model performance
-│   ├── testplotters/      # Tools for analyzing/visualizing the results (e.g. latent space plots, reconstructions)
-│   ├── mtomic/            # Metatomic wrapper/export utilities
-│   ├── configs/           # Default config templates
-│   └── trainer.py         # Main training orchestrator
-│   └── prepare_dmod.py    # Script to prepare datamodules and save them for later use in training
-│   └── test.py            # Script for model evaluation and testing
-│   └── utils.py           # Some common utilities
-│   └── cli.py             # Command line interface for data preparation, training and testing
-├── examples/              # Example systems with configs and SLURM scripts for quick run
+│   ├── common/                        # Shared base class (CEModule), centralized registry, config checkers
+│   ├── dataanalysers/                 # Exploratory dataset analysis and plotting tools
+│   ├── datalabelers/                  # Label calculation modules for structures and trajectories
+│   ├── datamodules/                   # Lightning DataModules for different data modalities (Coordinates, COLVAR)
+│   ├── datareaders/                   # Data readers/parsers for raw formats (XTC, MD17, PLUMED) and processors
+│   ├── datasets/                      # Feature extraction layers (positions, distances, bond graphs, SOAP, COLVAR)
+│   ├── hyperparameter_optimization/   # Optuna integration for hyperparameter sweeps
+│   ├── loggers/                       # Custom PyTorch Lightning loggers (CSVPlotLogger)
+│   ├── losses/                        # Loss functions and KLD schedulers for training
+│   ├── metrics/                       # Evaluation metrics for validation and testing
+│   ├── models/                        # Deep learning (AE, VAE, DVAE, EDVAE, BGE) and classical (PCA, ICA, TICA) models
+│   ├── testplotters/                  # Post-training evaluation, latent space visualization, and disentanglement metrics
+│   ├── mtomic/                        # Metatomic wrapper/export utilities
+│   ├── configs/                       # Default and debug YAML configuration templates
+│   ├── ce_run_base.py                 # Shared runner setup and datamodule loading logic
+│   ├── trainer.py                     # Main training orchestrator
+│   ├── prepare_dmod.py                # Script to prepare and serialize datamodules
+│   ├── tester.py                      # Script for model evaluation and testing
+│   ├── utils.py                       # Common helper utilities
+│   └── cli.py                         # Command-line interface for train, prepare, test, and optuna
+├── examples/                          # Example systems with configs and SLURM scripts
 └── README.md
 ```
-Each submodule is designed for modularity and extensibility. For example, to add a new dataset type, create a new class in `datasets/` that inherits from the base class and register it in the resolver.
+Each subpackage is designed for modularity and extensibility. To add a new component (e.g., a new dataset type), subclass the corresponding base class (`BaseDataset`) and register it in `collective_encoder.common.registry` using `register("datasets", "MY_DATASET", "module.path", "MyDatasetClass")` (either in `datasets/__init__.py` for built-ins or from an external package/script).
+
+*Note: For more detailed documentation on the design, interfaces, and registration for each subpackage, please refer to the `README.md` files located directly within their respective directories (e.g., `collective_encoder/datareaders/README.md`).*
 
 ## Development & Contributing
 

@@ -1,279 +1,237 @@
 import logging
 import os
-import wandb
-import yaml
 import shutil
-
-import argparse
-import warnings
+from typing import Any, Dict, Optional
+import yaml
 
 _log = logging.getLogger(__name__)
 
 import numpy as np
-
 import torch
-
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
-from gslibs.utils.common import recursive_update
-from gslibs.utils.common import get_required_init_args
+from collective_encoder.loggers import CSVPlotLogger
+import collective_encoder.ce_run_base as crb
 
-from collective_encoder.nets.resolver import get_net
-from collective_encoder.datamodules.resolver import get_datamodule
-from collective_encoder.common.config_check import (
-    validate_duplicate_keys, 
-    validate_required_fields 
-)
-from collective_encoder.dataanalysers.resolver import get_dataanalyser
-from gslibs.utils.filesystem import create_rundir, output_to_file
+_SETTINGS = {
+    'module': 'trainer',
+}
 
-warnings.filterwarnings("ignore", ".*does not have many workers.*")
-DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'trainer', 'defaults.yaml')
-DEBUG_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'configs', 'trainer', 'debug.yaml')
-OVERRIDABLE_DMOD_ARGS = ['batch_size', 'val_batch_size', 
-                         'num_workers', 'test_batch_size']
-torch.set_default_dtype(torch.float64)
-##################################
-# Arguments
-##################################
-def parse_args():
-    desc = "Surrogate model to predict dynamics of molecular systems as time series data"
-    parser = argparse.ArgumentParser(description=desc)
 
-    # Run Settings
-    parser.add_argument('--config', required=True, type=str,
-                        help='')
-    parser.add_argument('--debug', action='store_true',
-                        help='Run in debug mode with small data and epochs')
-    
-    args = parser.parse_args()
+def _setup_logger(config: dict, run_dir: str):
+    """
+    Set up the appropriate PyTorch Lightning logger based on config.
 
-    return args
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary containing logger settings.
+    run_dir : str
+        The directory where logs should be saved.
 
-def train(config_path: str, debug: bool = False):
-    """Train a collective encoder model based on the provided configuration."""
-    if not os.path.isfile(config_path):
-        raise FileNotFoundError(f"Config file not found at {config_path}")
-    validate_duplicate_keys(config_path)
-    config = yaml.safe_load(open(DEFAULT_CONFIG_PATH, 'r'))
-    recursive_update(config, yaml.safe_load(open(config_path, 'r')))
-    if debug or config.get('debug', False):
-        # Load debug config and override values
-        recursive_update(config, yaml.safe_load(open(DEBUG_CONFIG_PATH, 'r')))
-        torch.manual_seed(0)
-        np.random.seed(0)
-        print("Running in debug mode.")
-    validate_required_fields(config)
+    Returns
+    -------
+    pytorch_lightning.loggers.Logger
+        The instantiated PyTorch Lightning logger (WandbLogger or CSVPlotLogger).
 
-    ##################################
-    # Output directory
-    ##################################
-    run_dir = create_rundir(config['outpath'], 
-                        config['outfolder'], 
-                        config['nexp'], 
-                        overwrite=config['overwrite'])
-
-    ##################################
-    # Output to file
-    ##################################
-    if config['output_to_file']:
-        output_to_file(run_dir, filename="out.txt")
-    
-    ##################################
-    # Meta args used in all modules
-    ##################################
-    logging_level = config.get('verbose', 'INFO')
-    if logging_level is True:
-        logging_level = 'INFO'
-    if logging_level is False:
-        logging_level = 'WARNING'
-    if not hasattr(logging, logging_level.upper()):
-        raise ValueError(f"Invalid logging level: {logging_level}. "
-                         f"Valid levels: {logging._nameToLevel.keys()}")
-    logging_level = getattr(logging, logging_level.upper(), logging.INFO)
-    logging.basicConfig(filename=os.path.join(run_dir, "run.log"),
-                        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                        level=logging_level)
-    metargs = {
-        'verbose': config.get('verbose', True),
-        'root_logger_name': __name__,
-        'run_dir': run_dir,
-    }
-    
-    ##################################
-    # Config validation
-    ##################################
-    _KNOWN_CONFIG_KEYS = {
-        'debug', 'outpath', 'outfolder', 'overwrite', 'nexp', 'output_to_file',
-        'save_checkpoint', 'save_serial_model', 'nepochs', 'lrate', 'weight_decay',
-        'nogpu', 'export_latent', 'wandb', 'wandb_project', 'wandb_entity',
-        'scheduler', 'scheduler_args', 'normIn', 'network_type', 'network_args',
-        'datamodule_type', 'datamodule_args', 'data_analyser', 'data_args',
-        'load_model', 'output_traj', 'save_metatomic', 'early_stopping',
-        'early_stopping_args', 'verbose', 'metatomic_metadata', 'test_plotter_type', 
-        'test_plotter_args',
-    }
-    for key in config:
-        if key not in _KNOWN_CONFIG_KEYS:
-            _log.warning("Unknown config key '%s' — will be ignored", key)
-
-    ##################################
-    # Creating Dataset
-    ##################################
-    if 'load_datamodule' in config:
-        dmod_path = config['load_datamodule']
-        _log.info("Loading datamodule from: " + dmod_path)
-        dmod_ckpt = os.path.join(dmod_path, "datamodule.pth")
-        
-        # torch.serialization.add_safe_globals(torch.serialization.get_unsafe_globals_in_checkpoint(dmod_ckpt)) # !!! Very Unsafe, only do this if you trust the source of the checkpoint !!!
-        dm = torch.load(dmod_ckpt, weights_only=False)
-        dm_args = dm.get_args()
-        dm_override_args = config.get('datamodule_args', {})
-        for key, value in dm_override_args.items():
-            if key not in OVERRIDABLE_DMOD_ARGS:
-                raise ValueError(f"Cannot override datamodule argument '{key}'. "
-                                 f"Allowed keys: {OVERRIDABLE_DMOD_ARGS}")
-            _log.info(f"Overriding datamodule argument '{key}' with "
-                      f"value: {value}, previous value: {getattr(dm, key, 'N/A')}")
-            dm_args[key] = value
-            setattr(dm, key, value)
-    else:
-        dm_type = config['datamodule_type']
-        dm_args = config['datamodule_args']
-        dm_cls = get_datamodule(dm_type)
-        validate_required_fields(dm_args, 
-                                get_required_init_args(dm_cls))
-        
-        dm = dm_cls(dm_args, **metargs)
-        
-    ##################################
-    # Data analysis and visualization
-    ##################################
-    da = config.get('data_analyser_type', None)
-    if da != None:
-        analyser_cls = get_dataanalyser(da)    
-        da_args = config.get('data_analyser_args', {})
-        da_args['datamodule_args'] = dm_args
-        da_args['output_dir'] = run_dir + "/data_analysis"
-        analyser = analyser_cls(da_args,**metargs)
-        analyser.write_data(dm.get_train_dataset(), label="train")
-        analyser.write_data(dm.get_val_dataset(), label="val")
-
-    ##################################
-    # Setting up the NN
-    ##################################
-    nn_type = config['network_type']
-    nn_cls = get_net(nn_type)
-    req_fields = get_required_init_args(nn_cls)
-    validate_required_fields(config['network_args'], req_fields)
-    nn_args = {
-        'lrate': config['lrate'],
-        'weight_decay': config['weight_decay'],
-        'normIn': config['normIn'],
-        'scheduler': config['scheduler'],
-        'scheduler_args': config.get('scheduler_args', {}),
-    }
-    nn_args.update(config.get('network_args', {}))
-
-    load_model = config.get('load_model', None)
-    if load_model != None:
-        if len(config['network_args']) > 0:
-            _log.warning("network_args will be ignored when loading a model.")
-            config['network_args'] = {}
-        checkpoint_file = load_model
-        print(f"Loading model from {checkpoint_file}")
-        model = nn_cls.load_from_checkpoint(checkpoint_file,
-                                            args=nn_args, **metargs)
-    else:
-        nn_args = nn_cls.extract_args_from_datamodule(dm, nn_args)
-        model = nn_cls(args=nn_args, 
-                       **metargs)
-
-    ##################################
-    # Training the NN
-    ##################################
-    trainargs = {"max_epochs" : config['nepochs'],
-                 "log_every_n_steps" : 1,
-                 "default_root_dir" : run_dir}
-    if not config.get('nogpu', False):
-        trainargs["accelerator"] = 'auto'
-        trainargs["devices"] = 'auto'
-    if config.get('wandb', False):
-        wandb_logger = WandbLogger(project=config['wandb_project'],
-                                 entity=config['wandb_entity'],
-                                 save_dir=run_dir,
-                                 name=run_dir.strip(".").strip("/").replace("/", "_"),
-                                 log_model=False,)
-        # wandb_logger.watch(model, log_graph=True)
-        trainargs["logger"] = wandb_logger
-
-    callbacks = []
-    # Learning rate monitor
-    lr_monitor = LearningRateMonitor(logging_interval='epoch')
-    callbacks.append(lr_monitor)
-    # Early stopping
-    if config.get('early_stopping', True):
-        early_stop_callback = pl.callbacks.EarlyStopping(
-            monitor='val_loss',
-            patience=config.get('early_stopping_args', {}).get('patience', 100),
-            min_delta=config.get('early_stopping_args', {}).get('min_delta', 1e-8),
-            verbose=True,
-            mode='min'
-        )
-        callbacks.append(early_stop_callback)
-
-    checkpoint_callback = ModelCheckpoint(
-        monitor='val_loss',
-        dirpath=run_dir + '/checkpoints',
-        filename=config['network_type'] + '-{epoch:02d}-{val_loss:.6f}',
-        save_top_k=1,
-        mode='min',
-    )
-    callbacks.append(checkpoint_callback)
-
-    trainargs["callbacks"] = callbacks
-    # trainargs["num_sanity_val_steps"] = 0
-
-    # trainargs["gradient_clip_val"] = 0.5
-    # trainargs["gradient_clip_algorithm"] = "norm"
-
-    trainer = pl.Trainer(**trainargs)
-
-    if config['nepochs'] > 0:
-        _log.info("Starting training for %d epochs...", config['nepochs'])
-        trainer.fit(model, datamodule=dm)
-        _log.info("Training completed.")
+    Raises
+    ------
+    ValueError
+        If Weights & Biases is requested but missing 'project' or 'entity' config.
+    """
+    logger_name = config.get('logger_name', None)
+    if logger_name is None:
         if config.get('wandb', False):
-            wandb.finish()
-
-    if config['nepochs'] == 0 and load_model == None:
-        _log.warning("Both nepochs and load_model are not set. Nothing to do.")
-
-    # Save the best model checkpoint as best.ckpt
-    best_checkpoint_path = checkpoint_callback.best_model_path
-    if best_checkpoint_path != "":
-        shutil.copy(best_checkpoint_path, os.path.dirname(best_checkpoint_path) + "/best.ckpt")
-    _log.info(f"Best model saved at: {best_checkpoint_path}")
-
-    ##################################
-    # Analysing a loaded model
-    ##################################
-    if config.get('output_traj', False):
-        if not config['datamodule_type'] in ["COORDINATES", "XTC"]:
-            raise ValueError(f"Unsupported data type: {config['datamodule_type']} for trajectory output")
+            logger_name = 'wandb'
         else:
-            pred = model(dm.get_full_batch()[0])[0].detach().cpu().numpy()
-            dm.output_trajectory(os.path.join(run_dir, "recon_trajectory.pdb"), pred)
+            logger_name = 'csv'
+
+    if logger_name == 'wandb':
+        args = {
+            'save_dir': run_dir,
+            'name': run_dir.strip(".").strip("/").replace("/", "_"),
+            'log_model': False,
+        }
+        logger_args = config.get('logger_args', {})
+        if 'project' not in logger_args and 'wandb_project' in config:
+            logger_args['project'] = config['wandb_project']
+        if 'entity' not in logger_args and 'wandb_entity' in config:
+            logger_args['entity'] = config['wandb_entity']
+
+        args.update(logger_args)
+        if 'project' not in args or args['project'] in [None, 'None']:
+            raise ValueError("Wandb logger requires 'project' argument in 'logger_args' or 'wandb_project'.")
+        if 'entity' not in args or args['entity'] in [None, 'None']:
+            raise ValueError("Wandb logger requires 'entity' argument in 'logger_args' or 'wandb_entity'.")
+        return WandbLogger(**args)
+    else:
+        return CSVPlotLogger(
+            save_dir=run_dir,
+            name="csv_logs",
+            version="version_0",
+            **config.get('logger_args', {})
+        )
+
+
+def run_training_experiment(
+    config: Dict[str, Any],
+    metargs: Dict[str, Any],
+    trial: Optional[Any] = None,
+    pruning_monitor: str = 'val_loss',
+) -> Dict[str, Any]:
+    """
+    Run a training experiment using prepared config and metargs dictionaries.
+    
+    Parameters
+    ----------
+    config : dict
+        Training configuration dictionary.
+    metargs : dict
+        Metadata dictionary containing run_dir, verbose, etc.
+    trial : optuna.Trial, optional
+        Optional Optuna trial object for pruning callback.
+    pruning_monitor : str, optional
+        Metric name to monitor for Optuna pruning (default 'val_loss').
+
+    Returns
+    -------
+    dict
+        Dictionary containing experiment results and metrics (val_loss, best_checkpoint_path, run_dir, test_results).
+    """
+    dm = crb.load_datamodule(config, metargs)
+    model = crb.load_model(config, metargs, dm)
+    run_dir = metargs['run_dir']
+
+    test_results = {}
+    best_val_loss = float('inf')
+    best_checkpoint_path = ""
 
     ##################################
-    if config.get('test_plotter_type', False):
-        model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))
-    _log.info("Starting testing...")
-    trainer.test(model, datamodule=dm)
-    _log.info("Testing completed.")
+    # Training / Fitting the Model
+    ##################################
+    if isinstance(model, pl.LightningModule):
+        trainargs = {
+            "max_epochs": config.get('nepochs', 50),
+            "log_every_n_steps": 1,
+            "default_root_dir": run_dir,
+        }
+        if not config.get('nogpu', False):
+            trainargs["accelerator"] = 'auto'
+            trainargs["devices"] = 'auto'
+        else:
+            trainargs["accelerator"] = 'cpu'
+
+        trainargs["logger"] = _setup_logger(config, run_dir)
+
+        ## PL Callbacks
+        callbacks = []
+        lr_monitor = LearningRateMonitor(logging_interval='epoch')
+        callbacks.append(lr_monitor)
+
+        # Early stopping
+        if config.get('early_stopping', True):
+            early_stop_callback = pl.callbacks.EarlyStopping(
+                monitor='val_loss',
+                patience=config.get('early_stopping_args', {}).get('patience', 100),
+                min_delta=config.get('early_stopping_args', {}).get('min_delta', 1e-8),
+                verbose=True,
+                mode='min'
+            )
+            callbacks.append(early_stop_callback)
+
+        # Optuna pruning callback if trial is provided
+        if trial is not None:
+            try:
+                from optuna.integration import PyTorchLightningPruningCallback
+                callbacks.append(PyTorchLightningPruningCallback(trial, monitor=pruning_monitor))
+            except Exception as e:
+                _log.warning(f"Could not attach PyTorchLightningPruningCallback: {e}")
+
+        model_name = config.get('network_type', config.get('model_type', 'model'))
+        checkpoint_callback = ModelCheckpoint(
+            monitor='val_loss',
+            dirpath=os.path.join(run_dir, 'checkpoints'),
+            filename=model_name + '-{epoch:02d}-{val_loss:.6f}',
+            save_top_k=1,
+            mode='min',
+        )
+        callbacks.append(checkpoint_callback)
+        trainargs["callbacks"] = callbacks
+
+        trainer = pl.Trainer(**trainargs)
+
+        nepochs = config.get('nepochs', 50)
+        if nepochs > 0:
+            _log.info("Starting training for %d epochs...", nepochs)
+            trainer.fit(model, datamodule=dm)
+            _log.info("Training completed.")
+            if config.get('wandb', False):
+                try:
+                    import wandb
+                    wandb.finish()
+                except Exception:
+                    pass
+
+        if nepochs == 0 and 'load_model' not in config and 'load_network' not in config:
+            _log.warning("Both nepochs and load_model are not set. Nothing to do.")
+
+        best_checkpoint_path = checkpoint_callback.best_model_path
+        if best_checkpoint_path != "" and os.path.exists(best_checkpoint_path):
+            shutil.copy(best_checkpoint_path, os.path.join(os.path.dirname(best_checkpoint_path), "best.ckpt"))
+            if checkpoint_callback.best_model_score is not None:
+                score = checkpoint_callback.best_model_score
+                best_val_loss = float(score.item() if hasattr(score, 'item') else score)
+        _log.info(f"Best model saved at: {best_checkpoint_path} with val_loss: {best_val_loss}")
+
+        ##################################
+        # Testing the NN
+        ##################################
+        if config.get('test_plotters', False) and isinstance(config['test_plotters'], list):
+            for tp in config['test_plotters']:
+                if 'tester_type' in tp:
+                    model.add_test_plotter(tp['tester_type'], tp.get('tester_args', None))
+        elif config.get('test_plotter_type', False):
+            model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))
+
+        _log.info("Starting testing...")
+        test_out = trainer.test(model, datamodule=dm)
+        if test_out and len(test_out) > 0:
+            test_results = dict(test_out[0])
+        plotter_metrics = model.get_test_plotter_metrics() if hasattr(model, "get_test_plotter_metrics") else {}
+        test_results.update(plotter_metrics)
+        _log.info(f"Testing completed. Test metrics: {list(test_results.keys())}")
+
+    else:
+        # Analytical non-gradient model (e.g. PCA, ICA)
+        _log.info(f"Fitting {model.__class__.__name__} analytically on training data...")
+        model.fit(datamodule=dm)
+        ckpt_dir = os.path.join(run_dir, "checkpoints")
+        os.makedirs(ckpt_dir, exist_ok=True)
+        best_ckpt = os.path.join(ckpt_dir, "best.ckpt")
+        model.save_checkpoint(best_ckpt)
+        best_checkpoint_path = best_ckpt
+        _log.info(f"Fitted model saved at: {best_ckpt}")
+
+        ##################################
+        # Testing the Model
+        ##################################
+        if config.get('test_plotters', False) and isinstance(config['test_plotters'], list):
+            for tp in config['test_plotters']:
+                if 'tester_type' in tp:
+                    model.add_test_plotter(tp['tester_type'], tp.get('tester_args', None))
+        elif config.get('test_plotter_type', False):
+            model.add_test_plotter(config['test_plotter_type'], config.get('test_plotter_args', None))
+
+        _log.info("Starting testing...")
+        test_out = model.test(datamodule=dm)
+        if isinstance(test_out, dict):
+            test_results = dict(test_out)
+        plotter_metrics = model.get_test_plotter_metrics() if hasattr(model, "get_test_plotter_metrics") else {}
+        test_results.update(plotter_metrics)
+        _log.info(f"Testing completed. Test metrics: {list(test_results.keys())}")
 
     #####################################
     # Save metatomic model
@@ -294,7 +252,6 @@ def train(config_path: str, debug: bool = False):
             raise ImportError("metatomic is not installed. Please install it with `pip install metatomic`")
 
         dataprocessor = dm.get_dataset().get_metatomic_dataprocessor()
-        # FIXME: Remove wandb hooks to avoid issues during serialization
         metamodel = model.get_metatomic_model()
         metatomic_model = MetatomicCV(dataprocessor, metamodel)
         metadata = ModelMetadata(
@@ -316,39 +273,73 @@ def train(config_path: str, debug: bool = False):
             metadata=metadata,
             capabilities=capabilities,
         )
-        ##################################
-        # Sanity check of the model
-        ##################################
         fake_systems = dm.get_dataset().get_fake_systems()
         fake_options = ModelEvaluationOptions(
             length_unit=dataprocessor.get_length_unit(),
             outputs=metamodel.get_metatomic_outputs(),
             selected_atoms=None,
-            # selected_atoms=Labels(
-            #     ['system', 'atom'], torch.tensor([0, 512]).reshape(-1, 2)
-            # ),
         )
-            
-        # Run inference
         try:
             print("Running sanity check of the metatomic model...")
             with torch.no_grad():
                 output = metatomic_module(fake_systems, fake_options, False)
         except Exception as e:
-            raise RuntimeError("metatomic model failed the sanity check: "+str(e))
+            raise RuntimeError("metatomic model failed the sanity check: " + str(e))
 
         print("metatomic model passed the sanity check.\nSerializing the model...")
         metatomic_model_file = os.path.join(run_dir, "metatomic_model.pt")
         metatomic_extension_directory = os.path.join(run_dir, "metatomic_extensions")
-        metatomic_module.save(metatomic_model_file,
-                            collect_extensions=metatomic_extension_directory)
-
+        metatomic_module.save(
+            metatomic_model_file,
+            collect_extensions=metatomic_extension_directory
+        )
         print(f"@@ metatomic model saved as: {metatomic_model_file}")
 
+    def _to_serializable(val):
+        if isinstance(val, np.ndarray):
+            return val.tolist()
+        if hasattr(val, "item"):
+            try:
+                return val.item()
+            except Exception:
+                pass
+        if isinstance(val, dict):
+            return {k: _to_serializable(v) for k, v in val.items()}
+        if isinstance(val, (list, tuple)):
+            return [_to_serializable(x) for x in val]
+        return val
+
+    results = {
+        'val_loss': _to_serializable(best_val_loss),
+        'best_checkpoint_path': str(best_checkpoint_path) if best_checkpoint_path else "",
+        'run_dir': str(run_dir),
+        'test_results': _to_serializable(test_results),
+    }
+
+    try:
+        metrics_file = os.path.join(run_dir, "metrics.yaml")
+        with open(metrics_file, "w") as f:
+            yaml.safe_dump(results, f)
+    except Exception as e:
+        _log.warning(f"Could not save metrics.yaml to {run_dir}: {e}")
+
+    return results
+
+
+def train():
+    """
+    Main CLI entry point for collective-encoder-train.
+    """
+    config, metargs = crb._prepare(_SETTINGS)
+    run_training_experiment(config, metargs)
+
+
 def main():
-    """Main entry point for the collective encoder training."""
-    args = parse_args()
-    train(args.config, args.debug)
+    """
+    Entry point for trainer module.
+    """
+    train()
+
 
 if __name__ == "__main__":
     main()

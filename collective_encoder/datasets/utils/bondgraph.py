@@ -10,6 +10,8 @@ from torch_geometric.data import Data
 
 from rdkit import Chem
 
+from collective_encoder import TENSOR_PRECISION
+
 def dihedral(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
     '''
     Compute dihedral angle defined by four points p0-p1-p2-p3 in radians.
@@ -56,7 +58,10 @@ def bond_type_one_hot(kind: str) -> List[float]:
     vec[mapping[kind]] = 1.0
     return vec
 
-def bond_node_features(atoms: ase.Atoms, bonds: List[Tuple[int, int, float]]) -> Tensor:
+def bond_node_features(atoms: ase.Atoms, 
+                       bonds: List[Tuple[int, int, float]],
+                       dtype: torch.dtype = TENSOR_PRECISION
+                       ) -> Tensor:
     '''
     Compute node features for bond graph. Each node corresponds to a bond (i,j) and has features:
     [Z_i, Z_j, bond_length]
@@ -80,9 +85,12 @@ def bond_node_features(atoms: ase.Atoms, bonds: List[Tuple[int, int, float]]) ->
         # mi = atomic_masses[Zi]
         # mj = atomic_masses[Zj]
         feats.append([Zi, Zj, d])
-    return torch.tensor(feats)
+    return torch.tensor(feats, dtype=dtype)
 
-def angle_and_torsion_edges(atoms: ase.Atoms, bonds: List[Tuple[int, int, float]]):
+def angle_and_torsion_edges(atoms: ase.Atoms, 
+                            bonds: List[Tuple[int, int, float]],
+                            dtype: torch.dtype = TENSOR_PRECISION
+                            ):
     '''
     Compute angle and torsion edges for bond graph. Edges connect bonds that share an atom (angle edges) or are separated by one bond (torsion edges).
     Edge features:
@@ -187,10 +195,10 @@ def angle_and_torsion_edges(atoms: ase.Atoms, bonds: List[Tuple[int, int, float]
 
     if len(edge_index_src) == 0:
         edge_index = torch.empty((2, 0), dtype=torch.long)
-        edge_attr_t = torch.empty((0, 3))
+        edge_attr_t = torch.empty((0, 3), dtype=dtype)
     else:
         edge_index = torch.tensor([edge_index_src, edge_index_dst], dtype=torch.long)
-        edge_attr_t = torch.tensor(edge_attr)
+        edge_attr_t = torch.tensor(edge_attr, dtype=dtype)
 
     return edge_index, edge_attr_t, bond_index_map, angle_atoms, torsion_atoms
 
@@ -211,6 +219,7 @@ def build_template_graph(
         atom_names: Optional[List[str]] = None,
         bond_lengths: Optional[List[float]] = None,
         bond_types: Optional[List[str]] = None,
+        dtype: torch.dtype = TENSOR_PRECISION
     ) -> Data:
         """Return an atom-level template molecular graph constant across all frames.
 
@@ -382,7 +391,7 @@ def build_template_graph(
                 at_one[atom_index[atom_names[i]]] = 1.0
                 vec.extend(at_one)
             node_features.append(vec)
-        x = torch.tensor(node_features)
+        x = torch.tensor(node_features, dtype=dtype)
 
         edge_src = []
         edge_dst = []
@@ -406,8 +415,8 @@ def build_template_graph(
         # Add direct bond edges (for distance, we use sum of covalent radii)
         for (i, j) in bond_set:
             dist = bond_lengths_fn(i, j)
-            bt = torch.tensor(bond_type_one_hot(bond_type_fn(i, j)))
-            feat = torch.cat([bt, torch.tensor([dist])], dim=0)
+            bt = torch.tensor(bond_type_one_hot(bond_type_fn(i, j)), dtype=dtype)
+            feat = torch.cat([bt, torch.tensor([dist], dtype=dtype)], dim=0)
             for s, t in ((i, j), (j, i)):
                 edge_src.append(s)
                 edge_dst.append(t)
@@ -439,8 +448,8 @@ def build_template_graph(
                         continue  # already direct edge
                     # add virtual edge both directions
                     dist = bond_lengths_fn(a, b)
-                    bt = torch.tensor(bond_type_one_hot("virtual"))
-                    feat = torch.cat([bt, torch.tensor([dist])], dim=0)
+                    bt = torch.tensor(bond_type_one_hot("virtual"), dtype=dtype)
+                    feat = torch.cat([bt, torch.tensor([dist], dtype=dtype)], dim=0)
                     edge_src.append(a)
                     edge_dst.append(b)
                     edge_attr_list.append(feat)
@@ -453,7 +462,7 @@ def build_template_graph(
             edge_attr = torch.stack(edge_attr_list, dim=0)
         else:
             edge_index = torch.empty((2, 0), dtype=torch.long)
-            edge_attr = torch.empty((0, 5 + 1))
+            edge_attr = torch.empty((0, 5 + 1), dtype=dtype)
 
         data = Data(
             x=x,

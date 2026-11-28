@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -7,60 +7,78 @@ from collective_encoder.common.module import CEModule
 
 
 class BaseLabeler(CEModule, ABC):
-    """Abstract base class for all labelers.
+    """
+    Abstract base class for all labelers.
 
-    Concrete labelers must subclass either :class:`FrameLabeler` (for
-    MDAnalysis universe-based, per-frame computation) or
-    :class:`BatchLabeler` (for DataFrame index-based batch computation).
+    Every labeler accepts an optional ``name`` parameter in ``args`` and returns
+    a dictionary mapping label names to NumPy arrays from :meth:`compute`.
+    For labelers that output a single feature vector, the dictionary key defaults
+    to the lowercase class name (``self.__class__.__name__.lower()``) when
+    ``name`` is not provided.
+
+    Parameters
+    ----------
+    args : dict, optional
+        Dictionary of configuration options. Optional keys include:
+        - ``name`` (str, optional): Custom name for the output label key.
+    kwargs : dict
+        Additional keyword arguments forwarded to the parent :class:`CEModule`.
     """
 
-    def __init__(self,
-                 args: Dict[str, Union[float, int, str]] = None,
-                 **kwargs):
-        if args is None:
-            args = {}
-        super().__init__(args=args, **kwargs)
+    _OPTIONAL_ARGS: Dict[str, Any] = {
+        "name": None,
+    }
+
+    def get_default_label_name(self) -> str:
+        """
+        Return the configured label name ``self.name`` if provided, otherwise
+        the lowercase class name.
+
+        Returns
+        -------
+        str
+            Resolved default label key name.
+        """
+        if getattr(self, "name", None) is not None and str(self.name).strip():
+            return str(self.name).strip()
+        return self.__class__.__name__.lower()
+
+    def reinitialize(self, **args) -> None:
+        """
+        Reinitialize the labeler with new arguments.
+
+        Parameters
+        ----------
+        **args : dict
+            Keyword arguments for reinitialization.
+        """
+        pass
 
     @abstractmethod
     def get_label_names(self) -> List[str]:
-        """Return the names of the label columns produced by this labeler."""
-        raise NotImplementedError
+        """
+        Return the names of the label keys produced by this labeler.
 
-
-class FrameLabeler(BaseLabeler):
-    """Abstract base for universe-based labelers (XTC / MDAnalysis).
-
-    The labeler is initialised with a positioned MDAnalysis ``Universe``
-    and ``compute()`` is called once per trajectory frame.  The current
-    frame is implicit in the universe; no index argument is needed.
-    """
-
-    @abstractmethod
-    def compute(self) -> List[float]:
-        """Compute labels for the current trajectory frame.
-
-        Returns:
-            List of scalar label values, one per label column.
+        Returns
+        -------
+        list of str
+            Names of the generated label dictionary keys.
         """
         raise NotImplementedError
 
-
-class BatchLabeler(BaseLabeler):
-    """Abstract base for DataFrame index-based labelers (PLUMED / tabular).
-
-    The labeler is initialised with a ``pd.DataFrame`` and ``compute()``
-    is called with a list of integer row indices to label in batch.
-    """
-
     @abstractmethod
-    def compute(self, indices: List[int]) -> np.ndarray:
-        """Compute labels for the given DataFrame row indices.
+    def compute(self, indices: Optional[List[int]] = None) -> Dict[str, np.ndarray]:
+        """
+        Compute labels for the current frame or given row indices.
 
-        Args:
-            indices: Integer row indices into the DataFrame supplied at
-                construction time.
+        Parameters
+        ----------
+        indices : list of int, optional
+            Integer row/frame indices.
 
-        Returns:
-            NumPy array of shape ``(len(indices), n_labels)``.
+        Returns
+        -------
+        dict of str to numpy.ndarray
+            Dictionary mapping each label name to its computed NumPy array.
         """
         raise NotImplementedError

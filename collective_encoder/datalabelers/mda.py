@@ -1,0 +1,19 @@
+from abc import ABC
+import numpy as np
+import MDAnalysis as mda
+from typing import Optional, Dict, List, Union
+
+from .base import BaseLabeler
+
+
+class MDALabeler(BaseLabeler, ABC):
+    """
+    Base class for MDAnalysis-based labelers.
+    
+    
+    """
+
+    def reinitialize(self, universe: mda.Universe) -> None:
+        self.log_debug(f"Reinitializing {self.__class__.__name__} with new universe")
+        run_args = {**self.get_run_args(), "verbose": False}
+        self.__init__(universe=universe, args=self.get_args(), **run_args)

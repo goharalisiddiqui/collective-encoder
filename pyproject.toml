@@ -42,7 +42,7 @@ dependencies = [
     "ase>=3.25.0,<4.0.0",
     "torch-geometric>=2.6.0,<3.0.0",
     "wandb>=0.20.0,<1.0.0",
-    "gslibs @ git+https://github.com/goharalisiddiqui/gslibs.git@main",
+    "gslibs @ git+https://github.com/goharalisiddiqui/gslibs.git",
 ]
 
 [project.optional-dependencies]
@@ -58,15 +58,19 @@ dev = [
     "flake8>=4.0.0",
     "isort>=5.10.0",
     "mypy>=0.950",
-    "jupyterlab",
-    "ipython>=9.3.0",
 ]
-all = ["collective-encoder[metatomic,dev]"]
+sweeps = [
+    "optuna>=4.0.0",
+    "optuna-dashboard>=0.20.0",
+    "plotly>=5.20.0",
+]
+all = ["collective-encoder[metatomic,dev,sweeps]"]
 
 [project.scripts]
 collective-encoder-train = "collective_encoder.cli:main_train"
 collective-encoder-prepare = "collective_encoder.cli:main_prepare_dmod"
 collective-encoder-test = "collective_encoder.cli:main_test"
+collective-encoder-optuna = "collective_encoder.hyperparameter_optimization.runner:main"
 
 [project.urls]
 Homepage = "https://github.com/goharalisiddiqui/collective-encoder"
@@ -100,4 +104,9 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
+markers = [
+    "unit: fast, isolated unit tests",
+    "integration: multi-component integration tests",
+    "slow: tests that require external datasets or longer runtime",
+]
 addopts = "--cov=collective_encoder --cov-report=html --cov-report=term"

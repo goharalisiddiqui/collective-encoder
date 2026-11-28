@@ -7,7 +7,24 @@ from .base import CELossBase
 
 
 class CELossMSEDict(CELossBase):
-    _IDENTIFIER = "CELossMSE"
+    """
+    MSE loss tailored for dictionary-based outputs/labels.
+
+    Computes MSE across multiple named components and aggregates them.
+
+    Parameters
+    ----------
+    args : dict, optional
+        Configuration dictionary. Required keys:
+        - ``keys`` (list of str): Keys identifying the components in output/labels dictionaries.
+        Optional keys:
+        - ``weights`` (list of float, optional): Weighting factors for each key.
+        - ``reduction`` (str, default 'mean'): Specifies the reduction for the MSE.
+        - ``accumulation`` (str, default 'sum'): Aggregation method ('sum' or 'mean').
+    kwargs : dict
+        Additional keyword arguments.
+    """
+    _IDENTIFIER = "CELossMSEDict"
     _REQUIRED_ARGS = ['keys']
     _OPTIONAL_ARGS = {
         'weights': None,
@@ -22,7 +39,7 @@ class CELossMSEDict(CELossBase):
         if self.weights == None:
             self.weights = [1.0] * len(self.keys)
         
-        if len(self.keys) != len (self.weights):
+        if len(self.keys) != len(self.weights):
             self.raise_error(f"Keys {self.keys} and weights {self.weights} must be of same length.")
         
         self.loss_fn = torch.nn.MSELoss(reduction=self.reduction)
@@ -30,14 +47,43 @@ class CELossMSEDict(CELossBase):
     def forward(self, 
                 inp: torch.Tensor, 
                 latent: torch.Tensor, 
-                output: torch.Tensor, 
-                labels: torch.Tensor, 
+                output: dict,
+                labels: dict,
                 meta: Dict[str, torch.Tensor],
                 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Compute the dictionary MSE loss.
         
+        Parameters
+        ----------
+        inp : torch.Tensor
+            Original input (unused).
+        latent : torch.Tensor
+            Latent encoding (unused).
+        output : dict
+            Dictionary of predicted tensors.
+        labels : dict
+            Dictionary of target tensors.
+        meta : dict
+            Metadata (unused).
+
+        Returns
+        -------
+        tuple
+            (aggregated_loss, dict_of_individual_losses).
+        """
         losses = {}
         for key, weight in zip(self.keys, self.weights):
-            losses[key] = self.loss_fn(output[key], labels[key]) * weight
+            out_t = output[key]
+            lbl_t = labels[key]
+            if torch.isnan(lbl_t).any() or torch.isnan(out_t).any():
+                valid = ~torch.isnan(lbl_t) & ~torch.isnan(out_t)
+                if valid.any():
+                    losses[key] = self.loss_fn(out_t[valid], lbl_t[valid]) * weight
+                else:
+                    losses[key] = out_t.sum() * 0.0
+            else:
+                losses[key] = self.loss_fn(out_t, lbl_t) * weight
 
         if self.accumulation == 'sum':
             loss = sum(losses.values())
